@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   CircleDot,
   Clock3,
+  Copy,
   ExternalLink,
   Eye,
   FileWarning,
@@ -62,7 +63,7 @@ const khanProject = {
   status: 'Early community',
   lastUpdate: '2026-06-19',
   trustScore: 74,
-  riskLevel: 'Moderate',
+  riskLevel: 'Medium',
   founderStatus: 'Public mission, early founder activity',
   communitySize: 1280,
   holders: 0,
@@ -91,7 +92,7 @@ const khanProject = {
     { phase: 'Phase 4 - Community proof tools', status: 'Planned' },
     { phase: 'Phase 5 - AI-assisted project analysis', status: 'Planned' },
   ],
-  riskNotes: 'Early ecosystem project. Users should review activity and public updates before forming opinions.',
+  riskNotes: 'Planned community/utility token. Users should review activity and public updates before forming opinions.',
 };
 
 const demoProjects = [
@@ -111,7 +112,7 @@ const demoProjects = [
     status: 'Verified demo',
     lastUpdate: '2026-06-17',
     trustScore: 86,
-    riskLevel: 'Lower',
+    riskLevel: 'Low',
     founderStatus: 'Public operators',
     communitySize: 18600,
     holders: 12450,
@@ -199,7 +200,7 @@ const demoProjects = [
     status: 'Building',
     lastUpdate: '2026-06-15',
     trustScore: 67,
-    riskLevel: 'Moderate',
+    riskLevel: 'Medium',
     founderStatus: 'Public creator',
     communitySize: 5200,
     holders: 1680,
@@ -740,8 +741,8 @@ function roadmapFromText(text) {
 }
 
 function scoreToRisk(score) {
-  if (score >= 78) return 'Lower';
-  if (score >= 55) return 'Moderate';
+  if (score >= 78) return 'Low';
+  if (score >= 55) return 'Medium';
   return 'High';
 }
 
@@ -807,6 +808,101 @@ function holderRiskLevel(data = {}) {
   if (data.topHolderPercent > 35 || data.topTenHolderPercent > 70) return 'High risk signal';
   if (data.topHolderPercent > 20 || data.topTenHolderPercent > 50) return 'Moderate risk signal';
   return 'Lower concentration risk';
+}
+
+function riskBadge(score) {
+  if (score >= 78) return 'Low Risk';
+  if (score >= 55) return 'Medium Risk';
+  return 'High Risk';
+}
+
+function riskSignals(project = {}) {
+  const data = project.realData || {};
+  const holders = Number(data.holderCount || project.holders || project.communitySize || 0);
+  const liquidity = Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0);
+  const socialLinks = [project.website, project.twitter, project.telegram, project.github].filter(hasValue).length;
+  const founderText = project.founderStatus || 'Not provided';
+
+  return [
+    {
+      label: 'Holder risk',
+      value: holderRiskLabel(data, holders),
+      detail: holderRiskDetail(data, holders),
+    },
+    {
+      label: 'Liquidity risk',
+      value: liquidityRiskLabel(liquidity),
+      detail: liquidity ? `${formatCurrency(liquidity)} public liquidity found.` : 'Liquidity data is not available yet.',
+    },
+    {
+      label: 'Social risk',
+      value: socialRiskLabel(socialLinks),
+      detail: `${socialLinks}/4 public links found: website, X/Twitter, Telegram, GitHub.`,
+    },
+    {
+      label: 'Founder / roadmap status',
+      value: founderRoadmapLabel(project),
+      detail: `${founderText}. ${roadmapClarity(project)}.`,
+    },
+  ];
+}
+
+function holderRiskLabel(data = {}, holders = 0) {
+  if (data.topHolderPercent > 35 || data.topTenHolderPercent > 70) return 'High';
+  if (data.topHolderPercent > 20 || data.topTenHolderPercent > 50 || (holders > 0 && holders < 500)) return 'Medium';
+  if (holders >= 500 || data.topHolderPercent !== null) return 'Low';
+  return 'Limited data';
+}
+
+function holderRiskDetail(data = {}, holders = 0) {
+  if (!holders && data.topHolderPercent === null) return 'Holder count and concentration need more public data.';
+  const holderText = holders ? `${formatNumber(holders)} holders found` : 'Holder count not available';
+  const topHolderText = data.topHolderPercent === null || data.topHolderPercent === undefined
+    ? 'top holder data unavailable'
+    : `largest holder at ${formatPercent(data.topHolderPercent)}`;
+  return `${holderText}; ${topHolderText}.`;
+}
+
+function liquidityRiskLabel(liquidity = 0) {
+  if (!liquidity) return 'Limited data';
+  if (liquidity < 5000) return 'High';
+  if (liquidity < 50000) return 'Medium';
+  return 'Low';
+}
+
+function socialRiskLabel(count = 0) {
+  if (count <= 1) return 'High';
+  if (count <= 2) return 'Medium';
+  return 'Low';
+}
+
+function founderRoadmapLabel(project = {}) {
+  if (project.founderStatus?.toLowerCase().includes('anonymous')) return 'High';
+  if (!hasRoadmap(project)) return 'Medium';
+  if (isPublicFounder(project.founderStatus)) return 'Low';
+  return 'Medium';
+}
+
+function plainRiskExplanation(project = {}) {
+  const score = project.trustScore || 0;
+  if (score >= 78) {
+    return 'This token has stronger public signals, but users should still check holders, liquidity, links, and recent updates before acting.';
+  }
+  if (score >= 55) {
+    return 'This token has some useful public signals, but there are still gaps. Review holder concentration, liquidity, social links, and roadmap proof carefully.';
+  }
+  return 'This token has weak or limited public signals. Treat it as high risk until stronger holder, liquidity, social, founder, and roadmap proof is available.';
+}
+
+function shareText(project = {}, channel = 'x') {
+  const name = project.name || 'this token';
+  const score = project.trustScore || 0;
+  const risk = riskBadge(score);
+  const contract = hasValue(project.contract) ? ` Contract: ${project.contract}` : '';
+  if (channel === 'telegram') {
+    return `KHAN Trust check: ${name} has a Trust Score of ${score}/100 (${risk}). Review holder, liquidity, social and founder risks before buying.${contract}`;
+  }
+  return `Checked ${name} on KHAN Trust: Trust Score ${score}/100 (${risk}). Review holder, liquidity, social and founder risks before buying.${contract}`;
 }
 
 function roundPercent(ratio) {
@@ -987,9 +1083,15 @@ function App() {
             openMethodology={() => setMethodologyOpen(true)}
           />
         )}
-        {(page.startsWith('project/') || page === 'khan') && !selectedProject && (
+        {page.startsWith('project/') && !selectedProject && (
           <section className="page-section">
             <EmptyState title="No live profile loaded" text="Search a Solana contract address to create a real KHAN Trust profile." />
+          </section>
+        )}
+        {page === 'khan' && !selectedProject && (
+          <section className="page-section">
+            <KhanTokenRole />
+            <Disclaimer />
           </section>
         )}
         {page === 'about' && <AboutPage openMethodology={() => setMethodologyOpen(true)} />}
@@ -1061,13 +1163,20 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, navigate, 
           <div className="hero-copy">
             <p className="eyebrow"><Shield size={16} /> Trust before hype.</p>
             <h1>KHAN Trust</h1>
-            <p className="hero-subtitle">Crypto project trust profiles before you believe the hype.</p>
+            <p className="hero-subtitle">Check token risk before you buy.</p>
             <p className="hero-explainer">
-              KHAN Trust helps users understand crypto projects by showing activity, transparency, community proof,
-              roadmap clarity, and risk signals.
+              KHAN Trust helps users understand holder, liquidity, social and founder risks.
             </p>
             <SearchBox value={query} onChange={setQuery} onSubmit={onSearch} loading={searchState.status === 'loading'} />
             <SearchStatus state={searchState} />
+            <div className="flow-steps" aria-label="KHAN Trust flow">
+              {['Paste token contract', 'Get Trust Score', 'Read simple risk explanation', 'Share result'].map((step, index) => (
+                <div className="flow-step" key={step}>
+                  <span>{index + 1}</span>
+                  <strong>{step}</strong>
+                </div>
+              ))}
+            </div>
             <div className="hero-actions">
               <button className="primary-button" onClick={() => navigate('explore')}>
                 Explore Projects <ArrowRight size={18} />
@@ -1096,7 +1205,7 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, navigate, 
               </div>
             </div>
             <div className="signal-list">
-              {['Activity proof', 'Community proof', 'Roadmap clarity', 'Risk flags'].map((item) => (
+              {['Holder risk', 'Liquidity risk', 'Social risk', 'Founder / roadmap status'].map((item) => (
                 <div key={item} className="signal-row">
                   <CheckCircle2 size={18} />
                   <span>{item}</span>
@@ -1119,6 +1228,7 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, navigate, 
         </div>
         {!featured.length && <EmptyState title="No saved live profiles" text="Search a Solana contract address to create the first real trust profile." />}
       </section>
+      <KhanTokenRole />
       <Disclaimer />
     </>
   );
@@ -1314,24 +1424,100 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
         <div className="profile-score-card">
           <ScoreCircle score={project.trustScore} size="large" />
           <RiskPill level={project.riskLevel} />
+          <strong>{riskBadge(project.trustScore)}</strong>
           <span className="status-badge">{project.status}</span>
         </div>
       </div>
 
       <div className="profile-layout">
         <div className="main-column">
+          <RiskSummary project={project} />
           <InfoGrid project={project} />
           <TrustBreakdown project={project} />
           {project.realData && <RealDataSection project={project} data={project.realData} />}
           <RiskFlags flags={project.riskFlags} />
           <Timeline items={project.timeline} />
           <Roadmap phases={project.roadmap} />
+          <ShareReady project={project} />
+          <KhanTokenRole />
         </div>
         <aside className="side-column">
           <CommunityProof project={project} />
           <Disclaimer compact />
         </aside>
       </div>
+    </section>
+  );
+}
+
+function RiskSummary({ project }) {
+  return (
+    <section className="detail-section">
+      <SectionTitle icon={AlertTriangle} eyebrow="Result" title="Simple Risk Summary" />
+      <div className="result-score-row">
+        <div>
+          <span>Trust Score</span>
+          <strong>{project.trustScore}/100</strong>
+        </div>
+        <RiskPill level={project.riskLevel} />
+      </div>
+      <div className="risk-summary-grid">
+        {riskSignals(project).map((item) => (
+          <div className="risk-summary-item" key={item.label}>
+            <span>{item.label}</span>
+            <strong>{item.value}</strong>
+            <p>{item.detail}</p>
+          </div>
+        ))}
+      </div>
+      <p className="plain-explanation">{plainRiskExplanation(project)}</p>
+    </section>
+  );
+}
+
+function ShareReady({ project }) {
+  const [copied, setCopied] = useState('');
+  const copy = async (channel) => {
+    const text = shareText(project, channel);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(channel);
+      window.setTimeout(() => setCopied(''), 1600);
+    } catch {
+      setCopied('error');
+    }
+  };
+
+  return (
+    <section className="detail-section">
+      <SectionTitle icon={MessageCircle} eyebrow="Share" title="Share-ready Result" />
+      <div className="share-grid">
+        {[
+          ['x', 'X/Twitter', shareText(project, 'x')],
+          ['telegram', 'Telegram', shareText(project, 'telegram')],
+        ].map(([channel, label, text]) => (
+          <div className="share-card" key={channel}>
+            <span>{label}</span>
+            <p>{text}</p>
+            <button className="secondary-button" type="button" onClick={() => copy(channel)}>
+              <Copy size={17} /> {copied === channel ? 'Copied' : 'Copy text'}
+            </button>
+          </div>
+        ))}
+      </div>
+      {copied === 'error' && <p className="inline-note">Copy is not available in this browser. Select the text manually.</p>}
+    </section>
+  );
+}
+
+function KhanTokenRole() {
+  return (
+    <section className="detail-section khan-token-role">
+      <SectionTitle icon={Star} eyebrow="Ecosystem" title="KHAN Token Role" />
+      <p>
+        KHAN is planned as the community/utility token of the KHAN Trust ecosystem. Future utility may include premium
+        analysis, early access, community features and holder-based benefits. No profit or investment promise.
+      </p>
     </section>
   );
 }
@@ -1774,7 +1960,7 @@ function ScoreCircle({ score, size = 'normal' }) {
 }
 
 function RiskPill({ level }) {
-  return <span className={`risk-pill ${level.toLowerCase()}`}>{level} risk</span>;
+  return <span className={`risk-pill ${level.toLowerCase()}`}>{level} Risk</span>;
 }
 
 function SectionTitle({ icon: Icon, eyebrow, title }) {
@@ -1800,10 +1986,7 @@ function Disclaimer({ compact = false }) {
   return (
     <section className={compact ? 'disclaimer compact' : 'disclaimer'}>
       <AlertTriangle size={18} />
-      <p>
-        KHAN Trust is not financial advice. KHAN Trust does not tell users to buy or sell. KHAN Trust shows project
-        information, activity, transparency, and risk signals so users can make their own decisions.
-      </p>
+      <p>KHAN Trust is not financial advice. Always do your own research.</p>
     </section>
   );
 }

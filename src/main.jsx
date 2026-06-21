@@ -2298,6 +2298,7 @@ function CryptoPaymentSection() {
   const [copied, setCopied] = useState(false);
   const [plan, setPlan] = useState('premium');
   const [verifyStatus, setVerifyStatus] = useState('idle');
+  const [debugInfo, setDebugInfo] = useState(null);
   const walletConfigured = Boolean(CRYPTO_PAYMENT_WALLET);
   const verificationConfigured = isSolanaVerificationConfigured();
 
@@ -2315,18 +2316,22 @@ function CryptoPaymentSection() {
   const verifyPayment = async () => {
     if (!verificationConfigured) {
       setVerifyStatus('not_configured');
+      setDebugInfo(null);
       return;
     }
     if (!transactionHash.trim()) {
       setVerifyStatus('idle');
+      setDebugInfo(null);
       return;
     }
 
     trackCryptoVerifyStarted(plan);
     setVerifyStatus('verifying');
+    setDebugInfo(null);
 
     const result = await verifySolanaPayment({ transactionHash, plan });
     setVerifyStatus(result.status);
+    setDebugInfo(result.debug || null);
 
     if (result.status === 'verified') {
       trackCryptoVerifySuccess(plan);
@@ -2398,6 +2403,23 @@ function CryptoPaymentSection() {
         <p className="inline-note">
           Payment verified. Premium activation will be handled by the team until user accounts are added.
         </p>
+      )}
+
+      {debugInfo && (
+        <div className="inline-note verify-debug-panel">
+          <strong>Debug output (temporary)</strong>
+          <ul>
+            <li>Signature length: {debugInfo.signatureLength}</li>
+            <li>RPC response received: {debugInfo.rpcResponseReceived ? 'yes' : 'no'}</li>
+            <li>Transaction confirmation status: {debugInfo.confirmationStatus ?? 'n/a'}</li>
+            <li>Detected receiver wallet: {debugInfo.detectedReceiverWallet ?? 'none'}</li>
+            <li>Expected receiver wallet: {debugInfo.expectedReceiverWallet ?? 'not set'}</li>
+            <li>Detected SOL amount: {debugInfo.detectedSolAmount}</li>
+            <li>Detected USD value: {debugInfo.detectedUsdValue} {debugInfo.priceSource ? `(source: ${debugInfo.priceSource})` : ''}</li>
+            <li>Selected plan required amount: ${debugInfo.requiredUsdAmount}</li>
+            <li>Final decision: {debugInfo.finalDecision}</li>
+          </ul>
+        </div>
       )}
 
       <p className="inline-note">If automatic verification fails, contact the team with your transaction hash.</p>

@@ -2,8 +2,7 @@ const RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || '';
 const PAYMENT_WALLET = import.meta.env.VITE_KHAN_PAYMENT_WALLET || '';
 
 const LAMPORTS_PER_SOL = 1_000_000_000;
-const SOL_PRICE_URL = 'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd';
-const SOL_PRICE_TIMEOUT_MS = 5000;
+const PRICE_TIMEOUT_MS = 5000;
 // Allow a small tolerance for price-feed drift / rounding when SOL is used to pay a USD-denominated plan.
 const AMOUNT_TOLERANCE = 0.98;
 const SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
@@ -13,6 +12,25 @@ const PLAN_USD_AMOUNT = {
   early_supporter: 29,
 };
 
+// Multiple independent price sources so a single rate-limited/unreachable API
+// doesn't turn a real underpayment into an opaque "Payment failed".
+const SOL_PRICE_SOURCES = [
+  {
+    name: 'coingecko',
+    url: 'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd',
+    extract: (data) => data?.solana?.usd,
+  },
+  {
+    name: 'binance',
+    url: 'https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT',
+    extract: (data) => Number(data?.price),
+  },
+];
+
+function getRequiredUsdAmount(plan) {
+  return PLAN_USD_AMOUNT[plan] || PLAN_USD_AMOUNT.premium;
+}
+
 export function isSolanaVerificationConfigured() {
   return Boolean(RPC_URL && PAYMENT_WALLET);
 }
@@ -21,36 +39,53 @@ export function solanaUnavailableMessage() {
   return 'Automatic verification is not configured yet';
 }
 
-function getRequiredUsdAmount(plan) {
-  return PLAN_USD_AMOUNT[plan] || PLAN_USD_AMOUNT.premium;
+async function fetchWithTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
-async function rpcCall(method, params) {
-  const response = await fetch(RPC_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-  });
+async function rpcPost(method, params) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), PRICE_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(RPC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timer);
+  }
   if (!response.ok) throw new Error(`RPC request failed (${response.status})`);
   const data = await response.json();
   if (data.error) throw new Error(data.error.message || 'RPC error');
   return data.result;
 }
 
-async function fetchSolUsdPrice() {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), SOL_PRICE_TIMEOUT_MS);
-  try {
-    const response = await fetch(SOL_PRICE_URL, { signal: controller.signal });
-    if (!response.ok) return null;
-    const data = await response.json();
-    const price = data?.solana?.usd;
-    return typeof price === 'number' && price > 0 ? price : null;
-  } catch {
-    return null;
-  } finally {
-    window.clearTimeout(timer);
+async function fetchSolUsdPrice(debug) {
+  for (const source of SOL_PRICE_SOURCES) {
+    try {
+      const response = await fetchWithTimeout(source.url, PRICE_TIMEOUT_MS);
+      if (!response.ok) continue;
+      const data = await response.json();
+      const price = source.extract(data);
+      if (typeof price === 'number' && price > 0) {
+        debug.priceSource = source.name;
+        return price;
+      }
+    } catch {
+      // try the next source
+    }
   }
+  debug.priceSource = 'unavailable';
+  return null;
 }
 
 function extractAccountKeys(transaction) {
@@ -98,45 +133,80 @@ function findTokenTransferAmount(meta) {
   return total;
 }
 
-function isReceiverInTransaction(transaction, meta) {
-  if (extractAccountKeys(transaction).includes(PAYMENT_WALLET)) return true;
-  return (meta?.postTokenBalances || []).some((entry) => entry.owner === PAYMENT_WALLET);
+function findReceiverWallet(transaction, meta) {
+  if (extractAccountKeys(transaction).includes(PAYMENT_WALLET)) return PAYMENT_WALLET;
+  const tokenOwner = (meta?.postTokenBalances || []).find((entry) => entry.owner === PAYMENT_WALLET);
+  if (tokenOwner) return PAYMENT_WALLET;
+  // Report whichever wallet actually received funds, for debugging mismatches.
+  const accountKeys = extractAccountKeys(transaction);
+  if (meta?.preBalances && meta?.postBalances) {
+    const idx = meta.postBalances.findIndex((bal, i) => bal > meta.preBalances[i] && accountKeys[i] !== transaction?.message?.accountKeys?.[0]);
+    if (idx > -1) return accountKeys[idx];
+  }
+  return null;
 }
 
 export async function verifySolanaPayment({ transactionHash, plan }) {
+  const debug = {
+    signatureLength: (transactionHash || '').trim().length,
+    rpcResponseReceived: false,
+    confirmationStatus: null,
+    detectedReceiverWallet: null,
+    expectedReceiverWallet: PAYMENT_WALLET || null,
+    detectedSolAmount: 0,
+    detectedUsdValue: 0,
+    requiredUsdAmount: getRequiredUsdAmount(plan),
+    priceSource: null,
+    finalDecision: null,
+  };
+
   if (!isSolanaVerificationConfigured()) {
-    return { status: 'not_configured', message: solanaUnavailableMessage() };
+    debug.finalDecision = 'not_configured';
+    return { status: 'not_configured', message: solanaUnavailableMessage(), debug };
   }
 
   const signature = (transactionHash || '').trim();
   if (!signature) {
-    return { status: 'waiting', message: 'Waiting for transaction hash' };
+    debug.finalDecision = 'waiting';
+    return { status: 'waiting', message: 'Waiting for transaction hash', debug };
   }
 
   if (!SIGNATURE_PATTERN.test(signature)) {
-    return { status: 'failed', message: 'Payment failed', reason: 'invalid_signature_format' };
+    debug.finalDecision = 'failed (invalid signature format)';
+    return { status: 'failed', message: 'Payment failed', reason: 'invalid_signature_format', debug };
   }
 
   let result;
   try {
-    result = await rpcCall('getTransaction', [
+    result = await rpcPost('getTransaction', [
       signature,
       { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed' },
     ]);
+    debug.rpcResponseReceived = true;
   } catch (error) {
-    return { status: 'failed', message: 'Payment failed', reason: error.message };
+    debug.rpcResponseReceived = false;
+    debug.finalDecision = `failed (rpc error: ${error.message})`;
+    return { status: 'failed', message: 'Payment failed', reason: error.message, debug };
   }
 
   if (!result) {
-    return { status: 'not_confirmed', message: 'Transaction not confirmed yet' };
+    debug.confirmationStatus = 'not found / not yet confirmed';
+    debug.finalDecision = 'not_confirmed';
+    return { status: 'not_confirmed', message: 'Transaction not confirmed yet', debug };
   }
+
+  debug.confirmationStatus = result.meta?.err ? 'on-chain error' : 'confirmed';
 
   if (result.meta?.err) {
-    return { status: 'failed', message: 'Payment failed', reason: 'on_chain_error' };
+    debug.finalDecision = 'failed (on-chain error)';
+    return { status: 'failed', message: 'Payment failed', reason: 'on_chain_error', debug };
   }
 
-  if (!isReceiverInTransaction(result.transaction, result.meta)) {
-    return { status: 'wrong_receiver', message: 'Wrong receiver wallet' };
+  debug.detectedReceiverWallet = findReceiverWallet(result.transaction, result.meta);
+
+  if (debug.detectedReceiverWallet !== PAYMENT_WALLET) {
+    debug.finalDecision = 'wrong_receiver';
+    return { status: 'wrong_receiver', message: 'Wrong receiver wallet', debug };
   }
 
   const tokenAmount = findTokenTransferAmount(result.meta);
@@ -144,28 +214,37 @@ export async function verifySolanaPayment({ transactionHash, plan }) {
   if (solAmount === 0) {
     solAmount = findBalanceDiffSolTransfer(result.transaction, result.meta);
   }
+  debug.detectedSolAmount = solAmount;
 
-  const requiredUsd = getRequiredUsdAmount(plan);
+  const requiredUsd = debug.requiredUsdAmount;
 
   // Prefer the USDT (or other USD-pegged SPL token) amount when present - it maps 1:1 to USD.
   if (tokenAmount > 0) {
+    debug.detectedUsdValue = tokenAmount;
     if (tokenAmount < requiredUsd * AMOUNT_TOLERANCE) {
-      return { status: 'amount_too_low', message: 'Amount too low' };
+      debug.finalDecision = 'amount_too_low';
+      return { status: 'amount_too_low', message: 'Amount too low', debug };
     }
-    return { status: 'verified', message: 'Payment verified' };
+    debug.finalDecision = 'verified';
+    return { status: 'verified', message: 'Payment verified', debug };
   }
 
   if (solAmount > 0) {
-    const solPrice = await fetchSolUsdPrice();
+    const solPrice = await fetchSolUsdPrice(debug);
     if (!solPrice) {
-      return { status: 'failed', message: 'Payment failed', reason: 'price_unavailable' };
+      debug.finalDecision = 'failed (sol/usd price unavailable)';
+      return { status: 'failed', message: 'Payment failed', reason: 'price_unavailable', debug };
     }
     const paidUsd = solAmount * solPrice;
+    debug.detectedUsdValue = paidUsd;
     if (paidUsd < requiredUsd * AMOUNT_TOLERANCE) {
-      return { status: 'amount_too_low', message: 'Amount too low' };
+      debug.finalDecision = 'amount_too_low';
+      return { status: 'amount_too_low', message: 'Amount too low', debug };
     }
-    return { status: 'verified', message: 'Payment verified' };
+    debug.finalDecision = 'verified';
+    return { status: 'verified', message: 'Payment verified', debug };
   }
 
-  return { status: 'amount_too_low', message: 'Amount too low' };
+  debug.finalDecision = 'amount_too_low (no transfer detected)';
+  return { status: 'amount_too_low', message: 'Amount too low', debug };
 }

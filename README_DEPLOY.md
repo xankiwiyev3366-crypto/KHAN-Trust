@@ -18,6 +18,11 @@ KHAN Trust is a standalone React + Vite frontend app.
 ## Environment Variables
 
 - `VITE_GA_MEASUREMENT_ID` (optional) - Google Analytics 4 measurement ID (e.g. `G-XXXXXXXXXX`). When unset, no GA scripts load and no analytics events are sent. See `.env.example`.
+- `VITE_STRIPE_PUBLISHABLE_KEY` (optional) - Stripe publishable key for client-side Checkout redirects. Do not use a secret key here.
+- `VITE_STRIPE_PREMIUM_PRICE_ID` (optional) - Stripe Price ID for the Premium monthly plan.
+- `VITE_STRIPE_SUPPORTER_PRICE_ID` (optional) - Stripe Price ID for the Early Supporter one-time payment.
+
+If any required Stripe variable is missing, payment buttons show “Payments are not configured yet” and the site keeps working.
 
 ## Notes
 

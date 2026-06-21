@@ -66,16 +66,24 @@ export function trackReportViewed(project = {}) {
   });
 }
 
-export function trackPricingViewed() {
-  trackEvent('pricing_viewed');
+export function trackPricingView() {
+  trackEvent('pricing_view');
 }
 
-export function trackUnlockFullReport(project = {}) {
-  trackEvent('unlock_full_report_clicked', {
-    token_name: project.name,
-    token_ticker: project.ticker,
-    chain: project.chain,
-  });
+export function trackPremiumClick() {
+  trackEvent('premium_click');
+}
+
+export function trackEarlySupporterClick() {
+  trackEvent('early_supporter_click');
+}
+
+export function trackCheckoutStarted(plan) {
+  trackEvent('checkout_started', { plan });
+}
+
+export function trackCheckoutUnavailable(plan, reason = 'missing_config') {
+  trackEvent('checkout_unavailable', { plan, reason });
 }
 
 export function trackSocialClick(network, url) {

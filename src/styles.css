@@ -462,6 +462,12 @@ main {
   background: rgba(255,255,255,0.03);
 }
 
+.payment-message {
+  color: var(--gold-bright);
+  border-color: var(--border);
+  background: var(--gold-soft);
+}
+
 .token-check-card,
 .pricing-card,
 .one-time-offer {

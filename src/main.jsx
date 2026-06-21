@@ -45,14 +45,18 @@ import {
   initAnalytics,
   trackPageView,
   trackPdfDownload,
-  trackPricingViewed,
+  trackCheckoutStarted,
+  trackCheckoutUnavailable,
+  trackEarlySupporterClick,
+  trackPremiumClick,
+  trackPricingView,
   trackReportViewed,
   trackShareClick,
   trackSocialClick,
   trackTokenScanCompleted,
   trackTokenScanStarted,
-  trackUnlockFullReport,
 } from './analytics.js';
+import { isStripeConfigured, startStripeCheckout } from './stripeCheckout.js';
 
 const PROJECTS_KEY = 'khan-trust-projects-v1';
 const WATCHLIST_KEY = 'khan-trust-watchlist-v1';
@@ -1414,8 +1418,32 @@ async function handleDownloadPdf(project) {
 }
 
 function handleUnlockPremiumClick(project) {
-  trackUnlockFullReport(project);
-  alert('Payments are not live yet. Premium features are coming soon.');
+  trackPremiumClick();
+  return handleCheckout('premium');
+}
+
+function handleEarlySupporterClick() {
+  trackEarlySupporterClick();
+  return handleCheckout('early_supporter');
+}
+
+async function handleCheckout(plan) {
+  if (!isStripeConfigured(plan)) {
+    trackCheckoutUnavailable(plan, 'missing_config');
+    return { ok: false, message: 'Payments are not configured yet' };
+  }
+
+  trackCheckoutStarted(plan);
+  try {
+    const result = await startStripeCheckout(plan);
+    if (!result.ok) {
+      trackCheckoutUnavailable(plan, result.reason);
+    }
+    return result;
+  } catch {
+    trackCheckoutUnavailable(plan, 'checkout_error');
+    return { ok: false, message: 'Payments are not configured yet' };
+  }
 }
 
 function shareText(project = {}, channel = 'x') {
@@ -1512,7 +1540,7 @@ function App() {
   }, [page]);
 
   useEffect(() => {
-    if (page === 'pricing') trackPricingViewed();
+    if (page === 'pricing') trackPricingView();
   }, [page]);
 
   const projects = useMemo(() => userProjects.map((project) => normalizeProject(project)), [userProjects]);
@@ -2086,10 +2114,16 @@ function RiskReportPage({ project, navigate }) {
 }
 
 function PremiumLockedSection({ project, navigate }) {
+  const [paymentMessage, setPaymentMessage] = useState('');
+  const unlockPremium = async () => {
+    const result = await handleUnlockPremiumClick(project);
+    if (!result?.ok) setPaymentMessage(result?.message || 'Payments are not configured yet');
+  };
+
   return (
     <section className="detail-section premium-lock-section">
-      <SectionTitle icon={Lock} eyebrow="Premium" title="Premium features are coming soon" />
-      <p className="inline-note">Basic scans and PDF reports remain free. Payments are not live yet.</p>
+      <SectionTitle icon={Lock} eyebrow="Premium" title="Unlock premium risk tools" />
+      <p className="inline-note">Premium features are optional. Payments unlock platform features only. PDF export remains free for now.</p>
       <div className="premium-feature-grid">
         {premiumReportItems.map(([title, text]) => (
           <div className="premium-feature locked" key={title}>
@@ -2102,35 +2136,49 @@ function PremiumLockedSection({ project, navigate }) {
       <div className="unlock-bar">
         <strong>Unlock Premium</strong>
         <div>
-          <button className="primary-button" type="button" onClick={() => handleUnlockPremiumClick(project)}>
-            Unlock Premium - Coming soon
+          <button className="primary-button" type="button" onClick={unlockPremium}>
+            Unlock Premium
           </button>
           <button className="secondary-button" type="button" onClick={() => navigate('pricing')}>
             View plans <ArrowRight size={18} />
           </button>
         </div>
       </div>
+      {paymentMessage && <p className="inline-note">{paymentMessage}</p>}
     </section>
   );
 }
 
 function OneTimeUnlockCard({ project, navigate }) {
+  const [paymentMessage, setPaymentMessage] = useState('');
+  const unlockPremium = async () => {
+    const result = await handleUnlockPremiumClick(project);
+    if (!result?.ok) setPaymentMessage(result?.message || 'Payments are not configured yet');
+  };
+
   return (
     <section className="detail-section one-time-card">
-      <SectionTitle icon={FileWarning} eyebrow="Premium" title="Future Access" />
-      <strong>Premium features are coming soon</strong>
-      <p>Payments are not live yet. PDF report export remains available in the free report.</p>
-      <button className="primary-button" type="button" onClick={() => handleUnlockPremiumClick(project)}>
-        Unlock Premium - Coming soon
+      <SectionTitle icon={FileWarning} eyebrow="Premium" title="Premium Access" />
+      <strong>$9/month</strong>
+      <p>Premium features are optional. Payments unlock platform features only.</p>
+      <button className="primary-button" type="button" onClick={unlockPremium}>
+        Unlock Premium
       </button>
       <button className="secondary-button" type="button" onClick={() => navigate('pricing')}>
         View Pricing <WalletCards size={18} />
       </button>
+      {paymentMessage && <p className="inline-note">{paymentMessage}</p>}
     </section>
   );
 }
 
 function PricingPage({ navigate }) {
+  const [paymentMessage, setPaymentMessage] = useState('');
+  const beginCheckout = async (plan) => {
+    const result = plan === 'early_supporter' ? await handleEarlySupporterClick() : await handleUnlockPremiumClick();
+    if (!result?.ok) setPaymentMessage(result?.message || 'Payments are not configured yet');
+  };
+
   const plans = [
     {
       name: 'Free',
@@ -2142,20 +2190,20 @@ function PricingPage({ navigate }) {
     },
     {
       name: 'Premium',
-      price: 'Coming soon',
-      description: 'Premium features are coming soon. Payments are not live yet.',
+      price: '$9/month',
+      description: 'Optional Premium access for saved reports, watchlist, and deeper analysis placeholders.',
       features: ['Saved reports', 'Watchlist', 'Deeper risk analysis', 'Advanced holder insights', 'Telegram alerts'],
-      cta: 'Unlock Premium - Coming soon',
-      action: () => handleUnlockPremiumClick(),
+      cta: 'Unlock Premium',
+      action: () => beginCheckout('premium'),
       featured: true,
     },
     {
       name: 'Early Supporter',
-      price: 'Coming soon',
-      description: 'Early supporters may receive benefits later. No benefits are guaranteed.',
+      price: '$29 one-time',
+      description: 'Optional one-time supporter access. Early supporters may receive benefits later.',
       features: ['Early supporter badge placeholder', 'Potential future benefits', 'No token investment claims', 'No profit promises'],
-      cta: 'Coming soon',
-      action: () => alert('Payments are not live yet. Early supporter access is coming soon.'),
+      cta: 'Become Early Supporter',
+      action: () => beginCheckout('early_supporter'),
     },
   ];
 
@@ -2163,12 +2211,12 @@ function PricingPage({ navigate }) {
     <section className="page-section pricing-page">
       <SectionTitle icon={WalletCards} eyebrow="Pricing" title="Plans for KHAN Trust" />
       <p className="pricing-intro">
-        Basic scans remain free, PDF report export remains available, and Premium access is being prepared without real payments.
-        Payments are not live yet.
+        Basic scans remain free and PDF report export remains available for now. Premium features are optional, and payments unlock platform features only.
       </p>
       <p className="pricing-note">
-        Premium reports will include PDF export, deeper holder analysis and Telegram alerts.
+        KHAN Trust does not promise profit, returns, or investment outcomes.
       </p>
+      {paymentMessage && <p className="pricing-note payment-message">{paymentMessage}</p>}
       <div className="premium-value-strip">
         {premiumReportItems.map(([title]) => (
           <span key={title}><CheckCircle2 size={16} /> {title}</span>
@@ -2176,12 +2224,12 @@ function PricingPage({ navigate }) {
       </div>
       <div className="one-time-offer">
         <div>
-          <span className="status-badge">Safe launch mode</span>
-          <h3>Premium features are coming soon</h3>
-          <p>No real payment processing, no checkout, and no token investment claims are connected.</p>
+          <span className="status-badge">Stripe Checkout</span>
+          <h3>Payments unlock platform features only</h3>
+          <p>If Stripe environment variables are missing, checkout stays unavailable and the site continues normally.</p>
         </div>
-        <button className="primary-button" type="button" onClick={() => handleUnlockPremiumClick()}>
-          Unlock Premium - Coming soon
+        <button className="primary-button" type="button" onClick={() => beginCheckout('premium')}>
+          Unlock Premium
         </button>
       </div>
       <div className="pricing-grid">
@@ -2202,7 +2250,7 @@ function PricingPage({ navigate }) {
         ))}
       </div>
       <p className="pricing-note">
-        Early supporters may receive benefits later. KHAN Trust does not promise profit, returns, or investment outcomes.
+        Premium features are optional. Early supporters may receive benefits later. KHAN Trust does not promise profit, returns, or investment outcomes.
       </p>
       <Disclaimer />
     </section>
@@ -2246,6 +2294,11 @@ function ProjectCard({ project, navigate }) {
 
 function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openMethodology }) {
   const confidence = confidenceScore(project);
+  const unlockPremium = async () => {
+    const result = await handleUnlockPremiumClick(project);
+    if (!result?.ok) alert(result?.message || 'Payments are not configured yet');
+  };
+
   return (
     <section className="profile-page">
       <div className="profile-hero">
@@ -2267,8 +2320,8 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
             <button className="secondary-button" onClick={() => handleDownloadPdf(project)}>
               <Download size={18} /> Download PDF Report
             </button>
-            <button className="primary-button" onClick={() => handleUnlockPremiumClick(project)}>
-              <Lock size={18} /> Unlock Premium - Coming soon
+            <button className="primary-button" onClick={unlockPremium}>
+              <Lock size={18} /> Unlock Premium
             </button>
             <button className="secondary-button" onClick={() => alert('Suggestion noted locally for the MVP. In a future version this can open a moderation flow.')}>
               <Flag size={18} /> Report / Suggest Update

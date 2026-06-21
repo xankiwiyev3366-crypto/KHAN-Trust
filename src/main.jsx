@@ -56,10 +56,11 @@ import {
   trackTokenScanCompleted,
   trackTokenScanStarted,
 } from './analytics.js';
-import { isStripeConfigured, startStripeCheckout } from './stripeCheckout.js';
+import { isStripeConfigured, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
 
 const PROJECTS_KEY = 'khan-trust-projects-v1';
 const WATCHLIST_KEY = 'khan-trust-watchlist-v1';
+const CRYPTO_PAYMENT_WALLET = import.meta.env.VITE_KHAN_PAYMENT_WALLET || '';
 const SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com';
 const DEXSCREENER_SOLANA_TOKEN_URL = 'https://api.dexscreener.com/token-pairs/v1/solana';
 const JUPITER_TOKEN_SEARCH_URL = 'https://lite-api.jup.ag/tokens/v2/search';
@@ -1430,7 +1431,7 @@ function handleEarlySupporterClick() {
 async function handleCheckout(plan) {
   if (!isStripeConfigured(plan)) {
     trackCheckoutUnavailable(plan, 'missing_config');
-    return { ok: false, message: 'Payments are not configured yet' };
+    return { ok: false, message: stripeUnavailableMessage() };
   }
 
   trackCheckoutStarted(plan);
@@ -1442,7 +1443,7 @@ async function handleCheckout(plan) {
     return result;
   } catch {
     trackCheckoutUnavailable(plan, 'checkout_error');
-    return { ok: false, message: 'Payments are not configured yet' };
+    return { ok: false, message: stripeUnavailableMessage() };
   }
 }
 
@@ -2117,7 +2118,7 @@ function PremiumLockedSection({ project, navigate }) {
   const [paymentMessage, setPaymentMessage] = useState('');
   const unlockPremium = async () => {
     const result = await handleUnlockPremiumClick(project);
-    if (!result?.ok) setPaymentMessage(result?.message || 'Payments are not configured yet');
+    if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
   };
 
   return (
@@ -2153,7 +2154,7 @@ function OneTimeUnlockCard({ project, navigate }) {
   const [paymentMessage, setPaymentMessage] = useState('');
   const unlockPremium = async () => {
     const result = await handleUnlockPremiumClick(project);
-    if (!result?.ok) setPaymentMessage(result?.message || 'Payments are not configured yet');
+    if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
   };
 
   return (
@@ -2176,7 +2177,7 @@ function PricingPage({ navigate }) {
   const [paymentMessage, setPaymentMessage] = useState('');
   const beginCheckout = async (plan) => {
     const result = plan === 'early_supporter' ? await handleEarlySupporterClick() : await handleUnlockPremiumClick();
-    if (!result?.ok) setPaymentMessage(result?.message || 'Payments are not configured yet');
+    if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
   };
 
   const plans = [
@@ -2190,7 +2191,7 @@ function PricingPage({ navigate }) {
     },
     {
       name: 'Premium',
-      price: '$9/month',
+      price: '$9/month or 9 USDT/month',
       description: 'Optional Premium access for saved reports, watchlist, and deeper analysis placeholders.',
       features: ['Saved reports', 'Watchlist', 'Deeper risk analysis', 'Advanced holder insights', 'Telegram alerts'],
       cta: 'Unlock Premium',
@@ -2199,7 +2200,7 @@ function PricingPage({ navigate }) {
     },
     {
       name: 'Early Supporter',
-      price: '$29 one-time',
+      price: '$29 one-time or 29 USDT one-time',
       description: 'Optional one-time supporter access. Early supporters may receive benefits later.',
       features: ['Early supporter badge placeholder', 'Potential future benefits', 'No token investment claims', 'No profit promises'],
       cta: 'Become Early Supporter',
@@ -2214,23 +2215,13 @@ function PricingPage({ navigate }) {
         Basic scans remain free and PDF report export remains available for now. Premium features are optional, and payments unlock platform features only.
       </p>
       <p className="pricing-note">
-        KHAN Trust does not promise profit, returns, or investment outcomes.
+        KHAN Trust does not promise profit, returns, or investment outcomes. No investment claims.
       </p>
       {paymentMessage && <p className="pricing-note payment-message">{paymentMessage}</p>}
       <div className="premium-value-strip">
         {premiumReportItems.map(([title]) => (
           <span key={title}><CheckCircle2 size={16} /> {title}</span>
         ))}
-      </div>
-      <div className="one-time-offer">
-        <div>
-          <span className="status-badge">Stripe Checkout</span>
-          <h3>Payments unlock platform features only</h3>
-          <p>If Stripe environment variables are missing, checkout stays unavailable and the site continues normally.</p>
-        </div>
-        <button className="primary-button" type="button" onClick={() => beginCheckout('premium')}>
-          Unlock Premium
-        </button>
       </div>
       <div className="pricing-grid">
         {plans.map((plan) => (
@@ -2249,11 +2240,90 @@ function PricingPage({ navigate }) {
           </article>
         ))}
       </div>
+      <PaymentMethodsSection beginCheckout={beginCheckout} />
       <p className="pricing-note">
-        Premium features are optional. Early supporters may receive benefits later. KHAN Trust does not promise profit, returns, or investment outcomes.
+        Premium features are optional. Early supporters may receive benefits later. Payments unlock platform features only. KHAN Trust does not promise profit, returns, or investment outcomes.
       </p>
       <Disclaimer />
     </section>
+  );
+}
+
+function PaymentMethodsSection({ beginCheckout }) {
+  return (
+    <section className="payment-methods">
+      <CardPaymentSection beginCheckout={beginCheckout} />
+      <CryptoPaymentSection />
+    </section>
+  );
+}
+
+function CardPaymentSection({ beginCheckout }) {
+  const cardReady = isStripeConfigured('premium') || isStripeConfigured('early_supporter');
+  return (
+    <div className="payment-method-card">
+      <span className="status-badge">Card payment via Stripe</span>
+      <h3>Card payments</h3>
+      <p>Use Stripe Checkout for Premium or Early Supporter access. Payments unlock platform features only.</p>
+      {!cardReady && <p className="inline-note">Card payments are not configured yet</p>}
+      <div className="payment-action-row">
+        <button className="primary-button" type="button" onClick={() => beginCheckout('premium')}>
+          Unlock Premium
+        </button>
+        <button className="secondary-button" type="button" onClick={() => beginCheckout('early_supporter')}>
+          Become Early Supporter
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CryptoPaymentSection() {
+  const [transactionHash, setTransactionHash] = useState('');
+  const [copied, setCopied] = useState(false);
+  const walletConfigured = Boolean(CRYPTO_PAYMENT_WALLET);
+  const copyWallet = async () => {
+    if (!walletConfigured) return;
+    try {
+      await navigator.clipboard.writeText(CRYPTO_PAYMENT_WALLET);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div className="payment-method-card">
+      <span className="status-badge">Crypto payment via USDT/SOL</span>
+      <h3>Crypto payments</h3>
+      <p>Supported networks: Solana / USDT / SOL. Manual crypto verification for now.</p>
+      <div className="crypto-price-grid">
+        <span>Premium: 9 USDT/month</span>
+        <span>Early Supporter: 29 USDT one-time</span>
+      </div>
+      {walletConfigured ? (
+        <div className="wallet-copy-box">
+          <span>Payment wallet</span>
+          <strong>{CRYPTO_PAYMENT_WALLET}</strong>
+          <button className="secondary-button" type="button" onClick={copyWallet}>
+            <Copy size={17} /> {copied ? 'Copied' : 'Copy wallet address'}
+          </button>
+        </div>
+      ) : (
+        <p className="inline-note">Crypto payments are not configured yet</p>
+      )}
+      <label className="form-field transaction-field">
+        <span>Transaction hash</span>
+        <input
+          value={transactionHash}
+          onChange={(event) => setTransactionHash(event.target.value)}
+          placeholder="Paste transaction hash after payment"
+          disabled={!walletConfigured}
+        />
+      </label>
+      <p className="inline-note">Manual verification note: send the transaction hash to KHAN Trust support for account activation. No profit promises and no investment claims.</p>
+    </div>
   );
 }
 
@@ -2296,7 +2366,7 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
   const confidence = confidenceScore(project);
   const unlockPremium = async () => {
     const result = await handleUnlockPremiumClick(project);
-    if (!result?.ok) alert(result?.message || 'Payments are not configured yet');
+    if (!result?.ok) alert(result?.message || stripeUnavailableMessage());
   };
 
   return (

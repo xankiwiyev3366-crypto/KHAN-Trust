@@ -470,7 +470,8 @@ main {
 
 .token-check-card,
 .pricing-card,
-.one-time-offer {
+.one-time-offer,
+.payment-method-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: linear-gradient(180deg, rgba(25, 23, 16, 0.95), rgba(12, 12, 10, 0.96));
@@ -530,6 +531,7 @@ main {
 .one-time-card p,
 .pricing-card p,
 .one-time-offer p,
+.payment-method-card p,
 .premium-feature p {
   color: var(--muted);
   line-height: 1.6;
@@ -768,13 +770,69 @@ main {
 }
 
 .one-time-offer h3,
-.pricing-card h3 {
+.pricing-card h3,
+.payment-method-card h3 {
   margin: 12px 0 6px;
   font-size: 30px;
 }
 
 .pricing-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.payment-methods {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+}
+
+.payment-method-card {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 20px;
+}
+
+.payment-action-row,
+.crypto-price-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.crypto-price-grid span {
+  padding: 9px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  color: var(--gold-bright);
+  background: rgba(255,255,255,0.03);
+  font-weight: 850;
+}
+
+.wallet-copy-box {
+  display: grid;
+  gap: 9px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+}
+
+.wallet-copy-box span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.wallet-copy-box strong {
+  color: var(--gold-bright);
+  overflow-wrap: anywhere;
+}
+
+.transaction-field {
+  margin-top: 2px;
 }
 
 .pricing-card {
@@ -1682,6 +1740,7 @@ button:disabled {
   .report-metrics,
   .premium-feature-grid,
   .pricing-grid,
+  .payment-methods,
   .add-form,
   .compare-selectors,
   .about-grid,

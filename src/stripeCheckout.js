@@ -20,6 +20,10 @@ export function isStripeConfigured(plan = 'premium') {
   return Boolean(stripeConfig.publishableKey && getPriceId(plan));
 }
 
+export function stripeUnavailableMessage() {
+  return 'Card payments are not configured yet';
+}
+
 function loadStripeScript() {
   if (typeof window === 'undefined') return Promise.reject(new Error('Stripe is unavailable in this environment.'));
   if (window.Stripe) return Promise.resolve(window.Stripe);
@@ -46,12 +50,12 @@ function loadStripeScript() {
 
 export async function startStripeCheckout(plan = 'premium') {
   if (!isStripeConfigured(plan)) {
-    return { ok: false, reason: 'missing_config', message: 'Payments are not configured yet' };
+    return { ok: false, reason: 'missing_config', message: stripeUnavailableMessage() };
   }
 
   const Stripe = await loadStripeScript();
   if (typeof Stripe !== 'function') {
-    return { ok: false, reason: 'stripe_unavailable', message: 'Payments are not configured yet' };
+    return { ok: false, reason: 'stripe_unavailable', message: stripeUnavailableMessage() };
   }
 
   const stripe = Stripe(stripeConfig.publishableKey);
@@ -63,7 +67,7 @@ export async function startStripeCheckout(plan = 'premium') {
   });
 
   if (result?.error) {
-    return { ok: false, reason: 'redirect_failed', message: result.error.message || 'Payments are not configured yet' };
+    return { ok: false, reason: 'redirect_failed', message: result.error.message || stripeUnavailableMessage() };
   }
 
   return { ok: true };

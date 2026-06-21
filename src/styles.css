@@ -487,6 +487,13 @@ main {
   margin-bottom: 18px;
 }
 
+.report-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
 .report-hero h1 {
   margin: 12px 0 6px;
   font-size: clamp(42px, 8vw, 76px);
@@ -1722,12 +1729,14 @@ button:disabled {
   }
 
   .profile-actions,
-  .hero-actions {
+  .hero-actions,
+  .report-action-row {
     width: 100%;
   }
 
   .profile-actions button,
-  .hero-actions button {
+  .hero-actions button,
+  .report-action-row button {
     width: 100%;
   }
 

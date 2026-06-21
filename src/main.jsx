@@ -12,6 +12,7 @@ import {
   CircleDot,
   Clock3,
   Copy,
+  Download,
   ExternalLink,
   Eye,
   FileWarning,
@@ -40,6 +41,14 @@ import {
   X,
 } from 'lucide-react';
 import './styles.css';
+import {
+  initAnalytics,
+  trackPageView,
+  trackPdfDownload,
+  trackShareClick,
+  trackSocialClick,
+  trackTokenSearch,
+} from './analytics.js';
 
 const PROJECTS_KEY = 'khan-trust-projects-v1';
 const WATCHLIST_KEY = 'khan-trust-watchlist-v1';
@@ -1358,6 +1367,48 @@ function plainRiskExplanation(project = {}) {
   return 'This token has weak or limited public signals. Treat it as high risk until stronger holder, liquidity, social, founder, and roadmap proof is available.';
 }
 
+function buildPdfReportData(project = {}) {
+  const confidence = confidenceScore(project);
+  const data = project.realData || {};
+  return {
+    name: project.name,
+    ticker: project.ticker,
+    chain: project.chain,
+    contract: displayValue(project.contract),
+    trustScore: project.trustScore,
+    riskLevel: project.riskLevel,
+    confidenceLabel: confidence.label,
+    riskReasons: riskSignals(project).slice(0, 3),
+    riskNotes: project.riskNotes,
+    socialLinks: {
+      website: displayValue(project.website),
+      twitter: displayValue(project.twitter),
+      telegram: displayValue(project.telegram),
+      github: displayValue(project.github),
+    },
+    holderData: {
+      holderCount: formatNumber(data.holderCount || project.holders),
+      topHolderPercent: formatPercent(data.topHolderPercent),
+      topTenHolderPercent: formatPercent(data.topTenHolderPercent),
+    },
+    liquidityData: {
+      liquidityUsd: formatCurrency(data.totalLiquidityUsd ?? data.liquidityUsd),
+      marketCapUsd: formatCurrency(data.marketCapUsd),
+    },
+    generatedDate: new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
+  };
+}
+
+async function handleDownloadPdf(project) {
+  try {
+    const { generatePdfReport } = await import('./pdfReport.js');
+    generatePdfReport(buildPdfReportData(project));
+    trackPdfDownload(project);
+  } catch {
+    alert('PDF generation failed to load. Check your connection and try again.');
+  }
+}
+
 function shareText(project = {}, channel = 'x') {
   const name = project.name || 'this token';
   const score = project.trustScore || 0;
@@ -1443,6 +1494,14 @@ function App() {
   useEffect(() => writeStorage(PROJECTS_KEY, userProjects), [userProjects]);
   useEffect(() => writeStorage(WATCHLIST_KEY, watchlist), [watchlist]);
 
+  useEffect(() => {
+    initAnalytics();
+  }, []);
+
+  useEffect(() => {
+    trackPageView(`/${page}`);
+  }, [page]);
+
   const projects = useMemo(() => userProjects.map((project) => normalizeProject(project)), [userProjects]);
   const selectedProject = useMemo(() => {
     if (page === 'khan') return projects.find((project) => project.contract === '6bSHkoMYqzyCZdWPQ45nUv73dvdfx4yEd4yEemefpump') || null;
@@ -1502,9 +1561,11 @@ function App() {
       const liveProject = normalizeProject(await lookupSolanaToken(term));
       setUserProjects((items) => upsertProject(items, liveProject));
       setSearchState({ status: 'success', message: `Opened live profile for ${liveProject.name || liveProject.ticker}.` });
+      trackTokenSearch(term, 'success');
       navigate(`project/${liveProject.id}`);
     } catch (error) {
       setSearchState({ status: 'error', message: error.message || 'No live Solana token data was found.' });
+      trackTokenSearch(term, 'error');
       navigate('explore');
     }
   };
@@ -1521,11 +1582,13 @@ function App() {
     try {
       const liveProject = normalizeProject(await lookupSolanaToken(term));
       setUserProjects((items) => upsertProject(items, liveProject));
+      trackTokenSearch(term, 'success');
       navigate(`report/${liveProject.id}`);
       return { status: 'success', message: `Opened free risk report for ${liveProject.name || liveProject.ticker}.` };
     } catch (error) {
       const demoProject = normalizeProject(createDemoRiskProject(term, error.message));
       setUserProjects((items) => upsertProject(items, demoProject));
+      trackTokenSearch(term, 'demo-fallback');
       navigate(`report/${demoProject.id}`);
       return { status: 'success', message: 'Live API data was unavailable, so KHAN Trust opened a demo risk report.' };
     }
@@ -1927,6 +1990,12 @@ function RiskReportPage({ project, navigate }) {
         </div>
       </div>
 
+      <div className="report-action-row">
+        <button className="secondary-button" type="button" onClick={() => handleDownloadPdf(project)}>
+          <Download size={18} /> Download PDF Report
+        </button>
+      </div>
+
       <div className="report-layout">
         <div className="main-column">
           <section className="detail-section">
@@ -2162,6 +2231,9 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
             <button className="secondary-button" onClick={onEdit}>
               <Plus size={18} /> Edit Project
             </button>
+            <button className="secondary-button" onClick={() => handleDownloadPdf(project)}>
+              <Download size={18} /> Download PDF Report
+            </button>
             <button className="secondary-button" onClick={() => alert('Suggestion noted locally for the MVP. In a future version this can open a moderation flow.')}>
               <Flag size={18} /> Report / Suggest Update
             </button>
@@ -2234,6 +2306,7 @@ function ShareReady({ project }) {
   const [copied, setCopied] = useState('');
   const copy = async (channel) => {
     const text = shareText(project, channel);
+    trackShareClick(channel, project.name);
     try {
       await navigator.clipboard.writeText(text);
       setCopied(channel);
@@ -2287,7 +2360,7 @@ function InfoGrid({ project }) {
           <div className="info-item" key={label}>
             <Icon size={18} />
             <span>{label}</span>
-            <strong><InfoValue value={value} /></strong>
+            <strong><InfoValue value={value} network={label} /></strong>
           </div>
         ))}
       </div>
@@ -2295,20 +2368,20 @@ function InfoGrid({ project }) {
   );
 }
 
-function InfoValue({ value }) {
+function InfoValue({ value, network }) {
   if (value && typeof value === 'object' && 'state' in value) {
-    if (value.state === 'Present') return <ClickableLink href={value.value} />;
+    if (value.state === 'Present') return <ClickableLink href={value.value} network={network} />;
     return value.state;
   }
-  return <ClickableLink href={value} fallback={value || 'Not provided'} />;
+  return <ClickableLink href={value} fallback={value || 'Not provided'} network={network} />;
 }
 
-function ClickableLink({ href, fallback = 'Not provided' }) {
+function ClickableLink({ href, fallback = 'Not provided', network }) {
   if (!hasValue(href)) return fallback;
   const url = normalizeExternalUrl(href);
   if (!url) return href;
   return (
-    <a className="metadata-link" href={url} target="_blank" rel="noreferrer">
+    <a className="metadata-link" href={url} target="_blank" rel="noreferrer" onClick={() => trackSocialClick(network || 'unknown', url)}>
       {href} <ExternalLink size={13} />
     </a>
   );
@@ -2449,7 +2522,7 @@ function RealDataSection({ project, data }) {
           <div className="real-data-item" key={label}>
             <Icon size={18} />
             <span>{label}</span>
-            <strong><InfoValue value={value} /></strong>
+            <strong><InfoValue value={value} network={label} /></strong>
           </div>
         ))}
       </div>

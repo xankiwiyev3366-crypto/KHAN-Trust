@@ -437,6 +437,237 @@ main {
   margin-bottom: 20px;
 }
 
+.check-token-grid,
+.report-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.58fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.check-token-grid > div > p,
+.pricing-intro {
+  max-width: 720px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.token-check-card,
+.pricing-card,
+.one-time-offer {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(25, 23, 16, 0.95), rgba(12, 12, 10, 0.96));
+  box-shadow: 0 24px 80px rgba(0,0,0,0.34);
+}
+
+.token-check-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+
+.token-check-actions,
+.unlock-bar div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.report-page .back-button {
+  margin-bottom: 16px;
+}
+
+.report-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.report-hero h1 {
+  margin: 12px 0 6px;
+  font-size: clamp(42px, 8vw, 76px);
+  line-height: 0.95;
+}
+
+.report-hero p,
+.one-time-card p,
+.pricing-card p,
+.one-time-offer p,
+.premium-feature p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.contract-line {
+  display: block;
+  max-width: 100%;
+  color: var(--gold-bright);
+  overflow-wrap: anywhere;
+}
+
+.report-score {
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  min-width: 180px;
+}
+
+.report-metrics,
+.pricing-grid,
+.premium-feature-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.report-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.report-metrics div,
+.risk-reason,
+.premium-feature {
+  padding: 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+}
+
+.report-metrics span,
+.risk-reason span,
+.premium-feature span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.report-metrics strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 26px;
+}
+
+.risk-reason-list {
+  display: grid;
+  gap: 10px;
+}
+
+.risk-reason strong {
+  display: block;
+  margin-top: 5px;
+  color: var(--gold-bright);
+  font-size: 20px;
+}
+
+.risk-reason p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.premium-feature-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.premium-feature.locked {
+  position: relative;
+  opacity: 0.78;
+}
+
+.premium-feature svg {
+  color: var(--gold);
+  margin-bottom: 8px;
+}
+
+.premium-feature p {
+  margin: 8px 0 0;
+}
+
+.unlock-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--gold-soft);
+}
+
+.unlock-bar strong,
+.one-time-card > strong {
+  color: var(--gold-bright);
+  font-size: 20px;
+}
+
+.one-time-card {
+  display: grid;
+  gap: 12px;
+}
+
+.one-time-card .primary-button {
+  width: 100%;
+}
+
+.one-time-offer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 22px 0 18px;
+  padding: 20px;
+}
+
+.one-time-offer h3,
+.pricing-card h3 {
+  margin: 12px 0 6px;
+  font-size: 30px;
+}
+
+.pricing-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.pricing-card {
+  display: flex;
+  min-height: 360px;
+  flex-direction: column;
+  padding: 20px;
+}
+
+.pricing-card.featured {
+  border-color: rgba(244, 216, 137, 0.58);
+  box-shadow: 0 24px 90px rgba(224, 183, 92, 0.16);
+}
+
+.pricing-features {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.pricing-features span {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+}
+
+.pricing-features svg {
+  color: var(--success);
+  flex: 0 0 auto;
+}
+
+.pricing-card button {
+  width: 100%;
+  margin-top: auto;
+}
+
 .project-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1216,7 +1447,7 @@ button:disabled {
   bottom: 10px;
   z-index: 60;
   display: none;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   gap: 4px;
   padding: 7px;
   border: 1px solid var(--border);
@@ -1243,11 +1474,14 @@ button:disabled {
 
 @media (max-width: 1020px) {
   .hero-grid,
-  .profile-layout {
+  .profile-layout,
+  .check-token-grid,
+  .report-layout {
     grid-template-columns: 1fr;
   }
 
-  .project-grid {
+  .project-grid,
+  .pricing-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1301,6 +1535,9 @@ button:disabled {
   .flow-steps,
   .risk-summary-grid,
   .share-grid,
+  .report-metrics,
+  .premium-feature-grid,
+  .pricing-grid,
   .add-form,
   .compare-selectors,
   .about-grid,
@@ -1321,9 +1558,18 @@ button:disabled {
 
   .profile-hero,
   .signal-header,
-  .radar-score {
+  .radar-score,
+  .report-hero,
+  .one-time-offer,
+  .unlock-bar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .one-time-offer .primary-button,
+  .unlock-bar button,
+  .token-check-actions button {
+    width: 100%;
   }
 
   .profile-score-card {

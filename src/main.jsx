@@ -234,10 +234,20 @@ const demoProjects = [
 const navItems = [
   { id: 'home', label: 'Home', icon: Home },
   { id: 'explore', label: 'Explore', icon: Layers3 },
+  { id: 'pricing', label: 'Pricing', icon: WalletCards },
   { id: 'compare', label: 'Compare', icon: Scale },
   { id: 'add', label: 'Add Project', icon: Plus },
   { id: 'about', label: 'About', icon: Info },
   { id: 'khan', label: '$KHAN', icon: Star },
+];
+
+const premiumReportItems = [
+  ['Holder analysis', 'Wallet distribution, holder count quality, and movement signals.'],
+  ['Whale concentration', 'Largest holder and top wallet concentration warnings.'],
+  ['Liquidity risk', 'Pool depth, shallow liquidity signals, and exit-risk notes.'],
+  ['Social/community score', 'Public link coverage and community proof review.'],
+  ['PDF report', 'Downloadable research report for saved scans.'],
+  ['Telegram alerts', 'Alerts for watched tokens and changing risk signals.'],
 ];
 
 const filters = ['All', 'Solana', 'Ethereum', 'BSC', 'Base', 'New Projects', 'High Risk', 'Strong Community'];
@@ -600,6 +610,64 @@ async function lookupSolanaToken(contractAddress) {
       pairUrl: dex?.primaryPair?.url || '',
       pairAddress: dex?.primaryPair?.pairAddress || '',
       fetchedAt: new Date().toISOString(),
+    },
+  };
+}
+
+function createDemoRiskProject(contractAddress, reason = '') {
+  const address = contractAddress.trim();
+  const signal = address.split('').reduce((total, char) => total + char.charCodeAt(0), 0);
+  const holderCount = 120 + (signal % 8800);
+  const topHolderPercent = 12 + (signal % 34);
+  const topTenHolderPercent = clamp(topHolderPercent + 22 + (signal % 28), 28, 92);
+  const liquidityUsd = 3500 + ((signal * 97) % 180000);
+  const tokenAgeDays = 4 + (signal % 260);
+  const riskNotes = [
+    topHolderPercent > 35 ? 'high holder concentration' : '',
+    liquidityUsd < 50000 ? 'low liquidity' : '',
+    tokenAgeDays < 30 ? 'very new project' : '',
+    holderCount < 500 ? 'low holders' : '',
+  ].filter(Boolean).join(', ') || 'Demo risk data generated because live public APIs were unavailable.';
+
+  return {
+    id: `solana-demo-${slugify(address)}`,
+    name: `Solana Token ${address.slice(0, 4)}...${address.slice(-4)}`,
+    ticker: 'DEMO',
+    chain: 'Solana',
+    contract: address,
+    website: '',
+    twitter: '',
+    telegram: '',
+    github: '',
+    launchDate: new Date(Date.now() - tokenAgeDays * 86400000).toISOString().slice(0, 10),
+    description: 'Demo Solana token risk report generated with mock data while live API data is unavailable.',
+    status: 'Demo risk report',
+    lastUpdate: new Date().toISOString().slice(0, 10),
+    holderCount,
+    communitySize: holderCount,
+    founderStatus: 'Not provided',
+    roadmapText: '',
+    riskNotes,
+    realData: {
+      source: reason ? `Demo fallback: ${reason}` : 'Demo fallback risk model',
+      holderSource: 'Mock demo holder data',
+      liquidityUsd,
+      totalLiquidityUsd: liquidityUsd,
+      marketCapUsd: liquidityUsd * (18 + (signal % 34)),
+      tokenAgeDays,
+      holderCount,
+      topHolderPercent,
+      topTenHolderPercent,
+      holderGrowthPercent: null,
+      supply: 1000000000 + signal * 1000,
+      topAccountCount: 20,
+      poolCount: 1,
+      websiteUrl: '',
+      twitterUrl: '',
+      telegramUrl: '',
+      githubUrl: '',
+      fetchedAt: new Date().toISOString(),
+      isDemo: true,
     },
   };
 }
@@ -986,6 +1054,11 @@ function App() {
     const id = page.split('/')[1];
     return projects.find((project) => project.id === id) || null;
   }, [page, projects]);
+  const reportProject = useMemo(() => {
+    if (!page.startsWith('report/')) return null;
+    const id = page.split('/')[1];
+    return projects.find((project) => project.id === id) || null;
+  }, [page, projects]);
 
   const navigate = (target) => {
     window.location.hash = `/${target}`;
@@ -1040,6 +1113,28 @@ function App() {
     }
   };
 
+  const handleTokenCheck = async (contractAddress) => {
+    const term = contractAddress.trim();
+    if (!term) {
+      return { status: 'error', message: 'Paste a Solana token contract address first.' };
+    }
+    if (!looksLikeSolanaAddress(term)) {
+      return { status: 'error', message: 'Enter a valid Solana token contract address, usually 32-48 base58 characters.' };
+    }
+
+    try {
+      const liveProject = normalizeProject(await lookupSolanaToken(term));
+      setUserProjects((items) => upsertProject(items, liveProject));
+      navigate(`report/${liveProject.id}`);
+      return { status: 'success', message: `Opened free risk report for ${liveProject.name || liveProject.ticker}.` };
+    } catch (error) {
+      const demoProject = normalizeProject(createDemoRiskProject(term, error.message));
+      setUserProjects((items) => upsertProject(items, demoProject));
+      navigate(`report/${demoProject.id}`);
+      return { status: 'success', message: 'Live API data was unavailable, so KHAN Trust opened a demo risk report.' };
+    }
+  };
+
   const toggleWatch = (projectId) => {
     setWatchlist((items) => (items.includes(projectId) ? items.filter((id) => id !== projectId) : [...items, projectId]));
   };
@@ -1055,6 +1150,7 @@ function App() {
             setQuery={setQuery}
             searchState={searchState}
             onSearch={handleSearch}
+            onTokenCheck={handleTokenCheck}
             navigate={navigate}
             openMethodology={() => setMethodologyOpen(true)}
           />
@@ -1072,7 +1168,16 @@ function App() {
           />
         )}
         {page === 'add' && <AddProjectPage onAdd={addProject} />}
+        {page === 'pricing' && <PricingPage navigate={navigate} />}
         {page === 'compare' && <ComparePage projects={projects} navigate={navigate} />}
+        {page.startsWith('report/') && reportProject && (
+          <RiskReportPage project={reportProject} navigate={navigate} />
+        )}
+        {page.startsWith('report/') && !reportProject && (
+          <section className="page-section">
+            <EmptyState title="No report loaded" text="Paste a Solana contract address on the homepage to create a free risk report." />
+          </section>
+        )}
         {(page.startsWith('project/') || page === 'khan') && selectedProject && (
           <ProjectProfile
             project={selectedProject}
@@ -1149,11 +1254,11 @@ function MobileNav({ page, navigate }) {
 
 function isActive(page, id) {
   if (id === 'khan') return page === 'khan';
-  if (id === 'explore') return page === 'explore' || page.startsWith('project/');
+  if (id === 'explore') return page === 'explore' || page.startsWith('project/') || page.startsWith('report/');
   return page === id;
 }
 
-function HomePage({ projects, query, setQuery, searchState, onSearch, navigate, openMethodology }) {
+function HomePage({ projects, query, setQuery, searchState, onSearch, onTokenCheck, navigate, openMethodology }) {
   const featured = projects.slice(0, 4);
   const heroProject = featured[0];
   return (
@@ -1219,6 +1324,7 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, navigate, 
           </div>
         </div>
       </section>
+      <CheckAnyTokenSection onTokenCheck={onTokenCheck} navigate={navigate} />
       <section className="content-band">
         <SectionTitle icon={BarChart3} eyebrow="Explore" title="Trust profiles, not hype feeds" />
         <div className="project-grid">
@@ -1231,6 +1337,52 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, navigate, 
       <KhanTokenRole />
       <Disclaimer />
     </>
+  );
+}
+
+function CheckAnyTokenSection({ onTokenCheck, navigate }) {
+  const [contractAddress, setContractAddress] = useState('');
+  const [state, setState] = useState({ status: 'idle', message: '' });
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setState({ status: 'loading', message: 'Checking token risk signals...' });
+    const result = await onTokenCheck(contractAddress);
+    setState(result);
+  };
+
+  return (
+    <section className="content-band check-token-section" id="check-token">
+      <div className="check-token-grid">
+        <div>
+          <SectionTitle icon={Search} eyebrow="Token checker" title="Check Any Token" />
+          <p>
+            Paste a Solana token contract address to generate a free KHAN Trust risk report. If live public APIs are unavailable,
+            the checker uses demo risk data so the report structure remains testable.
+          </p>
+        </div>
+        <form className="token-check-card" onSubmit={submit}>
+          <label className="form-field">
+            <span>Solana contract address</span>
+            <input
+              value={contractAddress}
+              onChange={(event) => setContractAddress(event.target.value)}
+              placeholder="Paste token mint address"
+              autoComplete="off"
+            />
+          </label>
+          {state.message && <p className={`lookup-message ${state.status === 'error' ? 'error' : ''}`}>{state.message}</p>}
+          <div className="token-check-actions">
+            <button className="primary-button" type="submit" disabled={state.status === 'loading'}>
+              <Search size={18} /> {state.status === 'loading' ? 'Checking...' : 'Check Token'}
+            </button>
+            <button className="ghost-button" type="button" onClick={() => navigate('pricing')}>
+              See Pricing <WalletCards size={18} />
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
   );
 }
 
@@ -1356,6 +1508,178 @@ function CompareRow({ label, first, second }) {
       <strong>{first}</strong>
       <strong>{second}</strong>
     </div>
+  );
+}
+
+function RiskReportPage({ project, navigate }) {
+  const reasons = riskSignals(project).slice(0, 3);
+  return (
+    <section className="page-section report-page">
+      <button className="back-button" onClick={() => navigate('home')}>Check another token</button>
+      <div className="report-hero detail-section">
+        <div>
+          <span className="status-badge">{project.realData?.isDemo ? 'Demo report' : 'Free report'}</span>
+          <h1>Risk Report</h1>
+          <p>{project.name} on {project.chain}</p>
+          <strong className="contract-line">{project.contract}</strong>
+        </div>
+        <div className="report-score">
+          <ScoreCircle score={project.trustScore} size="large" />
+          <RiskPill level={project.riskLevel} />
+        </div>
+      </div>
+
+      <div className="report-layout">
+        <div className="main-column">
+          <section className="detail-section">
+            <SectionTitle icon={Shield} eyebrow="Free scan" title="Basic Risk View" />
+            <div className="report-metrics">
+              <div>
+                <span>Trust Score</span>
+                <strong>{project.trustScore}/100</strong>
+              </div>
+              <div>
+                <span>Risk Level</span>
+                <strong>{project.riskLevel}</strong>
+              </div>
+              <div>
+                <span>Data mode</span>
+                <strong>{project.realData?.isDemo ? 'Mock demo' : 'Live/public'}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="detail-section">
+            <SectionTitle icon={AlertTriangle} eyebrow="Reasons" title="3 Main Risk Reasons" />
+            <div className="risk-reason-list">
+              {reasons.map((reason) => (
+                <div className="risk-reason" key={reason.label}>
+                  <span>{reason.label}</span>
+                  <strong>{reason.value}</strong>
+                  <p>{reason.detail}</p>
+                </div>
+              ))}
+            </div>
+            <p className="plain-explanation">{plainRiskExplanation(project)}</p>
+          </section>
+
+          <PremiumLockedSection navigate={navigate} />
+        </div>
+
+        <aside className="side-column">
+          <OneTimeUnlockCard navigate={navigate} />
+          <Disclaimer compact />
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function PremiumLockedSection({ navigate }) {
+  return (
+    <section className="detail-section premium-lock-section">
+      <SectionTitle icon={Lock} eyebrow="Premium" title="Unlock full report" />
+      <div className="premium-feature-grid">
+        {premiumReportItems.map(([title, text]) => (
+          <div className="premium-feature locked" key={title}>
+            <Lock size={17} />
+            <span>{title}</span>
+            <p>{text}</p>
+          </div>
+        ))}
+      </div>
+      <div className="unlock-bar">
+        <strong>Unlock full report</strong>
+        <div>
+          <button className="primary-button" type="button" onClick={() => navigate('pricing')}>
+            Unlock one full report for $5
+          </button>
+          <button className="secondary-button" type="button" onClick={() => navigate('pricing')}>
+            View paid plans <ArrowRight size={18} />
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OneTimeUnlockCard({ navigate }) {
+  return (
+    <section className="detail-section one-time-card">
+      <SectionTitle icon={FileWarning} eyebrow="One-time" title="Single Report" />
+      <strong>Unlock one full report for $5</strong>
+      <p>No payment is connected yet. This button is a product UI placeholder for the paid report flow.</p>
+      <button className="primary-button" type="button" onClick={() => navigate('pricing')}>
+        Unlock full report
+      </button>
+    </section>
+  );
+}
+
+function PricingPage({ navigate }) {
+  const plans = [
+    {
+      name: 'Free',
+      price: '$0',
+      description: 'Basic scan',
+      features: ['Trust Score', 'Risk Level', '3 main risk reasons'],
+      cta: 'Start free scan',
+      action: () => navigate('home'),
+    },
+    {
+      name: 'Pro',
+      price: '$9/month',
+      description: '20 scans/day + full reports',
+      features: ['20 scans per day', 'Full risk reports', 'Holder and whale analysis', 'Liquidity and social risk'],
+      cta: 'Choose Pro',
+      action: () => alert('Payment integration is not connected yet.'),
+      featured: true,
+    },
+    {
+      name: 'Premium',
+      price: '$29/month',
+      description: 'Unlimited scans + alerts + PDF reports',
+      features: ['Unlimited scans', 'Telegram alerts', 'PDF reports', 'Priority full-report access'],
+      cta: 'Choose Premium',
+      action: () => alert('Payment integration is not connected yet.'),
+    },
+  ];
+
+  return (
+    <section className="page-section pricing-page">
+      <SectionTitle icon={WalletCards} eyebrow="Pricing" title="Free scans, paid risk depth" />
+      <p className="pricing-intro">
+        KHAN Trust is structured for a real paid product: free basic scans, full paid reports, and a one-time report unlock.
+      </p>
+      <div className="one-time-offer">
+        <div>
+          <span className="status-badge">One-time report</span>
+          <h3>Unlock one full report for $5</h3>
+          <p>UI only for now. No Stripe, wallet checkout, or payment processor is connected.</p>
+        </div>
+        <button className="primary-button" type="button" onClick={() => alert('Payment integration is not connected yet.')}>
+          Unlock full report
+        </button>
+      </div>
+      <div className="pricing-grid">
+        {plans.map((plan) => (
+          <article className={plan.featured ? 'pricing-card featured' : 'pricing-card'} key={plan.name}>
+            <span className="status-badge">{plan.name}</span>
+            <h3>{plan.price}</h3>
+            <p>{plan.description}</p>
+            <div className="pricing-features">
+              {plan.features.map((feature) => (
+                <span key={feature}><CheckCircle2 size={16} /> {feature}</span>
+              ))}
+            </div>
+            <button className={plan.featured ? 'primary-button' : 'secondary-button'} type="button" onClick={plan.action}>
+              {plan.cta}
+            </button>
+          </article>
+        ))}
+      </div>
+      <Disclaimer />
+    </section>
   );
 }
 
@@ -1986,7 +2310,7 @@ function Disclaimer({ compact = false }) {
   return (
     <section className={compact ? 'disclaimer compact' : 'disclaimer'}>
       <AlertTriangle size={18} />
-      <p>KHAN Trust is not financial advice. Always do your own research.</p>
+      <p>KHAN Trust does not provide financial advice. Scores are for research and risk awareness only.</p>
     </section>
   );
 }

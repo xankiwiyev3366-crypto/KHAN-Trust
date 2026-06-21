@@ -323,24 +323,38 @@ function buildScoreBreakdown(project, holders, communitySize, score) {
 
 function calculateLiveScores(project = {}, data = {}) {
   const holderCount = Number(data.holderCount || project.holders || project.communitySize || 0);
+  const websiteScore = scorePresence(project.website || data.websiteUrl);
+  const twitterScore = scorePresence(project.twitter || data.twitterUrl);
+  const telegramScore = scorePresence(project.telegram || data.telegramUrl);
   const scores = {
     marketCapScore: scoreMarketCap(data.marketCapUsd),
     liquidityScore: scoreLiquidity(data.totalLiquidityUsd ?? data.liquidityUsd),
     holderScore: scoreHolders(holderCount),
     topHolderScore: scoreTopHolder(data.topHolderPercent),
+    topTenHolderScore: scoreTopTenHolder(data.topTenHolderPercent),
     tokenAgeScore: scoreTokenAge(data.tokenAgeDays),
-    socialScore: scoreSocial(project, data),
+    websiteScore,
+    twitterScore,
+    telegramScore,
+    socialScore: Math.round((websiteScore + twitterScore + telegramScore) / 3),
     holderGrowthScore: scoreHolderGrowth(data.holderGrowthPercent),
     supplyScore: scoreSupply(data.supply),
   };
-  const available = Object.values(scores).filter((value) => value !== null);
-  const average = available.length
-    ? Math.round(available.reduce((total, value) => total + value, 0) / available.length)
-    : 5;
-  const penalty = liveDataPenalty(data, holderCount) + riskPenalty(project.riskNotes);
+  const weighted = weightedAverage([
+    [scores.holderScore, 16],
+    [scores.topHolderScore, 18],
+    [scores.topTenHolderScore, 14],
+    [scores.tokenAgeScore, 10],
+    [scores.liquidityScore, 16],
+    [scores.marketCapScore, 6],
+    [scores.websiteScore, 7],
+    [scores.twitterScore, 7],
+    [scores.telegramScore, 6],
+  ]);
+  const penalty = liveDataPenalty(data, holderCount);
   return {
     ...scores,
-    finalTrustScore: clamp(Math.max(5, average - penalty), 5, 100),
+    finalTrustScore: clamp(Math.max(5, weighted - penalty), 5, 100),
   };
 }
 
@@ -413,6 +427,19 @@ function scoreTopHolder(percent) {
   return 12;
 }
 
+function scoreTopTenHolder(percent) {
+  if (percent === null || percent === undefined) return null;
+  if (percent <= 25) return 92;
+  if (percent <= 40) return 78;
+  if (percent <= 55) return 58;
+  if (percent <= 70) return 34;
+  return 10;
+}
+
+function scorePresence(value) {
+  return hasValue(value) ? 88 : 18;
+}
+
 function scoreSocial(project = {}, data = {}) {
   data = data || {};
   const checks = [
@@ -447,11 +474,22 @@ function scoreSupply(value) {
 function liveDataPenalty(data = {}, holderCount = 0) {
   let penalty = 0;
   const liquidity = Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0);
-  if (liquidity > 0 && liquidity < 5000) penalty += 6;
-  if (holderCount > 0 && holderCount < 100) penalty += 4;
-  if (data.tokenAgeDays !== null && data.tokenAgeDays !== undefined && data.tokenAgeDays < 7) penalty += 4;
-  if (data.topHolderPercent > 35) penalty += 8;
+  if (!liquidity) penalty += 8;
+  if (liquidity > 0 && liquidity < 5000) penalty += 12;
+  if (holderCount > 0 && holderCount < 100) penalty += 10;
+  if (!holderCount) penalty += 6;
+  if (data.tokenAgeDays !== null && data.tokenAgeDays !== undefined && data.tokenAgeDays < 7) penalty += 8;
+  if (data.topHolderPercent > 35) penalty += 12;
+  if (data.topTenHolderPercent > 70) penalty += 10;
   return penalty;
+}
+
+function weightedAverage(items) {
+  const available = items.filter(([value]) => value !== null && value !== undefined);
+  if (!available.length) return 5;
+  const totalWeight = available.reduce((total, [, weight]) => total + weight, 0);
+  const total = available.reduce((sum, [value, weight]) => sum + value * weight, 0);
+  return Math.round(total / totalWeight);
 }
 
 function communityScore(size) {
@@ -496,26 +534,10 @@ function syncSocialData(data = {}, project = {}) {
 }
 
 function deriveRiskFlags(project, holders, communitySize) {
-  const flags = [];
-  const age = project.launchDate ? daysSince(project.launchDate) : 0;
-  const data = project.realData;
-  const liquidity = Number(data?.totalLiquidityUsd ?? data?.liquidityUsd ?? 0);
-  const marketCap = Number(data?.marketCapUsd || 0);
-
-  if (age < 60) flags.push('Very new project - high risk signal');
-  if (holders > 0 && holders < 1000) flags.push('Low holders - limited data');
-  if (liquidity > 0 && liquidity < 5000) flags.push('Low liquidity - high risk signal');
-  if (!hasValue(project.website)) flags.push('No website - needs more transparency');
-  if (!hasValue(project.twitter)) flags.push('No X/Twitter - needs more transparency');
-  if (!hasValue(project.telegram)) flags.push('No Telegram - limited community signal');
-  if (!hasValue(project.github)) flags.push('No GitHub - limited build transparency');
-  if (project.founderStatus?.toLowerCase().includes('anonymous')) flags.push('Anonymous founder - needs more transparency');
-  if (data && data.topHolderPercent === null) flags.push('Missing top holder data - limited data');
-  if (data?.topHolderPercent > 35 || data?.topTenHolderPercent > 70) flags.push('High holder concentration - high risk signal');
-  if (marketCap > 0 && marketCap < 10000) flags.push('Low market cap - high risk signal');
-  if (!hasRoadmap(project)) flags.push('No roadmap - needs more transparency');
-  if (communitySize > 0 && communitySize < 1500) flags.push('Weak community - limited data');
-  return flags.length ? flags : ['No major public risk flags detected'];
+  const factorFlags = riskFactors({ ...project, holders, communitySize })
+    .filter((factor) => factor.severity === 'High' || factor.severity === 'Medium' || factor.severity === 'Limited')
+    .map((factor) => `${factor.title} - ${factor.signal}`);
+  return factorFlags.length ? factorFlags : ['No major public risk flags detected'];
 }
 
 function buildUpdatesTimeline(project, now) {
@@ -558,7 +580,7 @@ async function lookupSolanaToken(contractAddress) {
   const websites = info.websites || [];
   const socials = info.socials || [];
   const website = websites[0]?.url || '';
-  const twitter = socials.find((item) => item.type === 'twitter')?.url || '';
+  const twitter = socials.find((item) => item.type === 'twitter' || item.type === 'x')?.url || '';
   const telegram = socials.find((item) => item.type === 'telegram')?.url || '';
   const github = socials.find((item) => item.type === 'github')?.url || '';
   const createdAt = dex?.oldestPairCreatedAt || dex?.primaryPair?.pairCreatedAt || (jupiter?.createdAt ? new Date(jupiter.createdAt).getTime() : null);
@@ -884,35 +906,245 @@ function riskBadge(score) {
   return 'High Risk';
 }
 
-function riskSignals(project = {}) {
+function riskFactors(project = {}) {
   const data = project.realData || {};
-  const holders = Number(data.holderCount || project.holders || project.communitySize || 0);
+  const holders = Number(data.holderCount || project.holderCount || project.holders || project.communitySize || 0);
   const liquidity = Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0);
-  const socialLinks = [project.website, project.twitter, project.telegram, project.github].filter(hasValue).length;
-  const founderText = project.founderStatus || 'Not provided';
+  const tokenAgeDays = data.tokenAgeDays ?? (project.launchDate ? daysSince(project.launchDate) : null);
+  const largestHolder = data.topHolderPercent;
+  const topTen = data.topTenHolderPercent;
+  const website = project.website || data.websiteUrl;
+  const twitter = project.twitter || data.twitterUrl;
+  const telegram = project.telegram || data.telegramUrl;
 
-  return [
-    {
-      label: 'Holder risk',
-      value: holderRiskLabel(data, holders),
-      detail: holderRiskDetail(data, holders),
-    },
-    {
-      label: 'Liquidity risk',
-      value: liquidityRiskLabel(liquidity),
-      detail: liquidity ? `${formatCurrency(liquidity)} public liquidity found.` : 'Liquidity data is not available yet.',
-    },
-    {
-      label: 'Social risk',
-      value: socialRiskLabel(socialLinks),
-      detail: `${socialLinks}/4 public links found: website, X/Twitter, Telegram, GitHub.`,
-    },
-    {
-      label: 'Founder / roadmap status',
-      value: founderRoadmapLabel(project),
-      detail: `${founderText}. ${roadmapClarity(project)}.`,
-    },
+  const factors = [
+    holderCountFactor(holders, data.holderSource),
+    largestHolderFactor(largestHolder),
+    topTenHolderFactor(topTen),
+    tokenAgeFactor(tokenAgeDays),
+    liquidityFactor(liquidity, data.poolCount),
+    presenceFactor('Website presence', website, 'Website found', 'Missing website', 'A website gives users a basic place to verify project information, docs, and official links.'),
+    presenceFactor('X/Twitter presence', twitter, 'X/Twitter found', 'Missing X/Twitter', 'An active X/Twitter account is a public communication signal. Missing X/Twitter makes community verification harder.'),
+    presenceFactor('Telegram presence', telegram, 'Telegram found', 'Missing Telegram', 'Telegram is a common Solana community channel. Missing Telegram limits community visibility.'),
   ];
+
+  return factors.sort((a, b) => riskSeverityRank(b.severity) - riskSeverityRank(a.severity));
+}
+
+function holderCountFactor(holders, source = '') {
+  if (!holders) {
+    return {
+      title: 'Holder count',
+      severity: 'Limited',
+      signal: 'Holder count unavailable',
+      value: 'Not available',
+      explanation: 'KHAN Trust could not confirm holder count from the public data sources available in this browser scan.',
+    };
+  }
+  if (holders < 100) {
+    return {
+      title: 'Holder count',
+      severity: 'High',
+      signal: 'Very low holder count',
+      value: formatNumber(holders),
+      explanation: `${formatNumber(holders)} holders were found${source ? ` via ${source}` : ''}. Very low holder count can make price action easier to manipulate.`,
+    };
+  }
+  if (holders < 500) {
+    return {
+      title: 'Holder count',
+      severity: 'Medium',
+      signal: 'Low holder count',
+      value: formatNumber(holders),
+      explanation: `${formatNumber(holders)} holders were found. This is still a small holder base, so concentration and liquidity deserve closer review.`,
+    };
+  }
+  return {
+    title: 'Holder count',
+    severity: 'Low',
+    signal: 'Holder count available',
+    value: formatNumber(holders),
+    explanation: `${formatNumber(holders)} holders were found. Holder count alone is not enough, but it improves the available risk picture.`,
+  };
+}
+
+function largestHolderFactor(percent) {
+  if (percent === null || percent === undefined) {
+    return {
+      title: 'Largest holder concentration',
+      severity: 'Limited',
+      signal: 'Largest holder unavailable',
+      value: 'Not available',
+      explanation: 'The largest holder percentage was not available from public Solana holder data during this scan.',
+    };
+  }
+  if (percent > 35) {
+    return {
+      title: 'Largest holder concentration',
+      severity: 'High',
+      signal: 'High holder concentration',
+      value: formatPercent(percent),
+      explanation: `The largest holder controls ${formatPercent(percent)} of supply, which is a strong concentration warning.`,
+    };
+  }
+  if (percent > 20) {
+    return {
+      title: 'Largest holder concentration',
+      severity: 'Medium',
+      signal: 'Moderate holder concentration',
+      value: formatPercent(percent),
+      explanation: `The largest holder controls ${formatPercent(percent)} of supply. This is not automatically unsafe, but it deserves attention.`,
+    };
+  }
+  return {
+    title: 'Largest holder concentration',
+    severity: 'Low',
+    signal: 'No major largest-holder warning',
+    value: formatPercent(percent),
+    explanation: `The largest holder controls ${formatPercent(percent)} of supply, which is below KHAN Trust's major-warning threshold.`,
+  };
+}
+
+function topTenHolderFactor(percent) {
+  if (percent === null || percent === undefined) {
+    return {
+      title: 'Top 10 holder concentration',
+      severity: 'Limited',
+      signal: 'Top 10 concentration unavailable',
+      value: 'Not available',
+      explanation: 'Top 10 holder concentration could not be confirmed from the available public holder data.',
+    };
+  }
+  if (percent > 70) {
+    return {
+      title: 'Top 10 holder concentration',
+      severity: 'High',
+      signal: 'High holder concentration',
+      value: formatPercent(percent),
+      explanation: `The top 10 holders control ${formatPercent(percent)} of supply, which can increase sell-pressure and manipulation risk.`,
+    };
+  }
+  if (percent > 50) {
+    return {
+      title: 'Top 10 holder concentration',
+      severity: 'Medium',
+      signal: 'Moderate top 10 concentration',
+      value: formatPercent(percent),
+      explanation: `The top 10 holders control ${formatPercent(percent)} of supply. This is a concentration signal to monitor.`,
+    };
+  }
+  return {
+    title: 'Top 10 holder concentration',
+    severity: 'Low',
+    signal: 'No major top 10 warning',
+    value: formatPercent(percent),
+    explanation: `The top 10 holders control ${formatPercent(percent)} of supply, below KHAN Trust's major-warning threshold.`,
+  };
+}
+
+function tokenAgeFactor(days) {
+  if (days === null || days === undefined || Number.isNaN(days)) {
+    return {
+      title: 'Token age',
+      severity: 'Limited',
+      signal: 'Token age unavailable',
+      value: 'Not available',
+      explanation: 'Token age could not be confirmed from pool creation or token index data.',
+    };
+  }
+  if (days < 14) {
+    return {
+      title: 'Token age',
+      severity: 'High',
+      signal: 'New token warning',
+      value: formatAge(days),
+      explanation: `This token appears to be ${formatAge(days)} old. Very new tokens usually have less trading history and less community proof.`,
+    };
+  }
+  if (days < 60) {
+    return {
+      title: 'Token age',
+      severity: 'Medium',
+      signal: 'New token warning',
+      value: formatAge(days),
+      explanation: `This token appears to be ${formatAge(days)} old. It is still early, so users should expect higher uncertainty.`,
+    };
+  }
+  return {
+    title: 'Token age',
+    severity: 'Low',
+    signal: 'Token has public age history',
+    value: formatAge(days),
+    explanation: `This token appears to be ${formatAge(days)} old based on public pool or index data.`,
+  };
+}
+
+function liquidityFactor(liquidity, poolCount = 0) {
+  if (!liquidity) {
+    return {
+      title: 'Liquidity indicators',
+      severity: 'Limited',
+      signal: 'Liquidity warning',
+      value: 'Not available',
+      explanation: 'No public liquidity was found from the connected market sources. Thin or missing liquidity can make exits difficult.',
+    };
+  }
+  if (liquidity < 5000) {
+    return {
+      title: 'Liquidity indicators',
+      severity: 'High',
+      signal: 'Liquidity warning',
+      value: formatCurrency(liquidity),
+      explanation: `Only ${formatCurrency(liquidity)} public liquidity was found${poolCount ? ` across ${formatNumber(poolCount)} pool(s)` : ''}. This is a high liquidity-risk signal.`,
+    };
+  }
+  if (liquidity < 50000) {
+    return {
+      title: 'Liquidity indicators',
+      severity: 'Medium',
+      signal: 'Liquidity warning',
+      value: formatCurrency(liquidity),
+      explanation: `${formatCurrency(liquidity)} public liquidity was found. This is usable data, but still shallow for many token trades.`,
+    };
+  }
+  return {
+    title: 'Liquidity indicators',
+    severity: 'Low',
+    signal: 'Liquidity found',
+    value: formatCurrency(liquidity),
+    explanation: `${formatCurrency(liquidity)} public liquidity was found${poolCount ? ` across ${formatNumber(poolCount)} pool(s)` : ''}. Liquidity still changes quickly, so review it before acting.`,
+  };
+}
+
+function presenceFactor(title, value, okSignal, missingSignal, explanation) {
+  if (hasValue(value)) {
+    return {
+      title,
+      severity: 'Low',
+      signal: okSignal,
+      value,
+      explanation: `${okSignal}: ${value}`,
+    };
+  }
+  return {
+    title,
+    severity: 'Medium',
+    signal: missingSignal,
+    value: 'Missing',
+    explanation,
+  };
+}
+
+function riskSeverityRank(severity) {
+  return { Low: 1, Limited: 2, Medium: 3, High: 4 }[severity] || 0;
+}
+
+function riskSignals(project = {}) {
+  return riskFactors(project).map((factor) => ({
+    label: factor.title,
+    value: factor.severity,
+    detail: factor.explanation,
+  }));
 }
 
 function holderRiskLabel(data = {}, holders = 0) {
@@ -1513,6 +1745,7 @@ function CompareRow({ label, first, second }) {
 
 function RiskReportPage({ project, navigate }) {
   const reasons = riskSignals(project).slice(0, 3);
+  const factors = riskFactors(project);
   return (
     <section className="page-section report-page">
       <button className="back-button" onClick={() => navigate('home')}>Check another token</button>
@@ -1561,6 +1794,22 @@ function RiskReportPage({ project, navigate }) {
               ))}
             </div>
             <p className="plain-explanation">{plainRiskExplanation(project)}</p>
+          </section>
+
+          <section className="detail-section">
+            <SectionTitle icon={ListFilter} eyebrow="Risk factors" title="Real Solana Signal Explanations" />
+            <div className="risk-factor-grid">
+              {factors.map((factor) => (
+                <div className={`risk-factor-card ${factor.severity.toLowerCase()}`} key={factor.title}>
+                  <div>
+                    <span>{factor.title}</span>
+                    <strong>{factor.signal}</strong>
+                  </div>
+                  <em>{factor.value}</em>
+                  <p>{factor.explanation}</p>
+                </div>
+              ))}
+            </div>
           </section>
 
           <PremiumLockedSection navigate={navigate} />
@@ -1886,7 +2135,11 @@ function TrustBreakdown({ project }) {
     liquidityScore: 'Liquidity Score',
     holderScore: 'Holder Score',
     topHolderScore: 'Top Holder Score',
+    topTenHolderScore: 'Top 10 Holder Score',
     tokenAgeScore: 'Token Age Score',
+    websiteScore: 'Website Presence',
+    twitterScore: 'X/Twitter Presence',
+    telegramScore: 'Telegram Presence',
     socialScore: 'Social Score',
     holderGrowthScore: 'Holder Growth Score',
     supplyScore: 'Supply Score',
@@ -1980,6 +2233,9 @@ function RealDataSection({ project, data }) {
     ['Market Cap USD', formatCurrency(data.marketCapUsd), LineChart],
     ['Token Age', formatAge(data.tokenAgeDays), CalendarDays],
     ['Trust Score', `${project.trustScore}/100`, BadgeCheck],
+    ['Website', hasValue(project.website || data.websiteUrl) ? 'Found' : 'Missing', Globe2],
+    ['X/Twitter', hasValue(project.twitter || data.twitterUrl) ? 'Found' : 'Missing', ExternalLink],
+    ['Telegram', hasValue(project.telegram || data.telegramUrl) ? 'Found' : 'Missing', MessageCircle],
     ['Supply', data.supply ? formatNumber(data.supply) : 'Not available', WalletCards],
     ['Holder Growth', data.holderGrowthPercent === null ? 'Needs a second lookup' : formatPercent(data.holderGrowthPercent), TrendingUp],
     ['Pools Found', formatNumber(data.poolCount), Layers3],

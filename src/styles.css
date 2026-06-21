@@ -556,6 +556,66 @@ main {
   gap: 10px;
 }
 
+.risk-factor-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.risk-factor-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 14px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+}
+
+.risk-factor-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.risk-factor-card strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+}
+
+.risk-factor-card em {
+  max-width: 240px;
+  color: var(--gold-bright);
+  font-style: normal;
+  font-weight: 850;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.risk-factor-card p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.risk-factor-card.high {
+  border-color: rgba(255, 117, 110, 0.32);
+  background: rgba(255, 117, 110, 0.08);
+}
+
+.risk-factor-card.medium,
+.risk-factor-card.limited {
+  border-color: rgba(247, 190, 82, 0.26);
+  background: rgba(247, 190, 82, 0.07);
+}
+
+.risk-factor-card.low {
+  border-color: rgba(103, 211, 156, 0.22);
+}
+
 .risk-reason strong {
   display: block;
   margin-top: 5px;
@@ -1579,6 +1639,15 @@ button:disabled {
 
   .score-row {
     grid-template-columns: 1fr minmax(82px, auto);
+  }
+
+  .risk-factor-card {
+    grid-template-columns: 1fr;
+  }
+
+  .risk-factor-card em {
+    max-width: none;
+    text-align: left;
   }
 
   .score-bar {

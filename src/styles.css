@@ -524,7 +524,7 @@ main {
 }
 
 .report-metrics {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .report-metrics div,
@@ -681,6 +681,30 @@ main {
   gap: 18px;
   margin: 22px 0 18px;
   padding: 20px;
+}
+
+.premium-value-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.premium-value-strip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(255,255,255,0.03);
+  font-weight: 800;
+}
+
+.premium-value-strip svg {
+  color: var(--success);
+  flex: 0 0 auto;
 }
 
 .one-time-offer h3,

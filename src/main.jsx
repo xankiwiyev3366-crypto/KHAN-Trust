@@ -242,10 +242,11 @@ const navItems = [
 ];
 
 const premiumReportItems = [
-  ['Holder analysis', 'Wallet distribution, holder count quality, and movement signals.'],
-  ['Whale concentration', 'Largest holder and top wallet concentration warnings.'],
-  ['Liquidity risk', 'Pool depth, shallow liquidity signals, and exit-risk notes.'],
-  ['Social/community score', 'Public link coverage and community proof review.'],
+  ['Whale analysis', 'Largest wallets, top 10 concentration, and whale-pressure warnings.'],
+  ['Rug risk estimate', 'Combined holder, liquidity, age, and social-risk estimate.'],
+  ['Holder concentration', 'Largest holder and top wallet concentration warnings.'],
+  ['Liquidity health', 'Pool depth, shallow liquidity signals, and exit-risk notes.'],
+  ['Social score', 'Website, X/Twitter, and Telegram presence review.'],
   ['PDF report', 'Downloadable research report for saved scans.'],
   ['Telegram alerts', 'Alerts for watched tokens and changing risk signals.'],
 ];
@@ -264,10 +265,10 @@ function normalizeProject(input) {
     ticker: input.ticker || 'N/A',
     chain: input.chain || 'Unknown',
     contract: input.contract || 'Not provided',
-    website: input.website || realData?.websiteUrl || 'Not provided',
-    twitter: input.twitter || realData?.twitterUrl || 'Not provided',
-    telegram: input.telegram || realData?.telegramUrl || 'Not provided',
-    github: input.github || realData?.githubUrl || 'Not provided',
+    website: firstPresent(input.website, realData?.websiteUrl) || 'Not provided',
+    twitter: firstPresent(input.twitter, realData?.twitterUrl) || 'Not provided',
+    telegram: firstPresent(input.telegram, realData?.telegramUrl) || 'Not provided',
+    github: firstPresent(input.github, realData?.githubUrl) || 'Not provided',
     launchDate: input.launchDate || now,
     description: input.description || 'No description provided yet.',
     mission: input.mission || '',
@@ -310,7 +311,11 @@ function buildScoreBreakdown(project, holders, communitySize, score) {
       liquidityScore: liveScores.liquidityScore,
       holderScore: liveScores.holderScore,
       topHolderScore: liveScores.topHolderScore,
+      topTenHolderScore: liveScores.topTenHolderScore,
       tokenAgeScore: liveScores.tokenAgeScore,
+      websiteScore: liveScores.websiteScore,
+      twitterScore: liveScores.twitterScore,
+      telegramScore: liveScores.telegramScore,
       socialScore: liveScores.socialScore,
       holderGrowthScore: liveScores.holderGrowthScore,
       supplyScore: liveScores.supplyScore,
@@ -323,9 +328,9 @@ function buildScoreBreakdown(project, holders, communitySize, score) {
 
 function calculateLiveScores(project = {}, data = {}) {
   const holderCount = Number(data.holderCount || project.holders || project.communitySize || 0);
-  const websiteScore = scorePresence(project.website || data.websiteUrl);
-  const twitterScore = scorePresence(project.twitter || data.twitterUrl);
-  const telegramScore = scorePresence(project.telegram || data.telegramUrl);
+  const websiteScore = scorePresence(socialPresenceState('website', project, data));
+  const twitterScore = scorePresence(socialPresenceState('twitter', project, data));
+  const telegramScore = scorePresence(socialPresenceState('telegram', project, data));
   const scores = {
     marketCapScore: scoreMarketCap(data.marketCapUsd),
     liquidityScore: scoreLiquidity(data.totalLiquidityUsd ?? data.liquidityUsd),
@@ -437,7 +442,11 @@ function scoreTopTenHolder(percent) {
 }
 
 function scorePresence(value) {
-  return hasValue(value) ? 88 : 18;
+  const state = typeof value === 'string' ? value : value?.state;
+  if (state === 'Present') return 88;
+  if (state === 'Data unavailable') return 44;
+  if (state === 'Missing') return 26;
+  return hasValue(value) ? 88 : 44;
 }
 
 function scoreSocial(project = {}, data = {}) {
@@ -474,10 +483,10 @@ function scoreSupply(value) {
 function liveDataPenalty(data = {}, holderCount = 0) {
   let penalty = 0;
   const liquidity = Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0);
-  if (!liquidity) penalty += 8;
+  if (!liquidity) penalty += 4;
   if (liquidity > 0 && liquidity < 5000) penalty += 12;
   if (holderCount > 0 && holderCount < 100) penalty += 10;
-  if (!holderCount) penalty += 6;
+  if (!holderCount) penalty += 3;
   if (data.tokenAgeDays !== null && data.tokenAgeDays !== undefined && data.tokenAgeDays < 7) penalty += 8;
   if (data.topHolderPercent > 35) penalty += 12;
   if (data.topTenHolderPercent > 70) penalty += 10;
@@ -511,7 +520,41 @@ function riskPenalty(notes = '') {
 }
 
 function hasValue(value) {
-  return Boolean(value && value !== 'Not provided' && value !== 'Not available');
+  return Boolean(value && !['Not provided', 'Not available', 'Missing', 'Data unavailable'].includes(value));
+}
+
+function firstPresent(...values) {
+  return values.find((value) => hasValue(value)) || '';
+}
+
+function cleanLink(value = '') {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function mergeSocialLinks(...items) {
+  return items.reduce((links, item = {}) => ({
+    website: firstPresent(links.website, item.website, item.websiteUrl),
+    twitter: firstPresent(links.twitter, item.twitter, item.twitterUrl, item.xUrl),
+    telegram: firstPresent(links.telegram, item.telegram, item.telegramUrl),
+    github: firstPresent(links.github, item.github, item.githubUrl),
+  }), {});
+}
+
+function socialPresenceState(kind, project = {}, data = {}) {
+  const fieldMap = {
+    website: ['website', 'websiteUrl'],
+    twitter: ['twitter', 'twitterUrl', 'xUrl'],
+    telegram: ['telegram', 'telegramUrl'],
+  };
+  const value = firstPresent(...fieldMap[kind].flatMap((field) => [project[field], data[field]]));
+  if (value) return { state: 'Present', value };
+  if (data.socialMetadataAvailable === false) return { state: 'Data unavailable', value: 'Data unavailable' };
+  return { state: 'Missing', value: 'Missing' };
+}
+
+function socialStateText(kind, project = {}, data = {}) {
+  const result = socialPresenceState(kind, project, data);
+  return result.state === 'Present' ? `Present: ${result.value}` : result.state;
 }
 
 function isPublicFounder(status = '') {
@@ -526,10 +569,10 @@ function hasRoadmap(project = {}) {
 function syncSocialData(data = {}, project = {}) {
   return {
     ...data,
-    websiteUrl: project.website || data.websiteUrl || '',
-    twitterUrl: project.twitter || data.twitterUrl || '',
-    telegramUrl: project.telegram || data.telegramUrl || '',
-    githubUrl: project.github || data.githubUrl || '',
+    websiteUrl: firstPresent(project.website, data.websiteUrl),
+    twitterUrl: firstPresent(project.twitter, data.twitterUrl),
+    telegramUrl: firstPresent(project.telegram, data.telegramUrl),
+    githubUrl: firstPresent(project.github, data.githubUrl),
   };
 }
 
@@ -577,12 +620,17 @@ async function lookupSolanaToken(contractAddress) {
 
   const token = getDexTokenForAddress(dex?.primaryPair, address);
   const info = dex?.primaryPair?.info || {};
-  const websites = info.websites || [];
-  const socials = info.socials || [];
-  const website = websites[0]?.url || '';
-  const twitter = socials.find((item) => item.type === 'twitter' || item.type === 'x')?.url || '';
-  const telegram = socials.find((item) => item.type === 'telegram')?.url || '';
-  const github = socials.find((item) => item.type === 'github')?.url || '';
+  const socialLinks = mergeSocialLinks(
+    extractSocialLinksFromDexInfo(info),
+    jupiter?.socialLinks,
+    extractSocialLinksFromMetadata(dex?.primaryPair),
+    extractSocialLinksFromMetadata(jupiter?.rawToken)
+  );
+  const website = socialLinks.website || '';
+  const twitter = socialLinks.twitter || '';
+  const telegram = socialLinks.telegram || '';
+  const github = socialLinks.github || '';
+  const socialMetadataAvailable = Boolean(dex?.primaryPair || jupiter);
   const createdAt = dex?.oldestPairCreatedAt || dex?.primaryPair?.pairCreatedAt || (jupiter?.createdAt ? new Date(jupiter.createdAt).getTime() : null);
   const tokenAgeDays = createdAt ? daysSince(createdAt) : null;
   const holderCount = holderAnalytics?.holderCount || jupiter?.holderCount || rpc?.holderCountEstimate || 0;
@@ -627,6 +675,7 @@ async function lookupSolanaToken(contractAddress) {
       twitterUrl: twitter,
       telegramUrl: telegram,
       githubUrl: github,
+      socialMetadataAvailable,
       tokenProgram: jupiter?.tokenProgram || '',
       launchpad: jupiter?.launchpad || '',
       pairUrl: dex?.primaryPair?.url || '',
@@ -688,6 +737,7 @@ function createDemoRiskProject(contractAddress, reason = '') {
       twitterUrl: '',
       telegramUrl: '',
       githubUrl: '',
+      socialMetadataAvailable: false,
       fetchedAt: new Date().toISOString(),
       isDemo: true,
     },
@@ -725,6 +775,71 @@ function getDexTokenForAddress(pair, address) {
   return pair?.baseToken || {};
 }
 
+function extractSocialLinksFromDexInfo(info = {}) {
+  const websites = Array.isArray(info.websites) ? info.websites : [];
+  const socials = Array.isArray(info.socials) ? info.socials : [];
+  return mergeSocialLinks(
+    { website: websites.map((item) => item?.url).find(hasValue) },
+    ...socials.map((item) => {
+      const type = String(item?.type || item?.label || '').toLowerCase();
+      const url = cleanLink(item?.url);
+      if (type.includes('twitter') || type === 'x') return { twitter: url };
+      if (type.includes('telegram') || type === 'tg') return { telegram: url };
+      if (type.includes('github')) return { github: url };
+      if (type.includes('website') || type.includes('site')) return { website: url };
+      return {};
+    })
+  );
+}
+
+function extractSocialLinksFromMetadata(value) {
+  const links = {};
+  const seen = new Set();
+
+  const visit = (input, keyHint = '') => {
+    if (input === null || input === undefined || seen.size > 1200) return;
+    if (typeof input === 'string') {
+      assignSocialLink(links, keyHint, input);
+      return;
+    }
+    if (typeof input !== 'object' || seen.has(input)) return;
+    seen.add(input);
+    if (Array.isArray(input)) {
+      input.forEach((item) => visit(item, keyHint));
+      return;
+    }
+    Object.entries(input).forEach(([key, item]) => visit(item, key));
+  };
+
+  visit(value);
+  return links;
+}
+
+function assignSocialLink(links, keyHint, rawValue) {
+  const value = cleanLink(rawValue);
+  if (!value || value.length > 260) return;
+  const lowerKey = String(keyHint || '').toLowerCase();
+  const lowerValue = value.toLowerCase();
+  const looksLikeUrl = lowerValue.startsWith('http') || lowerValue.includes('.com') || lowerValue.includes('.org') || lowerValue.includes('.io') || lowerValue.includes('.xyz');
+  if (!looksLikeUrl) return;
+
+  if (!links.telegram && (lowerKey.includes('telegram') || lowerKey === 'tg' || lowerValue.includes('t.me/') || lowerValue.includes('telegram.me/'))) {
+    links.telegram = value;
+    return;
+  }
+  if (!links.twitter && (lowerKey.includes('twitter') || lowerKey === 'x' || lowerKey === 'xurl' || lowerValue.includes('twitter.com/') || lowerValue.includes('x.com/'))) {
+    links.twitter = value;
+    return;
+  }
+  if (!links.github && (lowerKey.includes('github') || lowerValue.includes('github.com/'))) {
+    links.github = value;
+    return;
+  }
+  if (!links.website && (lowerKey.includes('website') || lowerKey.includes('site') || lowerKey.includes('url') || lowerKey.includes('homepage'))) {
+    links.website = value;
+  }
+}
+
 async function fetchJupiterTokenData(address) {
   const response = await fetch(`${JUPITER_TOKEN_SEARCH_URL}?query=${encodeURIComponent(address)}`);
   if (!response.ok) throw new Error('Jupiter token lookup failed.');
@@ -746,6 +861,8 @@ async function fetchJupiterTokenData(address) {
     tokenProgram: token.tokenProgram,
     launchpad: token.launchpad,
     createdAt: token.createdAt || token.firstPool?.createdAt || null,
+    socialLinks: extractSocialLinksFromMetadata(token),
+    rawToken: token,
   };
 }
 
@@ -906,6 +1023,28 @@ function riskBadge(score) {
   return 'High Risk';
 }
 
+function confidenceScore(project = {}) {
+  const data = project.realData || {};
+  const checks = [
+    Number(data.holderCount || project.holders || 0) > 0,
+    data.topHolderPercent !== null && data.topHolderPercent !== undefined,
+    data.topTenHolderPercent !== null && data.topTenHolderPercent !== undefined,
+    data.tokenAgeDays !== null && data.tokenAgeDays !== undefined,
+    Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0) > 0,
+    Number(data.marketCapUsd || 0) > 0,
+    socialPresenceState('website', project, data).state !== 'Data unavailable',
+    socialPresenceState('twitter', project, data).state !== 'Data unavailable',
+    socialPresenceState('telegram', project, data).state !== 'Data unavailable',
+  ];
+  const available = checks.filter(Boolean).length;
+  if (data.isDemo) {
+    return { label: 'Limited data', available, total: checks.length };
+  }
+  if (available >= 7) return { label: 'High confidence', available, total: checks.length };
+  if (available >= 5) return { label: 'Medium confidence', available, total: checks.length };
+  return { label: 'Limited data', available, total: checks.length };
+}
+
 function riskFactors(project = {}) {
   const data = project.realData || {};
   const holders = Number(data.holderCount || project.holderCount || project.holders || project.communitySize || 0);
@@ -913,9 +1052,9 @@ function riskFactors(project = {}) {
   const tokenAgeDays = data.tokenAgeDays ?? (project.launchDate ? daysSince(project.launchDate) : null);
   const largestHolder = data.topHolderPercent;
   const topTen = data.topTenHolderPercent;
-  const website = project.website || data.websiteUrl;
-  const twitter = project.twitter || data.twitterUrl;
-  const telegram = project.telegram || data.telegramUrl;
+  const website = socialPresenceState('website', project, data);
+  const twitter = socialPresenceState('twitter', project, data);
+  const telegram = socialPresenceState('telegram', project, data);
 
   const factors = [
     holderCountFactor(holders, data.holderSource),
@@ -1116,14 +1255,23 @@ function liquidityFactor(liquidity, poolCount = 0) {
   };
 }
 
-function presenceFactor(title, value, okSignal, missingSignal, explanation) {
-  if (hasValue(value)) {
+function presenceFactor(title, presence, okSignal, missingSignal, explanation) {
+  if (presence.state === 'Present') {
     return {
       title,
       severity: 'Low',
       signal: okSignal,
-      value,
-      explanation: `${okSignal}: ${value}`,
+      value: `Present: ${presence.value}`,
+      explanation: `${okSignal}: ${presence.value}`,
+    };
+  }
+  if (presence.state === 'Data unavailable') {
+    return {
+      title,
+      severity: 'Limited',
+      signal: 'Data unavailable',
+      value: 'Data unavailable',
+      explanation: `KHAN Trust could not confirm ${title.toLowerCase()} from the available token metadata sources.`,
     };
   }
   return {
@@ -1746,6 +1894,7 @@ function CompareRow({ label, first, second }) {
 function RiskReportPage({ project, navigate }) {
   const reasons = riskSignals(project).slice(0, 3);
   const factors = riskFactors(project);
+  const confidence = confidenceScore(project);
   return (
     <section className="page-section report-page">
       <button className="back-button" onClick={() => navigate('home')}>Check another token</button>
@@ -1779,7 +1928,12 @@ function RiskReportPage({ project, navigate }) {
                 <span>Data mode</span>
                 <strong>{project.realData?.isDemo ? 'Mock demo' : 'Live/public'}</strong>
               </div>
+              <div>
+                <span>Confidence Score</span>
+                <strong>{confidence.label}</strong>
+              </div>
             </div>
+            <p className="inline-note">Signal coverage: {confidence.available}/{confidence.total} data points available.</p>
           </section>
 
           <section className="detail-section">
@@ -1879,7 +2033,7 @@ function PricingPage({ navigate }) {
       name: 'Pro',
       price: '$9/month',
       description: '20 scans/day + full reports',
-      features: ['20 scans per day', 'Full risk reports', 'Holder and whale analysis', 'Liquidity and social risk'],
+      features: ['20 scans per day', 'Whale analysis', 'Holder concentration', 'Liquidity health', 'Social score'],
       cta: 'Choose Pro',
       action: () => alert('Payment integration is not connected yet.'),
       featured: true,
@@ -1888,7 +2042,7 @@ function PricingPage({ navigate }) {
       name: 'Premium',
       price: '$29/month',
       description: 'Unlimited scans + alerts + PDF reports',
-      features: ['Unlimited scans', 'Telegram alerts', 'PDF reports', 'Priority full-report access'],
+      features: ['Unlimited scans', 'Rug risk estimate', 'PDF report', 'Telegram alerts', 'Priority full-report access'],
       cta: 'Choose Premium',
       action: () => alert('Payment integration is not connected yet.'),
     },
@@ -1896,10 +2050,15 @@ function PricingPage({ navigate }) {
 
   return (
     <section className="page-section pricing-page">
-      <SectionTitle icon={WalletCards} eyebrow="Pricing" title="Free scans, paid risk depth" />
+      <SectionTitle icon={WalletCards} eyebrow="Pricing" title="Avoid risky tokens before you lose money." />
       <p className="pricing-intro">
         KHAN Trust is structured for a real paid product: free basic scans, full paid reports, and a one-time report unlock.
       </p>
+      <div className="premium-value-strip">
+        {premiumReportItems.map(([title]) => (
+          <span key={title}><CheckCircle2 size={16} /> {title}</span>
+        ))}
+      </div>
       <div className="one-time-offer">
         <div>
           <span className="status-badge">One-time report</span>
@@ -2233,9 +2392,9 @@ function RealDataSection({ project, data }) {
     ['Market Cap USD', formatCurrency(data.marketCapUsd), LineChart],
     ['Token Age', formatAge(data.tokenAgeDays), CalendarDays],
     ['Trust Score', `${project.trustScore}/100`, BadgeCheck],
-    ['Website', hasValue(project.website || data.websiteUrl) ? 'Found' : 'Missing', Globe2],
-    ['X/Twitter', hasValue(project.twitter || data.twitterUrl) ? 'Found' : 'Missing', ExternalLink],
-    ['Telegram', hasValue(project.telegram || data.telegramUrl) ? 'Found' : 'Missing', MessageCircle],
+    ['Website', socialStateText('website', project, data), Globe2],
+    ['X/Twitter', socialStateText('twitter', project, data), ExternalLink],
+    ['Telegram', socialStateText('telegram', project, data), MessageCircle],
     ['Supply', data.supply ? formatNumber(data.supply) : 'Not available', WalletCards],
     ['Holder Growth', data.holderGrowthPercent === null ? 'Needs a second lookup' : formatPercent(data.holderGrowthPercent), TrendingUp],
     ['Pools Found', formatNumber(data.poolCount), Layers3],

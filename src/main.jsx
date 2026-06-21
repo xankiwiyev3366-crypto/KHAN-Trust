@@ -452,10 +452,10 @@ function scorePresence(value) {
 function scoreSocial(project = {}, data = {}) {
   data = data || {};
   const checks = [
-    hasValue(project.website) || hasValue(data.websiteUrl),
-    hasValue(project.twitter) || hasValue(data.twitterUrl),
-    hasValue(project.telegram) || hasValue(data.telegramUrl),
-    hasValue(project.github) || hasValue(data.githubUrl),
+    socialPresenceState('website', project, data).state === 'Present',
+    socialPresenceState('twitter', project, data).state === 'Present',
+    socialPresenceState('telegram', project, data).state === 'Present',
+    hasValue(firstPresent(project.github, data.githubUrl)),
   ];
   const count = checks.filter(Boolean).length;
   if (!count) return null;
@@ -552,9 +552,25 @@ function socialPresenceState(kind, project = {}, data = {}) {
   return { state: 'Missing', value: 'Missing' };
 }
 
-function socialStateText(kind, project = {}, data = {}) {
-  const result = socialPresenceState(kind, project, data);
-  return result.state === 'Present' ? `Present: ${result.value}` : result.state;
+function resolvedMetadataRows(project = {}) {
+  const data = project.realData || {};
+  return [
+    ['Chain', project.chain, Layers3],
+    ['Contract', project.contract, Lock],
+    ['Website', socialPresenceState('website', project, data), Globe2],
+    ['X/Twitter', socialPresenceState('twitter', project, data), ExternalLink],
+    ['Telegram', socialPresenceState('telegram', project, data), MessageCircle],
+    ['GitHub', linkPresenceState(firstPresent(project.github, data.githubUrl)), Github],
+    ['Launch date', project.launchDate, CalendarDays],
+    ['Status', project.status, BadgeCheck],
+    ['Last update', project.lastUpdate, TimerReset],
+  ];
+}
+
+function linkPresenceState(value) {
+  return hasValue(value)
+    ? { state: 'Present', value }
+    : { state: 'Missing', value: 'Missing' };
 }
 
 function isPublicFounder(status = '') {
@@ -2127,6 +2143,7 @@ function ProjectCard({ project, navigate }) {
 }
 
 function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openMethodology }) {
+  const confidence = confidenceScore(project);
   return (
     <section className="profile-page">
       <div className="profile-hero">
@@ -2156,6 +2173,7 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
         <div className="profile-score-card">
           <ScoreCircle score={project.trustScore} size="large" />
           <RiskPill level={project.riskLevel} />
+          <span className="confidence-badge">{confidence.label}</span>
           <strong>{riskBadge(project.trustScore)}</strong>
           <span className="status-badge">{project.status}</span>
         </div>
@@ -2183,6 +2201,7 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
 }
 
 function RiskSummary({ project }) {
+  const confidence = confidenceScore(project);
   return (
     <section className="detail-section">
       <SectionTitle icon={AlertTriangle} eyebrow="Result" title="Simple Risk Summary" />
@@ -2190,6 +2209,10 @@ function RiskSummary({ project }) {
         <div>
           <span>Trust Score</span>
           <strong>{project.trustScore}/100</strong>
+        </div>
+        <div>
+          <span>Confidence Score</span>
+          <strong>{confidence.label}</strong>
         </div>
         <RiskPill level={project.riskLevel} />
       </div>
@@ -2255,17 +2278,7 @@ function KhanTokenRole() {
 }
 
 function InfoGrid({ project }) {
-  const rows = [
-    ['Chain', project.chain, Layers3],
-    ['Contract', project.contract, Lock],
-    ['Website', project.website, Globe2],
-    ['X/Twitter', project.twitter, ExternalLink],
-    ['Telegram', project.telegram, MessageCircle],
-    ['GitHub', project.github || 'Not provided', Github],
-    ['Launch date', project.launchDate, CalendarDays],
-    ['Status', project.status, BadgeCheck],
-    ['Last update', project.lastUpdate, TimerReset],
-  ];
+  const rows = resolvedMetadataRows(project);
   return (
     <section className="detail-section">
       <SectionTitle icon={Shield} eyebrow="Profile" title="Project Information" />
@@ -2274,12 +2287,39 @@ function InfoGrid({ project }) {
           <div className="info-item" key={label}>
             <Icon size={18} />
             <span>{label}</span>
-            <strong>{value}</strong>
+            <strong><InfoValue value={value} /></strong>
           </div>
         ))}
       </div>
     </section>
   );
+}
+
+function InfoValue({ value }) {
+  if (value && typeof value === 'object' && 'state' in value) {
+    if (value.state === 'Present') return <ClickableLink href={value.value} />;
+    return value.state;
+  }
+  return <ClickableLink href={value} fallback={value || 'Not provided'} />;
+}
+
+function ClickableLink({ href, fallback = 'Not provided' }) {
+  if (!hasValue(href)) return fallback;
+  const url = normalizeExternalUrl(href);
+  if (!url) return href;
+  return (
+    <a className="metadata-link" href={url} target="_blank" rel="noreferrer">
+      {href} <ExternalLink size={13} />
+    </a>
+  );
+}
+
+function normalizeExternalUrl(value = '') {
+  const text = String(value).trim();
+  if (!text) return '';
+  if (/^https?:\/\//i.test(text)) return text;
+  if (/^[\w.-]+\.[a-z]{2,}/i.test(text)) return `https://${text}`;
+  return '';
 }
 
 function TrustBreakdown({ project }) {
@@ -2392,9 +2432,9 @@ function RealDataSection({ project, data }) {
     ['Market Cap USD', formatCurrency(data.marketCapUsd), LineChart],
     ['Token Age', formatAge(data.tokenAgeDays), CalendarDays],
     ['Trust Score', `${project.trustScore}/100`, BadgeCheck],
-    ['Website', socialStateText('website', project, data), Globe2],
-    ['X/Twitter', socialStateText('twitter', project, data), ExternalLink],
-    ['Telegram', socialStateText('telegram', project, data), MessageCircle],
+    ['Website', socialPresenceState('website', project, data), Globe2],
+    ['X/Twitter', socialPresenceState('twitter', project, data), ExternalLink],
+    ['Telegram', socialPresenceState('telegram', project, data), MessageCircle],
     ['Supply', data.supply ? formatNumber(data.supply) : 'Not available', WalletCards],
     ['Holder Growth', data.holderGrowthPercent === null ? 'Needs a second lookup' : formatPercent(data.holderGrowthPercent), TrendingUp],
     ['Pools Found', formatNumber(data.poolCount), Layers3],
@@ -2409,7 +2449,7 @@ function RealDataSection({ project, data }) {
           <div className="real-data-item" key={label}>
             <Icon size={18} />
             <span>{label}</span>
-            <strong>{value}</strong>
+            <strong><InfoValue value={value} /></strong>
           </div>
         ))}
       </div>

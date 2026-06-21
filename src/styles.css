@@ -509,6 +509,20 @@ main {
   overflow-wrap: anywhere;
 }
 
+.metadata-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  color: var(--gold-bright);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.metadata-link:hover {
+  text-decoration: underline;
+}
+
 .report-score {
   display: grid;
   place-items: center;
@@ -672,6 +686,19 @@ main {
 
 .one-time-card .primary-button {
   width: 100%;
+}
+
+.confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 7px 10px;
+  border: 1px solid rgba(103, 211, 156, 0.24);
+  border-radius: 999px;
+  color: var(--success);
+  background: rgba(103, 211, 156, 0.12);
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .one-time-offer {

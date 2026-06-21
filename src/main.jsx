@@ -2410,6 +2410,9 @@ function CryptoPaymentSection() {
           <strong>Debug output (temporary)</strong>
           <ul>
             <li>Signature length: {debugInfo.signatureLength}</li>
+            <li>RPC URL used: {debugInfo.rpcUrlUsed ?? 'n/a'}</li>
+            <li>RPC attempt count: {debugInfo.rpcAttemptCount}</li>
+            <li>RPC error: {debugInfo.rpcError ?? 'none'}</li>
             <li>RPC response received: {debugInfo.rpcResponseReceived ? 'yes' : 'no'}</li>
             <li>Transaction confirmation status: {debugInfo.confirmationStatus ?? 'n/a'}</li>
             <li>Detected receiver wallet: {debugInfo.detectedReceiverWallet ?? 'none'}</li>

@@ -1,8 +1,24 @@
-const RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || '';
+const CONFIGURED_RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || '';
 const PAYMENT_WALLET = import.meta.env.VITE_KHAN_PAYMENT_WALLET || '';
 
 const LAMPORTS_PER_SOL = 1_000_000_000;
 const PRICE_TIMEOUT_MS = 5000;
+// 5s was too aggressive for some public RPC nodes under load and caused
+// "signal is aborted without reason" before a response ever arrived.
+const RPC_TIMEOUT_MS = 15000;
+
+// Try the configured RPC first, then fall back to other public endpoints so a
+// single overloaded/unreachable node doesn't block verification entirely.
+const FALLBACK_RPC_URLS = [
+  'https://api.mainnet-beta.solana.com',
+  'https://solana-api.projectserum.com',
+  'https://rpc.ankr.com/solana',
+];
+
+function getRpcUrlsToTry() {
+  const urls = [CONFIGURED_RPC_URL, ...FALLBACK_RPC_URLS].filter(Boolean);
+  return [...new Set(urls)];
+}
 // Allow a small tolerance for price-feed drift / rounding when SOL is used to pay a USD-denominated plan.
 const AMOUNT_TOLERANCE = 0.98;
 const SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
@@ -32,7 +48,7 @@ function getRequiredUsdAmount(plan) {
 }
 
 export function isSolanaVerificationConfigured() {
-  return Boolean(RPC_URL && PAYMENT_WALLET);
+  return Boolean(CONFIGURED_RPC_URL && PAYMENT_WALLET);
 }
 
 export function solanaUnavailableMessage() {
@@ -49,12 +65,12 @@ async function fetchWithTimeout(url, timeoutMs) {
   }
 }
 
-async function rpcPost(method, params) {
+async function rpcPostOnce(url, method, params) {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), PRICE_TIMEOUT_MS);
+  const timer = window.setTimeout(() => controller.abort('timeout'), RPC_TIMEOUT_MS);
   let response;
   try {
-    response = await fetch(RPC_URL, {
+    response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
@@ -67,6 +83,25 @@ async function rpcPost(method, params) {
   const data = await response.json();
   if (data.error) throw new Error(data.error.message || 'RPC error');
   return data.result;
+}
+
+// Try the configured RPC, then each fallback in order, stopping at the first
+// endpoint that answers successfully.
+async function rpcPost(method, params, debug) {
+  const urls = getRpcUrlsToTry();
+  let lastError;
+  for (const url of urls) {
+    debug.rpcAttemptCount += 1;
+    debug.rpcUrlUsed = url;
+    try {
+      const result = await rpcPostOnce(url, method, params);
+      return result;
+    } catch (error) {
+      lastError = error;
+      debug.rpcError = error.message;
+    }
+  }
+  throw lastError || new Error('All RPC endpoints failed');
 }
 
 async function fetchSolUsdPrice(debug) {
@@ -149,6 +184,9 @@ function findReceiverWallet(transaction, meta) {
 export async function verifySolanaPayment({ transactionHash, plan }) {
   const debug = {
     signatureLength: (transactionHash || '').trim().length,
+    rpcUrlUsed: null,
+    rpcAttemptCount: 0,
+    rpcError: null,
     rpcResponseReceived: false,
     confirmationStatus: null,
     detectedReceiverWallet: null,
@@ -178,13 +216,16 @@ export async function verifySolanaPayment({ transactionHash, plan }) {
 
   let result;
   try {
-    result = await rpcPost('getTransaction', [
-      signature,
-      { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed' },
-    ]);
+    result = await rpcPost(
+      'getTransaction',
+      [signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed' }],
+      debug
+    );
     debug.rpcResponseReceived = true;
+    debug.rpcError = null;
   } catch (error) {
     debug.rpcResponseReceived = false;
+    debug.rpcError = error.message;
     debug.finalDecision = `failed (rpc error: ${error.message})`;
     return { status: 'failed', message: 'Payment failed', reason: error.message, debug };
   }

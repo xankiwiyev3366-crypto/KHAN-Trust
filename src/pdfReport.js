@@ -186,6 +186,36 @@ export function generatePdfReport(data = {}) {
   sectionTitle('Liquidity Data');
   keyValueRow('Liquidity (USD)', data.liquidityData?.liquidityUsd);
   keyValueRow('Market Cap (USD)', data.liquidityData?.marketCapUsd);
+  keyValueRow('Token Age', data.tokenAge);
+
+  sectionTitle('Trust Score Breakdown');
+  const scoreLabels = {
+    founderActivity: 'Founder activity',
+    communityActivity: 'Community activity',
+    roadmapClarity: 'Roadmap clarity',
+    transparency: 'Transparency',
+    tokenRisk: 'Token risk',
+    socialProof: 'Social proof',
+    marketCapScore: 'Market Cap Score',
+    liquidityScore: 'Liquidity Score',
+    holderScore: 'Holder Score',
+    topHolderScore: 'Top Holder Score',
+    topTenHolderScore: 'Top 10 Holder Score',
+    tokenAgeScore: 'Token Age Score',
+    websiteScore: 'Website Presence',
+    twitterScore: 'X/Twitter Presence',
+    telegramScore: 'Telegram Presence',
+    socialScore: 'Social Score',
+    holderGrowthScore: 'Holder Growth Score',
+    supplyScore: 'Supply Score',
+    finalTrustScore: 'Final Trust Score',
+  };
+  const breakdown = Object.entries(data.scoreBreakdown || {});
+  if (breakdown.length) {
+    breakdown.forEach(([key, value]) => keyValueRow(scoreLabels[key] || key, value === null ? 'Not available' : `${value}/100`));
+  } else {
+    bodyText('Score breakdown data was not available for this report.', { color: COLORS.muted });
+  }
 
   const pageCount = doc.getNumberOfPages();
   for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {

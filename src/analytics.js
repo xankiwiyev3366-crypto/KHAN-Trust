@@ -3,7 +3,7 @@ const MEASUREMENT_ID = import.meta.env.VITE_GA_MEASUREMENT_ID;
 let initialized = false;
 
 function isEnabled() {
-  return Boolean(MEASUREMENT_ID) && typeof window !== 'undefined';
+  return Boolean(MEASUREMENT_ID) && import.meta.env.PROD && typeof window !== 'undefined';
 }
 
 export function initAnalytics() {
@@ -39,11 +39,39 @@ export function trackPageView(path) {
 }
 
 export function trackTokenSearch(term, status) {
-  trackEvent('token_search', { search_term: term, status });
+  trackEvent('token_scan_completed', { search_term: term, status });
+}
+
+export function trackTokenScanStarted(term) {
+  trackEvent('token_scan_started', { search_term: term });
+}
+
+export function trackTokenScanCompleted(term, status) {
+  trackEvent('token_scan_completed', { search_term: term, status });
 }
 
 export function trackPdfDownload(project = {}) {
-  trackEvent('pdf_download', {
+  trackEvent('download_pdf_report_clicked', {
+    token_name: project.name,
+    token_ticker: project.ticker,
+    chain: project.chain,
+  });
+}
+
+export function trackReportViewed(project = {}) {
+  trackEvent('report_viewed', {
+    token_name: project.name,
+    token_ticker: project.ticker,
+    chain: project.chain,
+  });
+}
+
+export function trackPricingViewed() {
+  trackEvent('pricing_viewed');
+}
+
+export function trackUnlockFullReport(project = {}) {
+  trackEvent('unlock_full_report_clicked', {
     token_name: project.name,
     token_ticker: project.ticker,
     chain: project.chain,

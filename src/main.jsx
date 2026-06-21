@@ -45,9 +45,13 @@ import {
   initAnalytics,
   trackPageView,
   trackPdfDownload,
+  trackPricingViewed,
+  trackReportViewed,
   trackShareClick,
   trackSocialClick,
-  trackTokenSearch,
+  trackTokenScanCompleted,
+  trackTokenScanStarted,
+  trackUnlockFullReport,
 } from './analytics.js';
 
 const PROJECTS_KEY = 'khan-trust-projects-v1';
@@ -251,12 +255,10 @@ const navItems = [
 ];
 
 const premiumReportItems = [
-  ['Whale analysis', 'Largest wallets, top 10 concentration, and whale-pressure warnings.'],
-  ['Rug risk estimate', 'Combined holder, liquidity, age, and social-risk estimate.'],
-  ['Holder concentration', 'Largest holder and top wallet concentration warnings.'],
-  ['Liquidity health', 'Pool depth, shallow liquidity signals, and exit-risk notes.'],
-  ['Social score', 'Website, X/Twitter, and Telegram presence review.'],
-  ['PDF report', 'Downloadable research report for saved scans.'],
+  ['Saved reports', 'Keep previous scans organized in a future Premium workspace.'],
+  ['Watchlist', 'Track selected tokens and changing risk signals when Premium launches.'],
+  ['Deeper risk analysis', 'Expanded checks across liquidity, age, holders, links, and transparency.'],
+  ['Advanced holder insights', 'Largest wallets, top 10 concentration, and whale-pressure warnings.'],
   ['Telegram alerts', 'Alerts for watched tokens and changing risk signals.'],
 ];
 
@@ -1395,6 +1397,8 @@ function buildPdfReportData(project = {}) {
       liquidityUsd: formatCurrency(data.totalLiquidityUsd ?? data.liquidityUsd),
       marketCapUsd: formatCurrency(data.marketCapUsd),
     },
+    tokenAge: project.realData ? formatAge(data.tokenAgeDays) : formatAge(project.launchDate ? daysSince(project.launchDate) : null),
+    scoreBreakdown: project.scoreBreakdown || {},
     generatedDate: new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
   };
 }
@@ -1407,6 +1411,11 @@ async function handleDownloadPdf(project) {
   } catch {
     alert('PDF generation failed to load. Check your connection and try again.');
   }
+}
+
+function handleUnlockPremiumClick(project) {
+  trackUnlockFullReport(project);
+  alert('Payments are not live yet. Premium features are coming soon.');
 }
 
 function shareText(project = {}, channel = 'x') {
@@ -1502,6 +1511,10 @@ function App() {
     trackPageView(`/${page}`);
   }, [page]);
 
+  useEffect(() => {
+    if (page === 'pricing') trackPricingViewed();
+  }, [page]);
+
   const projects = useMemo(() => userProjects.map((project) => normalizeProject(project)), [userProjects]);
   const selectedProject = useMemo(() => {
     if (page === 'khan') return projects.find((project) => project.contract === '6bSHkoMYqzyCZdWPQ45nUv73dvdfx4yEd4yEemefpump') || null;
@@ -1514,6 +1527,10 @@ function App() {
     const id = page.split('/')[1];
     return projects.find((project) => project.id === id) || null;
   }, [page, projects]);
+
+  useEffect(() => {
+    if (reportProject) trackReportViewed(reportProject);
+  }, [reportProject]);
 
   const navigate = (target) => {
     window.location.hash = `/${target}`;
@@ -1557,15 +1574,16 @@ function App() {
     }
 
     setSearchState({ status: 'loading', message: 'Fetching live Solana token data...' });
+    trackTokenScanStarted(term);
     try {
       const liveProject = normalizeProject(await lookupSolanaToken(term));
       setUserProjects((items) => upsertProject(items, liveProject));
       setSearchState({ status: 'success', message: `Opened live profile for ${liveProject.name || liveProject.ticker}.` });
-      trackTokenSearch(term, 'success');
+      trackTokenScanCompleted(term, 'success');
       navigate(`project/${liveProject.id}`);
     } catch (error) {
       setSearchState({ status: 'error', message: error.message || 'No live Solana token data was found.' });
-      trackTokenSearch(term, 'error');
+      trackTokenScanCompleted(term, 'error');
       navigate('explore');
     }
   };
@@ -1580,15 +1598,16 @@ function App() {
     }
 
     try {
+      trackTokenScanStarted(term);
       const liveProject = normalizeProject(await lookupSolanaToken(term));
       setUserProjects((items) => upsertProject(items, liveProject));
-      trackTokenSearch(term, 'success');
+      trackTokenScanCompleted(term, 'success');
       navigate(`report/${liveProject.id}`);
       return { status: 'success', message: `Opened free risk report for ${liveProject.name || liveProject.ticker}.` };
     } catch (error) {
       const demoProject = normalizeProject(createDemoRiskProject(term, error.message));
       setUserProjects((items) => upsertProject(items, demoProject));
-      trackTokenSearch(term, 'demo-fallback');
+      trackTokenScanCompleted(term, 'demo-fallback');
       navigate(`report/${demoProject.id}`);
       return { status: 'success', message: 'Live API data was unavailable, so KHAN Trust opened a demo risk report.' };
     }
@@ -1991,9 +2010,12 @@ function RiskReportPage({ project, navigate }) {
       </div>
 
       <div className="report-action-row">
-        <button className="secondary-button" type="button" onClick={() => handleDownloadPdf(project)}>
-          <Download size={18} /> Download PDF Report
-        </button>
+        <div className="pdf-export-cta">
+          <button className="secondary-button" type="button" onClick={() => handleDownloadPdf(project)}>
+            <Download size={18} /> Download PDF Report
+          </button>
+          <small>Export this report for sharing or research.</small>
+        </div>
       </div>
 
       <div className="report-layout">
@@ -2051,11 +2073,11 @@ function RiskReportPage({ project, navigate }) {
             </div>
           </section>
 
-          <PremiumLockedSection navigate={navigate} />
+          <PremiumLockedSection project={project} navigate={navigate} />
         </div>
 
         <aside className="side-column">
-          <OneTimeUnlockCard navigate={navigate} />
+          <OneTimeUnlockCard project={project} navigate={navigate} />
           <Disclaimer compact />
         </aside>
       </div>
@@ -2063,10 +2085,11 @@ function RiskReportPage({ project, navigate }) {
   );
 }
 
-function PremiumLockedSection({ navigate }) {
+function PremiumLockedSection({ project, navigate }) {
   return (
     <section className="detail-section premium-lock-section">
-      <SectionTitle icon={Lock} eyebrow="Premium" title="Unlock full report" />
+      <SectionTitle icon={Lock} eyebrow="Premium" title="Premium features are coming soon" />
+      <p className="inline-note">Basic scans and PDF reports remain free. Payments are not live yet.</p>
       <div className="premium-feature-grid">
         {premiumReportItems.map(([title, text]) => (
           <div className="premium-feature locked" key={title}>
@@ -2077,13 +2100,13 @@ function PremiumLockedSection({ navigate }) {
         ))}
       </div>
       <div className="unlock-bar">
-        <strong>Unlock full report</strong>
+        <strong>Unlock Premium</strong>
         <div>
-          <button className="primary-button" type="button" onClick={() => navigate('pricing')}>
-            Unlock one full report for $5
+          <button className="primary-button" type="button" onClick={() => handleUnlockPremiumClick(project)}>
+            Unlock Premium - Coming soon
           </button>
           <button className="secondary-button" type="button" onClick={() => navigate('pricing')}>
-            View paid plans <ArrowRight size={18} />
+            View plans <ArrowRight size={18} />
           </button>
         </div>
       </div>
@@ -2091,14 +2114,17 @@ function PremiumLockedSection({ navigate }) {
   );
 }
 
-function OneTimeUnlockCard({ navigate }) {
+function OneTimeUnlockCard({ project, navigate }) {
   return (
     <section className="detail-section one-time-card">
-      <SectionTitle icon={FileWarning} eyebrow="One-time" title="Single Report" />
-      <strong>Unlock one full report for $5</strong>
-      <p>No payment is connected yet. This button is a product UI placeholder for the paid report flow.</p>
-      <button className="primary-button" type="button" onClick={() => navigate('pricing')}>
-        Unlock full report
+      <SectionTitle icon={FileWarning} eyebrow="Premium" title="Future Access" />
+      <strong>Premium features are coming soon</strong>
+      <p>Payments are not live yet. PDF report export remains available in the free report.</p>
+      <button className="primary-button" type="button" onClick={() => handleUnlockPremiumClick(project)}>
+        Unlock Premium - Coming soon
+      </button>
+      <button className="secondary-button" type="button" onClick={() => navigate('pricing')}>
+        View Pricing <WalletCards size={18} />
       </button>
     </section>
   );
@@ -2109,35 +2135,39 @@ function PricingPage({ navigate }) {
     {
       name: 'Free',
       price: '$0',
-      description: 'Basic scan',
-      features: ['Trust Score', 'Risk Level', '3 main risk reasons'],
+      description: 'Basic token scan and shareable PDF report export.',
+      features: ['Trust Score', 'Risk Level', '3 main risk reasons', 'PDF report export'],
       cta: 'Start free scan',
       action: () => navigate('home'),
     },
     {
-      name: 'Pro',
-      price: '$9/month',
-      description: '20 scans/day + full reports',
-      features: ['20 scans per day', 'Whale analysis', 'Holder concentration', 'Liquidity health', 'Social score'],
-      cta: 'Choose Pro',
-      action: () => alert('Payment integration is not connected yet.'),
+      name: 'Premium',
+      price: 'Coming soon',
+      description: 'Premium features are coming soon. Payments are not live yet.',
+      features: ['Saved reports', 'Watchlist', 'Deeper risk analysis', 'Advanced holder insights', 'Telegram alerts'],
+      cta: 'Unlock Premium - Coming soon',
+      action: () => handleUnlockPremiumClick(),
       featured: true,
     },
     {
-      name: 'Premium',
-      price: '$29/month',
-      description: 'Unlimited scans + alerts + PDF reports',
-      features: ['Unlimited scans', 'Rug risk estimate', 'PDF report', 'Telegram alerts', 'Priority full-report access'],
-      cta: 'Choose Premium',
-      action: () => alert('Payment integration is not connected yet.'),
+      name: 'Early Supporter',
+      price: 'Coming soon',
+      description: 'Early supporters may receive benefits later. No benefits are guaranteed.',
+      features: ['Early supporter badge placeholder', 'Potential future benefits', 'No token investment claims', 'No profit promises'],
+      cta: 'Coming soon',
+      action: () => alert('Payments are not live yet. Early supporter access is coming soon.'),
     },
   ];
 
   return (
     <section className="page-section pricing-page">
-      <SectionTitle icon={WalletCards} eyebrow="Pricing" title="Avoid risky tokens before you lose money." />
+      <SectionTitle icon={WalletCards} eyebrow="Pricing" title="Plans for KHAN Trust" />
       <p className="pricing-intro">
-        KHAN Trust is structured for a real paid product: free basic scans, full paid reports, and a one-time report unlock.
+        Basic scans remain free, PDF report export remains available, and Premium access is being prepared without real payments.
+        Payments are not live yet.
+      </p>
+      <p className="pricing-note">
+        Premium reports will include PDF export, deeper holder analysis and Telegram alerts.
       </p>
       <div className="premium-value-strip">
         {premiumReportItems.map(([title]) => (
@@ -2146,12 +2176,12 @@ function PricingPage({ navigate }) {
       </div>
       <div className="one-time-offer">
         <div>
-          <span className="status-badge">One-time report</span>
-          <h3>Unlock one full report for $5</h3>
-          <p>UI only for now. No Stripe, wallet checkout, or payment processor is connected.</p>
+          <span className="status-badge">Safe launch mode</span>
+          <h3>Premium features are coming soon</h3>
+          <p>No real payment processing, no checkout, and no token investment claims are connected.</p>
         </div>
-        <button className="primary-button" type="button" onClick={() => alert('Payment integration is not connected yet.')}>
-          Unlock full report
+        <button className="primary-button" type="button" onClick={() => handleUnlockPremiumClick()}>
+          Unlock Premium - Coming soon
         </button>
       </div>
       <div className="pricing-grid">
@@ -2171,6 +2201,9 @@ function PricingPage({ navigate }) {
           </article>
         ))}
       </div>
+      <p className="pricing-note">
+        Early supporters may receive benefits later. KHAN Trust does not promise profit, returns, or investment outcomes.
+      </p>
       <Disclaimer />
     </section>
   );
@@ -2233,6 +2266,9 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
             </button>
             <button className="secondary-button" onClick={() => handleDownloadPdf(project)}>
               <Download size={18} /> Download PDF Report
+            </button>
+            <button className="primary-button" onClick={() => handleUnlockPremiumClick(project)}>
+              <Lock size={18} /> Unlock Premium - Coming soon
             </button>
             <button className="secondary-button" onClick={() => alert('Suggestion noted locally for the MVP. In a future version this can open a moderation flow.')}>
               <Flag size={18} /> Report / Suggest Update

@@ -86,6 +86,18 @@ export function trackCheckoutUnavailable(plan, reason = 'missing_config') {
   trackEvent('checkout_unavailable', { plan, reason });
 }
 
+export function trackCryptoVerifyStarted(plan) {
+  trackEvent('crypto_verify_started', { plan });
+}
+
+export function trackCryptoVerifySuccess(plan) {
+  trackEvent('crypto_verify_success', { plan });
+}
+
+export function trackCryptoVerifyFailed(plan, reason) {
+  trackEvent('crypto_verify_failed', { plan, reason });
+}
+
 export function trackSocialClick(network, url) {
   trackEvent('social_link_click', { network, link_url: url });
 }

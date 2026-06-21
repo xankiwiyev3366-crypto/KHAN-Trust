@@ -55,8 +55,12 @@ import {
   trackSocialClick,
   trackTokenScanCompleted,
   trackTokenScanStarted,
+  trackCryptoVerifyStarted,
+  trackCryptoVerifySuccess,
+  trackCryptoVerifyFailed,
 } from './analytics.js';
 import { isStripeConfigured, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
+import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
 
 const PROJECTS_KEY = 'khan-trust-projects-v1';
 const WATCHLIST_KEY = 'khan-trust-watchlist-v1';
@@ -2278,10 +2282,25 @@ function CardPaymentSection({ beginCheckout }) {
   );
 }
 
+const VERIFY_STATUS_MESSAGE = {
+  idle: 'Waiting for transaction hash',
+  not_configured: 'Automatic verification is not configured yet',
+  verifying: 'Verifying payment...',
+  verified: 'Payment verified',
+  failed: 'Payment failed',
+  amount_too_low: 'Amount too low',
+  wrong_receiver: 'Wrong receiver wallet',
+  not_confirmed: 'Transaction not confirmed yet',
+};
+
 function CryptoPaymentSection() {
   const [transactionHash, setTransactionHash] = useState('');
   const [copied, setCopied] = useState(false);
+  const [plan, setPlan] = useState('premium');
+  const [verifyStatus, setVerifyStatus] = useState('idle');
   const walletConfigured = Boolean(CRYPTO_PAYMENT_WALLET);
+  const verificationConfigured = isSolanaVerificationConfigured();
+
   const copyWallet = async () => {
     if (!walletConfigured) return;
     try {
@@ -2293,11 +2312,36 @@ function CryptoPaymentSection() {
     }
   };
 
+  const verifyPayment = async () => {
+    if (!verificationConfigured) {
+      setVerifyStatus('not_configured');
+      return;
+    }
+    if (!transactionHash.trim()) {
+      setVerifyStatus('idle');
+      return;
+    }
+
+    trackCryptoVerifyStarted(plan);
+    setVerifyStatus('verifying');
+
+    const result = await verifySolanaPayment({ transactionHash, plan });
+    setVerifyStatus(result.status);
+
+    if (result.status === 'verified') {
+      trackCryptoVerifySuccess(plan);
+    } else {
+      trackCryptoVerifyFailed(plan, result.status);
+    }
+  };
+
+  const statusMessage = VERIFY_STATUS_MESSAGE[verifyStatus] || VERIFY_STATUS_MESSAGE.idle;
+
   return (
     <div className="payment-method-card">
       <span className="status-badge">Crypto payment via USDT/SOL</span>
       <h3>Crypto payments</h3>
-      <p>Supported networks: Solana / USDT / SOL. Manual crypto verification for now.</p>
+      <p>Supported networks: Solana / USDT / SOL. Automatic on-chain verification of your transaction hash.</p>
       <div className="crypto-price-grid">
         <span>Premium: 9 USDT/month</span>
         <span>Early Supporter: 29 USDT one-time</span>
@@ -2313,16 +2357,50 @@ function CryptoPaymentSection() {
       ) : (
         <p className="inline-note">Crypto payments are not configured yet</p>
       )}
+
+      {!verificationConfigured && <p className="inline-note">{solanaUnavailableMessage()}</p>}
+
+      <label className="form-field">
+        <span>Plan</span>
+        <select value={plan} onChange={(event) => setPlan(event.target.value)} disabled={!walletConfigured}>
+          <option value="premium">Premium - 9 USDT/month</option>
+          <option value="early_supporter">Early Supporter - 29 USDT one-time</option>
+        </select>
+      </label>
+
       <label className="form-field transaction-field">
         <span>Transaction hash</span>
         <input
           value={transactionHash}
-          onChange={(event) => setTransactionHash(event.target.value)}
+          onChange={(event) => {
+            setTransactionHash(event.target.value);
+            setVerifyStatus('idle');
+          }}
           placeholder="Paste transaction hash after payment"
           disabled={!walletConfigured}
         />
       </label>
-      <p className="inline-note">Manual verification note: send the transaction hash to KHAN Trust support for account activation. No profit promises and no investment claims.</p>
+
+      <button
+        className="primary-button"
+        type="button"
+        onClick={verifyPayment}
+        disabled={!walletConfigured || verifyStatus === 'verifying'}
+      >
+        Verify payment
+      </button>
+
+      <p className={verifyStatus === 'verified' ? 'inline-note verify-success' : 'inline-note'}>
+        {statusMessage}
+      </p>
+
+      {verifyStatus === 'verified' && (
+        <p className="inline-note">
+          Payment verified. Premium activation will be handled by the team until user accounts are added.
+        </p>
+      )}
+
+      <p className="inline-note">If automatic verification fails, contact the team with your transaction hash.</p>
     </div>
   );
 }

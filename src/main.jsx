@@ -2298,6 +2298,7 @@ function CryptoPaymentSection() {
   const [copied, setCopied] = useState(false);
   const [plan, setPlan] = useState('premium');
   const [verifyStatus, setVerifyStatus] = useState('idle');
+  const [resultMessage, setResultMessage] = useState('');
   const [debugInfo, setDebugInfo] = useState(null);
   const walletConfigured = Boolean(CRYPTO_PAYMENT_WALLET);
   const verificationConfigured = isSolanaVerificationConfigured();
@@ -2316,21 +2317,25 @@ function CryptoPaymentSection() {
   const verifyPayment = async () => {
     if (!verificationConfigured) {
       setVerifyStatus('not_configured');
+      setResultMessage('');
       setDebugInfo(null);
       return;
     }
     if (!transactionHash.trim()) {
       setVerifyStatus('idle');
+      setResultMessage('');
       setDebugInfo(null);
       return;
     }
 
     trackCryptoVerifyStarted(plan);
     setVerifyStatus('verifying');
+    setResultMessage('');
     setDebugInfo(null);
 
     const result = await verifySolanaPayment({ transactionHash, plan });
     setVerifyStatus(result.status);
+    setResultMessage(result.message || '');
     setDebugInfo(result.debug || null);
 
     if (result.status === 'verified') {
@@ -2340,7 +2345,7 @@ function CryptoPaymentSection() {
     }
   };
 
-  const statusMessage = VERIFY_STATUS_MESSAGE[verifyStatus] || VERIFY_STATUS_MESSAGE.idle;
+  const statusMessage = resultMessage || VERIFY_STATUS_MESSAGE[verifyStatus] || VERIFY_STATUS_MESSAGE.idle;
 
   return (
     <div className="payment-method-card">
@@ -2380,6 +2385,8 @@ function CryptoPaymentSection() {
           onChange={(event) => {
             setTransactionHash(event.target.value);
             setVerifyStatus('idle');
+            setResultMessage('');
+            setDebugInfo(null);
           }}
           placeholder="Paste transaction hash after payment"
           disabled={!walletConfigured}
@@ -2412,6 +2419,16 @@ function CryptoPaymentSection() {
             <li>Signature length: {debugInfo.signatureLength}</li>
             <li>RPC URL used: {debugInfo.rpcUrlUsed ?? 'n/a'}</li>
             <li>RPC attempt count: {debugInfo.rpcAttemptCount}</li>
+            <li>
+              RPC attempts:
+              <ul>
+                {(debugInfo.rpcAttempts || []).map((attempt, index) => (
+                  <li key={`${attempt.url}-${index}`}>
+                    {attempt.url} - {attempt.ok ? 'ok' : `failed (${attempt.error})`}
+                  </li>
+                ))}
+              </ul>
+            </li>
             <li>RPC error: {debugInfo.rpcError ?? 'none'}</li>
             <li>RPC response received: {debugInfo.rpcResponseReceived ? 'yes' : 'no'}</li>
             <li>Transaction confirmation status: {debugInfo.confirmationStatus ?? 'n/a'}</li>

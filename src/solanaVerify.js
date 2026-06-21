@@ -7,13 +7,11 @@ const PRICE_TIMEOUT_MS = 5000;
 // "signal is aborted without reason" before a response ever arrived.
 const RPC_TIMEOUT_MS = 15000;
 
-// Try the configured RPC first, then fall back to other public endpoints so a
-// single overloaded/unreachable node doesn't block verification entirely.
-const FALLBACK_RPC_URLS = [
-  'https://api.mainnet-beta.solana.com',
-  'https://solana-api.projectserum.com',
-  'https://rpc.ankr.com/solana',
-];
+// Try the configured RPC first, then fall back to the public mainnet endpoint
+// so a single overloaded/unreachable node doesn't block verification entirely.
+// projectserum and ankr were removed: projectserum no longer answers requests,
+// and ankr returns 403 without an API key - both only masked the real error.
+const FALLBACK_RPC_URLS = ['https://api.mainnet-beta.solana.com'];
 
 function getRpcUrlsToTry() {
   const urls = [CONFIGURED_RPC_URL, ...FALLBACK_RPC_URLS].filter(Boolean);
@@ -86,22 +84,24 @@ async function rpcPostOnce(url, method, params) {
 }
 
 // Try the configured RPC, then each fallback in order, stopping at the first
-// endpoint that answers successfully.
+// endpoint that answers successfully. Every attempt (including ones that time
+// out before a later one fails outright) is recorded in debug.rpcAttempts so
+// the real first failure isn't hidden behind whichever endpoint failed last.
 async function rpcPost(method, params, debug) {
   const urls = getRpcUrlsToTry();
-  let lastError;
   for (const url of urls) {
     debug.rpcAttemptCount += 1;
     debug.rpcUrlUsed = url;
     try {
       const result = await rpcPostOnce(url, method, params);
+      debug.rpcAttempts.push({ url, ok: true });
       return result;
     } catch (error) {
-      lastError = error;
-      debug.rpcError = error.message;
+      debug.rpcAttempts.push({ url, ok: false, error: error.message });
     }
   }
-  throw lastError || new Error('All RPC endpoints failed');
+  debug.rpcError = 'RPC unavailable, please try again';
+  throw new Error('RPC unavailable, please try again');
 }
 
 async function fetchSolUsdPrice(debug) {
@@ -186,6 +186,7 @@ export async function verifySolanaPayment({ transactionHash, plan }) {
     signatureLength: (transactionHash || '').trim().length,
     rpcUrlUsed: null,
     rpcAttemptCount: 0,
+    rpcAttempts: [],
     rpcError: null,
     rpcResponseReceived: false,
     confirmationStatus: null,
@@ -222,12 +223,10 @@ export async function verifySolanaPayment({ transactionHash, plan }) {
       debug
     );
     debug.rpcResponseReceived = true;
-    debug.rpcError = null;
   } catch (error) {
     debug.rpcResponseReceived = false;
-    debug.rpcError = error.message;
-    debug.finalDecision = `failed (rpc error: ${error.message})`;
-    return { status: 'failed', message: 'Payment failed', reason: error.message, debug };
+    debug.finalDecision = `failed (${error.message})`;
+    return { status: 'failed', message: error.message, reason: error.message, debug };
   }
 
   if (!result) {

@@ -1,6 +1,23 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
+  Connection,
+  Keypair,
+  PublicKey,
+  SystemProgram,
+  Transaction,
+  clusterApiUrl,
+} from '@solana/web3.js';
+import {
+  MINT_SIZE,
+  TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountInstruction,
+  createInitializeMintInstruction,
+  createMintToInstruction,
+  getAssociatedTokenAddress,
+  getMinimumBalanceForRentExemptMint,
+} from '@solana/spl-token';
+import {
   Activity,
   AlertTriangle,
   ArrowRight,
@@ -66,6 +83,7 @@ const PROJECTS_KEY = 'khan-trust-projects-v1';
 const WATCHLIST_KEY = 'khan-trust-watchlist-v1';
 const CRYPTO_PAYMENT_WALLET = import.meta.env.VITE_KHAN_PAYMENT_WALLET || '';
 const SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com';
+const SOLANA_DEVNET_RPC_URL = clusterApiUrl('devnet');
 const DEXSCREENER_SOLANA_TOKEN_URL = 'https://api.dexscreener.com/token-pairs/v1/solana';
 const JUPITER_TOKEN_SEARCH_URL = 'https://lite-api.jup.ag/tokens/v2/search';
 
@@ -259,6 +277,7 @@ const navItems = [
   { id: 'pricing', label: 'Pricing', icon: WalletCards },
   { id: 'compare', label: 'Compare', icon: Scale },
   { id: 'add', label: 'Add Project', icon: Plus },
+  { id: 'launchpad', label: 'Launchpad', icon: Sparkles },
   { id: 'about', label: 'About', icon: Info },
   { id: 'khan', label: '$KHAN', icon: Star },
 ];
@@ -294,6 +313,11 @@ function normalizeProject(input) {
     mission: input.mission || '',
     status: input.status || 'User submitted',
     lastUpdate: input.lastUpdate || now,
+    logoUrl: input.logoUrl || '',
+    createdBy: input.createdBy || '',
+    network: input.network || '',
+    launchpadSource: input.launchpadSource || '',
+    transactionSignature: input.transactionSignature || '',
     founderStatus: input.founderStatus || 'Not provided',
     communitySize,
     holders,
@@ -606,17 +630,22 @@ function socialPresenceState(kind, project = {}, data = {}) {
 
 function resolvedMetadataRows(project = {}) {
   const data = project.realData || {};
-  return [
+  const rows = [
     ['Chain', project.chain, Layers3],
+    project.network ? ['Network', project.network, BadgeCheck] : null,
     ['Contract', project.contract, Lock],
     ['Website', socialPresenceState('website', project, data), Globe2],
     ['X/Twitter', socialPresenceState('twitter', project, data), ExternalLink],
     ['Telegram', socialPresenceState('telegram', project, data), MessageCircle],
     ['GitHub', linkPresenceState(firstPresent(project.github, data.githubUrl)), Github],
+    project.createdBy ? ['Created by', project.createdBy, WalletCards] : null,
+    project.launchpadSource ? ['Source', project.launchpadSource, Sparkles] : null,
+    project.transactionSignature ? ['Transaction', project.transactionSignature, BadgeCheck] : null,
     ['Launch date', project.launchDate, CalendarDays],
     ['Status', project.status, BadgeCheck],
     ['Last update', project.lastUpdate, TimerReset],
   ];
+  return rows.filter(Boolean);
 }
 
 function linkPresenceState(value) {
@@ -1013,6 +1042,120 @@ function roadmapFromText(text) {
     .filter(Boolean)
     .slice(0, 6)
     .map((phase, index) => ({ phase, status: index === 0 ? 'In progress' : 'Planned' }));
+}
+
+function parseTokenAmount(value, decimals) {
+  const raw = String(value || '').trim();
+  if (!/^\d+(\.\d+)?$/.test(raw)) {
+    throw new Error('Total supply must be a positive number.');
+  }
+  const [wholePart, fractionPart = ''] = raw.split('.');
+  if (fractionPart.length > decimals) {
+    throw new Error(`Total supply cannot have more than ${decimals} decimal places.`);
+  }
+  const scale = 10n ** BigInt(decimals);
+  const whole = BigInt(wholePart || '0') * scale;
+  const fraction = BigInt((fractionPart || '').padEnd(decimals, '0') || '0');
+  const amount = whole + fraction;
+  if (amount <= 0n) {
+    throw new Error('Total supply must be positive.');
+  }
+  return amount;
+}
+
+function formatWalletAddress(address = '') {
+  return address ? `${address.slice(0, 4)}...${address.slice(-4)}` : 'Not connected';
+}
+
+function phantomProvider() {
+  if (typeof window === 'undefined') return null;
+  return window.solana?.isPhantom ? window.solana : null;
+}
+
+async function connectPhantomWallet() {
+  const provider = phantomProvider();
+  if (!provider) {
+    throw new Error('Phantom wallet is not installed.');
+  }
+  const response = await provider.connect();
+  return response.publicKey.toString();
+}
+
+async function createDevnetSplToken({ walletAddress, decimals, totalSupply }) {
+  const provider = phantomProvider();
+  if (!provider) {
+    throw new Error('Phantom wallet is not installed.');
+  }
+  if (!walletAddress || !provider.publicKey) {
+    throw new Error('Connect Phantom before creating a token.');
+  }
+
+  const connection = new Connection(SOLANA_DEVNET_RPC_URL, 'confirmed');
+  const walletPublicKey = new PublicKey(walletAddress);
+  const mintKeypair = Keypair.generate();
+  const mintLamports = await getMinimumBalanceForRentExemptMint(connection);
+  const tokenAccount = await getAssociatedTokenAddress(mintKeypair.publicKey, walletPublicKey);
+  const amount = parseTokenAmount(totalSupply, decimals);
+  const latestBlockhash = await connection.getLatestBlockhash('confirmed');
+  const transaction = new Transaction({
+    feePayer: walletPublicKey,
+    recentBlockhash: latestBlockhash.blockhash,
+  }).add(
+    SystemProgram.createAccount({
+      fromPubkey: walletPublicKey,
+      newAccountPubkey: mintKeypair.publicKey,
+      space: MINT_SIZE,
+      lamports: mintLamports,
+      programId: TOKEN_PROGRAM_ID,
+    }),
+    createInitializeMintInstruction(mintKeypair.publicKey, decimals, walletPublicKey, null),
+    createAssociatedTokenAccountInstruction(walletPublicKey, tokenAccount, walletPublicKey, mintKeypair.publicKey),
+    createMintToInstruction(mintKeypair.publicKey, tokenAccount, walletPublicKey, amount)
+  );
+
+  transaction.partialSign(mintKeypair);
+  const signedTransaction = await provider.signTransaction(transaction);
+  const signature = await connection.sendRawTransaction(signedTransaction.serialize());
+  await connection.confirmTransaction({ signature, ...latestBlockhash }, 'confirmed');
+
+  return {
+    mintAddress: mintKeypair.publicKey.toString(),
+    signature,
+    tokenAccount: tokenAccount.toString(),
+  };
+}
+
+function launchpadProfileFromForm(form, walletAddress, result) {
+  const now = new Date().toISOString().slice(0, 10);
+  const roadmap = roadmapFromText(form.roadmapText);
+  return {
+    id: `launchpad-${slugify(result.mintAddress)}`,
+    name: form.name.trim(),
+    ticker: form.symbol.trim().toUpperCase(),
+    chain: 'Solana',
+    network: 'devnet',
+    contract: result.mintAddress,
+    website: form.website,
+    twitter: form.twitter,
+    telegram: form.telegram,
+    logoUrl: form.logoUrl,
+    launchDate: now,
+    description: form.description,
+    status: 'KHAN Launchpad devnet token',
+    lastUpdate: now,
+    founderStatus: form.founderStatus,
+    communitySize: Number(form.communitySize || 0),
+    roadmap,
+    roadmapText: form.roadmapText,
+    riskNotes: form.riskNotes || 'Devnet token created for testing. Verify all metadata before any future mainnet launch.',
+    createdBy: walletAddress,
+    launchpadSource: 'KHAN Launchpad',
+    transactionSignature: result.signature,
+    timeline: [
+      { label: 'Devnet token created', date: now },
+      { label: 'KHAN Trust profile generated', date: now },
+    ],
+  };
 }
 
 function scoreToRisk(score) {
@@ -1649,9 +1792,14 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const addProject = (project) => {
+  const saveProjectProfile = (project) => {
     const normalized = normalizeProject(project);
     setUserProjects((items) => upsertProject(items, normalized));
+    return normalized;
+  };
+
+  const addProject = (project) => {
+    const normalized = saveProjectProfile(project);
     navigate(`project/${normalized.id}`);
   };
 
@@ -1758,7 +1906,8 @@ function App() {
             navigate={navigate}
           />
         )}
-        {page === 'add' && <AddProjectPage onAdd={addProject} />}
+        {page === 'add' && <AddProjectPage onAdd={addProject} navigate={navigate} />}
+        {page === 'launchpad' && <LaunchpadPage onCreateProfile={saveProjectProfile} navigate={navigate} />}
         {page === 'pricing' && <PricingPage navigate={navigate} />}
         {page === 'compare' && <ComparePage projects={projects} navigate={navigate} />}
         {page.startsWith('report/') && reportProject && (
@@ -2922,7 +3071,289 @@ function Roadmap({ phases }) {
   );
 }
 
-function AddProjectPage({ onAdd }) {
+const launchpadInitialForm = {
+  name: '',
+  symbol: '',
+  description: '',
+  totalSupply: '',
+  decimals: '9',
+  logoUrl: '',
+  website: '',
+  twitter: '',
+  telegram: '',
+  founderStatus: '',
+  roadmapText: '',
+  communitySize: '',
+  riskNotes: '',
+};
+
+function LaunchpadPage({ onCreateProfile, navigate }) {
+  const [form, setForm] = useState(launchpadInitialForm);
+  const [walletAddress, setWalletAddress] = useState('');
+  const [walletMessage, setWalletMessage] = useState('');
+  const [status, setStatus] = useState({ state: 'idle', message: '' });
+  const [created, setCreated] = useState(null);
+  const decimals = Number(form.decimals || 0);
+  const socialWarnings = [
+    !hasValue(form.website) ? 'Website is missing.' : '',
+    !hasValue(form.twitter) ? 'X/Twitter is missing.' : '',
+    !hasValue(form.telegram) ? 'Telegram is missing.' : '',
+  ].filter(Boolean);
+  const validationErrors = validateLaunchpadForm(form);
+  const previewProject = useMemo(() => normalizeProject({
+    ...launchpadProfileFromForm(form, walletAddress || 'Preview wallet', {
+      mintAddress: 'Devnet mint pending',
+      signature: '',
+    }),
+    id: 'launchpad-preview',
+    status: 'Launchpad preview',
+  }), [form, walletAddress]);
+
+  useEffect(() => {
+    const provider = phantomProvider();
+    if (!provider) return;
+    const syncWallet = () => setWalletAddress(provider.publicKey?.toString() || '');
+    syncWallet();
+    provider.on?.('connect', syncWallet);
+    provider.on?.('disconnect', () => setWalletAddress(''));
+    return () => {
+      provider.off?.('connect', syncWallet);
+      provider.off?.('disconnect', () => setWalletAddress(''));
+    };
+  }, []);
+
+  const update = (key, value) => {
+    setForm((current) => ({ ...current, [key]: key === 'symbol' ? value.toUpperCase().slice(0, 10) : value }));
+    setCreated(null);
+  };
+
+  const connectWallet = async () => {
+    setWalletMessage('');
+    try {
+      const address = await connectPhantomWallet();
+      setWalletAddress(address);
+      setWalletMessage('Phantom connected on devnet mode.');
+    } catch (error) {
+      setWalletMessage(launchpadErrorMessage(error));
+    }
+  };
+
+  const createToken = async (event) => {
+    event.preventDefault();
+    if (validationErrors.length) {
+      setStatus({ state: 'error', message: validationErrors[0] });
+      return;
+    }
+    if (!walletAddress) {
+      setStatus({ state: 'error', message: 'Connect Phantom before creating a devnet token.' });
+      return;
+    }
+
+    setStatus({ state: 'loading', message: 'Waiting for Phantom approval. Review every field before signing.' });
+    try {
+      const result = await createDevnetSplToken({
+        walletAddress,
+        decimals,
+        totalSupply: form.totalSupply,
+      });
+      const profile = onCreateProfile(launchpadProfileFromForm(form, walletAddress, result));
+      setCreated({ ...result, projectId: profile.id });
+      setStatus({ state: 'success', message: 'Devnet token created and KHAN Trust profile generated.' });
+    } catch (error) {
+      setStatus({ state: 'error', message: launchpadErrorMessage(error) });
+    }
+  };
+
+  const copyValue = async (value, label) => {
+    await navigator.clipboard.writeText(value);
+    setStatus({ state: 'success', message: `${label} copied.` });
+  };
+
+  return (
+    <section className="page-section launchpad-page">
+      <SectionTitle icon={Sparkles} eyebrow="Devnet MVP" title="KHAN Launchpad" />
+      <p className="section-subtitle">Create → Verify → Score → Share</p>
+
+      <div className="launchpad-warning-grid">
+        <WarningBox text="Devnet tokens are for testing only and have no real market value." />
+        <WarningBox text="KHAN Launchpad does not guarantee profit, listing, liquidity, or token success." />
+        <WarningBox text="Never share your seed phrase or private key." />
+        <WarningBox text="Token creation is irreversible. Verify all metadata before approving the Phantom transaction." />
+      </div>
+
+      <div className="launchpad-network-row">
+        <span className="network-badge active">Devnet</span>
+        <span className="network-badge disabled">Mainnet Coming Soon</span>
+      </div>
+
+      <div className="launchpad-wallet-card">
+        <div>
+          <strong>Phantom Wallet</strong>
+          <p>{walletAddress ? `Connected: ${walletAddress}` : 'Connect Phantom to sign the devnet mint transaction. KHAN Trust never asks for private keys.'}</p>
+          {!phantomProvider() && (
+            <a href="https://phantom.app/" target="_blank" rel="noreferrer">Install Phantom Wallet</a>
+          )}
+          {walletMessage && <p className="launchpad-message">{walletMessage}</p>}
+        </div>
+        <button className="primary-button" type="button" onClick={connectWallet}>
+          <WalletCards size={18} /> {walletAddress ? formatWalletAddress(walletAddress) : 'Connect Phantom'}
+        </button>
+      </div>
+
+      <div className="launchpad-layout">
+        <form className="launchpad-form add-form" onSubmit={createToken}>
+          <FormField label="Token Name" value={form.name} onChange={(value) => update('name', value)} required />
+          <FormField label="Symbol" value={form.symbol} onChange={(value) => update('symbol', value)} required placeholder="Max 10 characters" />
+          <FormField type="number" label="Total Supply" value={form.totalSupply} onChange={(value) => update('totalSupply', value)} required />
+          <FormField type="number" label="Decimals" value={form.decimals} onChange={(value) => update('decimals', value)} required />
+          <FormField label="Logo URL" value={form.logoUrl} onChange={(value) => update('logoUrl', value)} />
+          <FormField label="Website" value={form.website} onChange={(value) => update('website', value)} />
+          <FormField label="X/Twitter" value={form.twitter} onChange={(value) => update('twitter', value)} />
+          <FormField label="Telegram" value={form.telegram} onChange={(value) => update('telegram', value)} />
+          <FormField label="Founder Status" value={form.founderStatus} onChange={(value) => update('founderStatus', value)} placeholder="Public founder, known team, anonymous..." />
+          <FormField type="number" label="Community Size" value={form.communitySize} onChange={(value) => update('communitySize', value)} />
+          <label className="form-field wide">
+            <span>Description</span>
+            <textarea value={form.description} onChange={(event) => update('description', event.target.value)} />
+          </label>
+          <label className="form-field wide">
+            <span>Roadmap</span>
+            <textarea value={form.roadmapText} onChange={(event) => update('roadmapText', event.target.value)} placeholder="One milestone per line" />
+          </label>
+          <label className="form-field wide">
+            <span>Risk Notes</span>
+            <textarea value={form.riskNotes} onChange={(event) => update('riskNotes', event.target.value)} />
+          </label>
+
+          {socialWarnings.length > 0 && (
+            <div className="launchpad-inline-warning wide">
+              <AlertTriangle size={18} />
+              <span>{socialWarnings.join(' ')}</span>
+            </div>
+          )}
+          <div className="launchpad-inline-warning wide">
+            <AlertTriangle size={18} />
+            <span>Devnet tokens have no real value and do not create liquidity or listings.</span>
+          </div>
+
+          {status.message && (
+            <p className={`launchpad-status wide ${status.state}`}>{status.message}</p>
+          )}
+
+          <button className="primary-button wide-button" type="submit" disabled={status.state === 'loading'}>
+            {status.state === 'loading' ? 'Awaiting Approval...' : 'Create Devnet Token'}
+          </button>
+        </form>
+
+        <LaunchpadPreview project={previewProject} form={form} />
+      </div>
+
+      {created && (
+        <section className="launchpad-success-card">
+          <SectionTitle icon={BadgeCheck} eyebrow="Created" title="Devnet Token Created" />
+          <div className="success-grid">
+            <InfoItem label="Mint Address" value={created.mintAddress} />
+            <InfoItem label="Transaction Signature" value={created.signature} />
+          </div>
+          <div className="hero-actions">
+            <button className="primary-button" type="button" onClick={() => navigate(`project/${created.projectId}`)}>
+              Open Trust Profile <ArrowRight size={18} />
+            </button>
+            <button className="secondary-button" type="button" onClick={() => copyValue(created.mintAddress, 'Mint address')}>
+              <Copy size={18} /> Copy Mint Address
+            </button>
+            <button className="secondary-button" type="button" onClick={() => copyValue(created.signature, 'Transaction signature')}>
+              <Copy size={18} /> Copy Transaction Signature
+            </button>
+          </div>
+        </section>
+      )}
+    </section>
+  );
+}
+
+function validateLaunchpadForm(form) {
+  const errors = [];
+  if (!form.name.trim()) errors.push('Token name is required.');
+  if (!form.symbol.trim()) errors.push('Symbol is required.');
+  if (form.symbol.trim().length > 10) errors.push('Symbol must be 10 characters or fewer.');
+  if (Number(form.totalSupply) <= 0) errors.push('Total supply must be positive.');
+  const decimals = Number(form.decimals);
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 9) errors.push('Decimals must be between 0 and 9.');
+  return errors;
+}
+
+function launchpadErrorMessage(error = {}) {
+  const message = error.message || String(error);
+  const lower = message.toLowerCase();
+  if (lower.includes('not installed')) return 'Phantom is not installed. Use the Install Phantom Wallet link to add it.';
+  if (lower.includes('reject') || lower.includes('denied') || lower.includes('cancel')) return 'Transaction rejected in Phantom. Nothing was created.';
+  if (lower.includes('insufficient') || lower.includes('0x1')) return 'Insufficient devnet SOL. Add devnet SOL to your Phantom wallet and try again.';
+  if (lower.includes('blockhash') || lower.includes('network') || lower.includes('fetch') || lower.includes('rpc')) return 'Solana devnet RPC failed. Wait a moment and try again.';
+  return message || 'Token creation failed. Review the form and try again.';
+}
+
+function WarningBox({ text }) {
+  return (
+    <div className="launchpad-warning-box">
+      <AlertTriangle size={18} />
+      <span>{text}</span>
+    </div>
+  );
+}
+
+function InfoItem({ label, value }) {
+  return (
+    <div className="info-item">
+      <BadgeCheck size={18} />
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function LaunchpadPreview({ project, form }) {
+  const roadmapLines = form.roadmapText.split('\n').map((line) => line.trim()).filter(Boolean);
+  return (
+    <aside className="launchpad-preview">
+      <SectionTitle icon={Eye} eyebrow="Preview" title="Trust Profile Preview" />
+      <div className="preview-token-top">
+        {form.logoUrl ? <img src={form.logoUrl} alt={`${form.name || 'Token'} logo preview`} /> : <div className="preview-logo-placeholder">Logo</div>}
+        <div>
+          <h3>{form.name || 'Token name'}</h3>
+          <span>{form.symbol || 'SYMBOL'}</span>
+        </div>
+      </div>
+      <div className="preview-score-row">
+        <ScoreCircle score={project.trustScore} />
+        <div>
+          <strong>Estimated KHAN Trust Score</strong>
+          <p>{project.trustScore}/100 before devnet mint creation</p>
+        </div>
+      </div>
+      <div className="preview-list">
+        <PreviewRow label="Supply" value={form.totalSupply || 'Not set'} />
+        <PreviewRow label="Decimals" value={form.decimals || '9'} />
+        <PreviewRow label="Website" value={displayValue(form.website)} />
+        <PreviewRow label="X/Twitter" value={displayValue(form.twitter)} />
+        <PreviewRow label="Telegram" value={displayValue(form.telegram)} />
+        <PreviewRow label="Founder status" value={displayValue(form.founderStatus)} />
+        <PreviewRow label="Roadmap" value={roadmapLines.length ? roadmapLines.join(', ') : 'Not available'} />
+      </div>
+    </aside>
+  );
+}
+
+function PreviewRow({ label, value }) {
+  return (
+    <div className="preview-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function AddProjectPage({ onAdd, navigate }) {
   const [form, setForm] = useState({
     name: '',
     ticker: '',
@@ -3026,14 +3457,14 @@ function AddProjectPage({ onAdd }) {
           Generate Trust Profile <ArrowRight size={18} />
         </button>
       </form>
-      <section className="launchpad-card" aria-label="KHAN Launchpad coming soon">
+      <section className="launchpad-card" aria-label="KHAN Launchpad devnet MVP">
         <div>
-          <span className="launchpad-kicker">Future tool</span>
-          <h3>KHAN Launchpad — Coming Soon</h3>
-          <p>Soon users will be able to connect Phantom, create Solana tokens, verify metadata, and instantly generate a KHAN Trust profile.</p>
+          <span className="launchpad-kicker">Devnet tool</span>
+          <h3>KHAN Launchpad — Devnet MVP</h3>
+          <p>Create Solana devnet test tokens with Phantom approval, verify metadata, and instantly generate a KHAN Trust profile.</p>
         </div>
-        <button className="secondary-button launchpad-button" type="button" disabled>
-          Create Token — Coming Soon
+        <button className="secondary-button launchpad-button" type="button" onClick={() => navigate('launchpad')}>
+          Open Launchpad
         </button>
       </section>
     </section>

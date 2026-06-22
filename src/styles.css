@@ -1421,6 +1421,224 @@ main {
   cursor: not-allowed;
 }
 
+.launchpad-page {
+  display: grid;
+  gap: 18px;
+}
+
+.launchpad-warning-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.launchpad-warning-box,
+.launchpad-inline-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid rgba(247, 190, 82, 0.28);
+  border-radius: 8px;
+  color: #ffe2a3;
+  background: rgba(247, 190, 82, 0.1);
+  line-height: 1.45;
+}
+
+.launchpad-warning-box svg,
+.launchpad-inline-warning svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.launchpad-network-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.network-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255,255,255,0.03);
+  font-weight: 850;
+}
+
+.network-badge.active {
+  color: var(--success);
+  border-color: rgba(103, 211, 156, 0.32);
+  background: rgba(103, 211, 156, 0.1);
+}
+
+.network-badge.disabled {
+  opacity: 0.58;
+}
+
+.launchpad-wallet-card,
+.launchpad-success-card,
+.launchpad-preview {
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(25, 23, 16, 0.95), rgba(12, 12, 10, 0.96));
+  box-shadow: 0 24px 80px rgba(0,0,0,0.28);
+}
+
+.launchpad-wallet-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.launchpad-wallet-card p,
+.launchpad-message {
+  margin: 7px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.launchpad-wallet-card a {
+  display: inline-flex;
+  margin-top: 9px;
+  color: var(--gold-bright);
+  font-weight: 850;
+}
+
+.launchpad-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.launchpad-form {
+  padding: 20px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+}
+
+.launchpad-status {
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(255,255,255,0.035);
+  line-height: 1.45;
+}
+
+.launchpad-status.loading {
+  color: var(--gold-bright);
+  border-color: var(--border);
+}
+
+.launchpad-status.success {
+  color: var(--success);
+  border-color: rgba(103, 211, 156, 0.28);
+}
+
+.launchpad-status.error {
+  color: #ffd0cc;
+  border-color: rgba(255, 117, 110, 0.28);
+}
+
+.launchpad-preview {
+  position: sticky;
+  top: 92px;
+  display: grid;
+  gap: 16px;
+}
+
+.preview-token-top {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.preview-token-top img,
+.preview-logo-placeholder {
+  width: 66px;
+  height: 66px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  object-fit: cover;
+  background: rgba(255,255,255,0.05);
+}
+
+.preview-logo-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.preview-token-top h3 {
+  margin: 0 0 4px;
+  font-size: 24px;
+}
+
+.preview-token-top span {
+  color: var(--gold-bright);
+  font-weight: 900;
+}
+
+.preview-score-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+}
+
+.preview-score-row p {
+  margin: 5px 0 0;
+  color: var(--muted);
+}
+
+.preview-list {
+  display: grid;
+  gap: 10px;
+}
+
+.preview-row {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.preview-row span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.preview-row strong {
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.launchpad-success-card {
+  display: grid;
+  gap: 16px;
+}
+
+.success-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .compare-selectors {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1717,7 +1935,7 @@ button:disabled {
   bottom: 10px;
   z-index: 60;
   display: none;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(8, 1fr);
   gap: 4px;
   padding: 7px;
   border: 1px solid var(--border);
@@ -1811,6 +2029,9 @@ button:disabled {
   .payment-methods,
   .add-form,
   .compare-selectors,
+  .launchpad-layout,
+  .launchpad-warning-grid,
+  .success-grid,
   .about-grid,
   .positioning,
   .method-grid {
@@ -1833,7 +2054,8 @@ button:disabled {
   .report-hero,
   .one-time-offer,
   .unlock-bar,
-  .launchpad-card {
+  .launchpad-card,
+  .launchpad-wallet-card {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -1841,8 +2063,13 @@ button:disabled {
   .one-time-offer .primary-button,
   .unlock-bar button,
   .launchpad-card button,
+  .launchpad-wallet-card button,
   .token-check-actions button {
     width: 100%;
+  }
+
+  .launchpad-preview {
+    position: static;
   }
 
   .profile-score-card {

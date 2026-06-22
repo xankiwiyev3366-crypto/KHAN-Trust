@@ -318,6 +318,8 @@ function normalizeProject(input) {
     network: input.network || '',
     launchpadSource: input.launchpadSource || '',
     transactionSignature: input.transactionSignature || '',
+    tokenSupply: input.tokenSupply || '',
+    tokenDecimals: input.tokenDecimals ?? '',
     founderStatus: input.founderStatus || 'Not provided',
     communitySize,
     holders,
@@ -640,6 +642,8 @@ function resolvedMetadataRows(project = {}) {
     ['GitHub', linkPresenceState(firstPresent(project.github, data.githubUrl)), Github],
     project.createdBy ? ['Created by', project.createdBy, WalletCards] : null,
     project.launchpadSource ? ['Source', project.launchpadSource, Sparkles] : null,
+    project.tokenSupply ? ['Token supply', project.tokenSupply, CircleDot] : null,
+    project.tokenDecimals !== '' && project.tokenDecimals !== undefined ? ['Decimals', project.tokenDecimals, CircleDot] : null,
     project.transactionSignature ? ['Transaction', project.transactionSignature, BadgeCheck] : null,
     ['Launch date', project.launchDate, CalendarDays],
     ['Status', project.status, BadgeCheck],
@@ -1081,7 +1085,32 @@ async function connectPhantomWallet() {
   return response.publicKey.toString();
 }
 
-async function createDevnetSplToken({ walletAddress, decimals, totalSupply }) {
+function launchpadNetworkConfig(network = 'devnet') {
+  if (network === 'mainnet-beta') {
+    return {
+      network,
+      rpcUrl: SOLANA_RPC_URL,
+      label: 'Mainnet',
+      explorerCluster: '',
+      profileNetwork: 'mainnet-beta',
+    };
+  }
+  return {
+    network: 'devnet',
+    rpcUrl: SOLANA_DEVNET_RPC_URL,
+    label: 'Devnet',
+    explorerCluster: '?cluster=devnet',
+    profileNetwork: 'devnet',
+  };
+}
+
+function solanaExplorerUrl(type, value, network = 'devnet') {
+  const config = launchpadNetworkConfig(network);
+  const path = type === 'tx' ? 'tx' : 'address';
+  return `https://explorer.solana.com/${path}/${value}${config.explorerCluster}`;
+}
+
+async function createLaunchpadSplToken({ walletAddress, decimals, totalSupply, network }) {
   const provider = phantomProvider();
   if (!provider) {
     throw new Error('Phantom wallet is not installed.');
@@ -1090,7 +1119,8 @@ async function createDevnetSplToken({ walletAddress, decimals, totalSupply }) {
     throw new Error('Connect Phantom before creating a token.');
   }
 
-  const connection = new Connection(SOLANA_DEVNET_RPC_URL, 'confirmed');
+  const config = launchpadNetworkConfig(network);
+  const connection = new Connection(config.rpcUrl, 'confirmed');
   const walletPublicKey = new PublicKey(walletAddress);
   const mintKeypair = Keypair.generate();
   const mintLamports = await getMinimumBalanceForRentExemptMint(connection);
@@ -1122,18 +1152,21 @@ async function createDevnetSplToken({ walletAddress, decimals, totalSupply }) {
     mintAddress: mintKeypair.publicKey.toString(),
     signature,
     tokenAccount: tokenAccount.toString(),
+    network: config.profileNetwork,
   };
 }
 
-function launchpadProfileFromForm(form, walletAddress, result) {
+function launchpadProfileFromForm(form, walletAddress, result, network = 'devnet') {
   const now = new Date().toISOString().slice(0, 10);
   const roadmap = roadmapFromText(form.roadmapText);
+  const config = launchpadNetworkConfig(result.network || network);
+  const isMainnet = config.network === 'mainnet-beta';
   return {
     id: `launchpad-${slugify(result.mintAddress)}`,
     name: form.name.trim(),
     ticker: form.symbol.trim().toUpperCase(),
     chain: 'Solana',
-    network: 'devnet',
+    network: config.profileNetwork,
     contract: result.mintAddress,
     website: form.website,
     twitter: form.twitter,
@@ -1141,18 +1174,22 @@ function launchpadProfileFromForm(form, walletAddress, result) {
     logoUrl: form.logoUrl,
     launchDate: now,
     description: form.description,
-    status: 'KHAN Launchpad devnet token',
+    status: isMainnet ? 'KHAN Launchpad mainnet token' : 'KHAN Launchpad devnet token',
     lastUpdate: now,
+    tokenSupply: form.totalSupply,
+    tokenDecimals: Number(form.decimals || 0),
     founderStatus: form.founderStatus,
     communitySize: Number(form.communitySize || 0),
     roadmap,
     roadmapText: form.roadmapText,
-    riskNotes: form.riskNotes || 'Devnet token created for testing. Verify all metadata before any future mainnet launch.',
+    riskNotes: form.riskNotes || (isMainnet
+      ? 'Mainnet SPL token created with KHAN Launchpad. Liquidity, listings, and market success are not included or guaranteed.'
+      : 'Devnet token created for testing. Verify all metadata before any future mainnet launch.'),
     createdBy: walletAddress,
     launchpadSource: 'KHAN Launchpad',
     transactionSignature: result.signature,
     timeline: [
-      { label: 'Devnet token created', date: now },
+      { label: `${config.label} token created`, date: now },
       { label: 'KHAN Trust profile generated', date: now },
     ],
   };
@@ -3089,11 +3126,22 @@ const launchpadInitialForm = {
 
 function LaunchpadPage({ onCreateProfile, navigate }) {
   const [form, setForm] = useState(launchpadInitialForm);
+  const [network, setNetwork] = useState('devnet');
+  const [mainnetConfirmations, setMainnetConfirmations] = useState({
+    realToken: false,
+    realFees: false,
+    verifiedMetadata: false,
+    noGuarantee: false,
+    seedPhrase: false,
+  });
   const [walletAddress, setWalletAddress] = useState('');
   const [walletMessage, setWalletMessage] = useState('');
   const [status, setStatus] = useState({ state: 'idle', message: '' });
   const [created, setCreated] = useState(null);
   const decimals = Number(form.decimals || 0);
+  const isMainnet = network === 'mainnet-beta';
+  const selectedNetwork = launchpadNetworkConfig(network);
+  const mainnetReady = Object.values(mainnetConfirmations).every(Boolean);
   const socialWarnings = [
     !hasValue(form.website) ? 'Website is missing.' : '',
     !hasValue(form.twitter) ? 'X/Twitter is missing.' : '',
@@ -3102,12 +3150,13 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
   const validationErrors = validateLaunchpadForm(form);
   const previewProject = useMemo(() => normalizeProject({
     ...launchpadProfileFromForm(form, walletAddress || 'Preview wallet', {
-      mintAddress: 'Devnet mint pending',
+      mintAddress: `${selectedNetwork.label} mint pending`,
       signature: '',
-    }),
+      network,
+    }, network),
     id: 'launchpad-preview',
     status: 'Launchpad preview',
-  }), [form, walletAddress]);
+  }), [form, walletAddress, network, selectedNetwork.label]);
 
   useEffect(() => {
     const provider = phantomProvider();
@@ -3127,12 +3176,22 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
     setCreated(null);
   };
 
+  const updateNetwork = (value) => {
+    setNetwork(value);
+    setCreated(null);
+    setStatus({ state: 'idle', message: '' });
+  };
+
+  const updateConfirmation = (key, checked) => {
+    setMainnetConfirmations((current) => ({ ...current, [key]: checked }));
+  };
+
   const connectWallet = async () => {
     setWalletMessage('');
     try {
       const address = await connectPhantomWallet();
       setWalletAddress(address);
-      setWalletMessage('Phantom connected on devnet mode.');
+      setWalletMessage(`Phantom connected. KHAN Launchpad mode: ${selectedNetwork.label}.`);
     } catch (error) {
       setWalletMessage(launchpadErrorMessage(error));
     }
@@ -3145,20 +3204,25 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
       return;
     }
     if (!walletAddress) {
-      setStatus({ state: 'error', message: 'Connect Phantom before creating a devnet token.' });
+      setStatus({ state: 'error', message: `Connect Phantom before creating a ${selectedNetwork.label.toLowerCase()} token.` });
+      return;
+    }
+    if (isMainnet && !mainnetReady) {
+      setStatus({ state: 'error', message: 'Complete every mainnet confirmation before creating a real token.' });
       return;
     }
 
-    setStatus({ state: 'loading', message: 'Waiting for Phantom approval. Review every field before signing.' });
+    setStatus({ state: 'loading', message: `Waiting for Phantom approval on ${selectedNetwork.label}. Review every field before signing.` });
     try {
-      const result = await createDevnetSplToken({
+      const result = await createLaunchpadSplToken({
         walletAddress,
         decimals,
         totalSupply: form.totalSupply,
+        network,
       });
-      const profile = onCreateProfile(launchpadProfileFromForm(form, walletAddress, result));
+      const profile = onCreateProfile(launchpadProfileFromForm(form, walletAddress, result, network));
       setCreated({ ...result, projectId: profile.id });
-      setStatus({ state: 'success', message: 'Devnet token created and KHAN Trust profile generated.' });
+      setStatus({ state: 'success', message: `${selectedNetwork.label} token created and KHAN Trust profile generated.` });
     } catch (error) {
       setStatus({ state: 'error', message: launchpadErrorMessage(error) });
     }
@@ -3171,25 +3235,40 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
 
   return (
     <section className="page-section launchpad-page">
-      <SectionTitle icon={Sparkles} eyebrow="Devnet MVP" title="KHAN Launchpad" />
+      <SectionTitle icon={Sparkles} eyebrow={isMainnet ? 'Mainnet guarded mode' : 'Devnet default mode'} title="KHAN Launchpad" />
       <p className="section-subtitle">Create → Verify → Score → Share</p>
 
       <div className="launchpad-warning-grid">
-        <WarningBox text="Devnet tokens are for testing only and have no real market value." />
+        <WarningBox text={isMainnet ? 'Mainnet creates a real Solana token and uses real SOL for transaction fees.' : 'Devnet tokens are for testing only and have no real market value.'} tone={isMainnet ? 'danger' : 'warning'} />
         <WarningBox text="KHAN Launchpad does not guarantee profit, listing, liquidity, or token success." />
         <WarningBox text="Never share your seed phrase or private key." />
         <WarningBox text="Token creation is irreversible. Verify all metadata before approving the Phantom transaction." />
+        <WarningBox text="Creating a token does not create liquidity." />
+        <WarningBox text="People cannot trade your token unless liquidity/listing is added later." />
+        <WarningBox text="KHAN Launchpad does not provide financial advice." />
+        <WarningBox text="On-chain metadata upload is coming soon. This version creates the SPL token and KHAN Trust profile." />
       </div>
 
-      <div className="launchpad-network-row">
-        <span className="network-badge active">Devnet</span>
-        <span className="network-badge disabled">Mainnet Coming Soon</span>
+      <div className="launchpad-network-panel">
+        <div>
+          <strong>Network</strong>
+          <p>{isMainnet ? 'Mainnet creates a real Solana token and uses real SOL for transaction fees.' : 'Devnet remains the default testing mode.'}</p>
+        </div>
+        <div className="network-selector" role="group" aria-label="Launchpad network">
+          <button className={network === 'devnet' ? 'active' : ''} type="button" onClick={() => updateNetwork('devnet')}>Devnet</button>
+          <button className={isMainnet ? 'active mainnet' : 'mainnet'} type="button" onClick={() => updateNetwork('mainnet-beta')}>Mainnet</button>
+        </div>
+        <div className="launchpad-network-row">
+          <span className={`network-badge ${isMainnet ? 'danger' : 'active'}`}>{selectedNetwork.label}</span>
+          <span className="network-badge disabled">Phantom approval required</span>
+        </div>
       </div>
 
       <div className="launchpad-wallet-card">
         <div>
           <strong>Phantom Wallet</strong>
-          <p>{walletAddress ? `Connected: ${walletAddress}` : 'Connect Phantom to sign the devnet mint transaction. KHAN Trust never asks for private keys.'}</p>
+          <p>{walletAddress ? `Connected: ${walletAddress}` : `Connect Phantom to sign the ${selectedNetwork.label.toLowerCase()} mint transaction. KHAN Trust never asks for private keys.`}</p>
+          <p>Detected mode: {selectedNetwork.label}</p>
           {!phantomProvider() && (
             <a href="https://phantom.app/" target="_blank" rel="noreferrer">Install Phantom Wallet</a>
           )}
@@ -3233,24 +3312,35 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
           )}
           <div className="launchpad-inline-warning wide">
             <AlertTriangle size={18} />
-            <span>Devnet tokens have no real value and do not create liquidity or listings.</span>
+            <span>{isMainnet ? 'Mainnet creates a real SPL token. It still does not create liquidity, trading, or listings.' : 'Devnet tokens have no real value and do not create liquidity or listings.'}</span>
           </div>
+
+          {isMainnet && (
+            <div className="mainnet-confirmations wide">
+              <strong>Mainnet confirmations</strong>
+              <ConfirmationBox checked={mainnetConfirmations.realToken} onChange={(checked) => updateConfirmation('realToken', checked)} text="I understand this creates a real blockchain token." />
+              <ConfirmationBox checked={mainnetConfirmations.realFees} onChange={(checked) => updateConfirmation('realFees', checked)} text="I understand real SOL fees may be charged." />
+              <ConfirmationBox checked={mainnetConfirmations.verifiedMetadata} onChange={(checked) => updateConfirmation('verifiedMetadata', checked)} text="I verified token name, symbol, decimals, and supply." />
+              <ConfirmationBox checked={mainnetConfirmations.noGuarantee} onChange={(checked) => updateConfirmation('noGuarantee', checked)} text="I understand KHAN Launchpad does not guarantee profit, liquidity, listing, or success." />
+              <ConfirmationBox checked={mainnetConfirmations.seedPhrase} onChange={(checked) => updateConfirmation('seedPhrase', checked)} text="I will never share my seed phrase or private key." />
+            </div>
+          )}
 
           {status.message && (
             <p className={`launchpad-status wide ${status.state}`}>{status.message}</p>
           )}
 
-          <button className="primary-button wide-button" type="submit" disabled={status.state === 'loading'}>
-            {status.state === 'loading' ? 'Awaiting Approval...' : 'Create Devnet Token'}
+          <button className="primary-button wide-button" type="submit" disabled={!walletAddress || status.state === 'loading' || (isMainnet && !mainnetReady)}>
+            {status.state === 'loading' ? 'Awaiting Approval...' : isMainnet ? 'Create Real Mainnet Token' : 'Create Devnet Token'}
           </button>
         </form>
 
-        <LaunchpadPreview project={previewProject} form={form} />
+        <LaunchpadPreview project={previewProject} form={form} network={network} />
       </div>
 
       {created && (
         <section className="launchpad-success-card">
-          <SectionTitle icon={BadgeCheck} eyebrow="Created" title="Devnet Token Created" />
+          <SectionTitle icon={BadgeCheck} eyebrow="Created" title={`${launchpadNetworkConfig(created.network).label} Token Created`} />
           <div className="success-grid">
             <InfoItem label="Mint Address" value={created.mintAddress} />
             <InfoItem label="Transaction Signature" value={created.signature} />
@@ -3265,6 +3355,12 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
             <button className="secondary-button" type="button" onClick={() => copyValue(created.signature, 'Transaction signature')}>
               <Copy size={18} /> Copy Transaction Signature
             </button>
+            <a className="secondary-button" href={solanaExplorerUrl('address', created.mintAddress, created.network)} target="_blank" rel="noreferrer">
+              <ExternalLink size={18} /> Open Mint on Solana Explorer
+            </a>
+            <a className="secondary-button" href={solanaExplorerUrl('tx', created.signature, created.network)} target="_blank" rel="noreferrer">
+              <ExternalLink size={18} /> Open Transaction on Solana Explorer
+            </a>
           </div>
         </section>
       )}
@@ -3288,17 +3384,26 @@ function launchpadErrorMessage(error = {}) {
   const lower = message.toLowerCase();
   if (lower.includes('not installed')) return 'Phantom is not installed. Use the Install Phantom Wallet link to add it.';
   if (lower.includes('reject') || lower.includes('denied') || lower.includes('cancel')) return 'Transaction rejected in Phantom. Nothing was created.';
-  if (lower.includes('insufficient') || lower.includes('0x1')) return 'Insufficient devnet SOL. Add devnet SOL to your Phantom wallet and try again.';
-  if (lower.includes('blockhash') || lower.includes('network') || lower.includes('fetch') || lower.includes('rpc')) return 'Solana devnet RPC failed. Wait a moment and try again.';
+  if (lower.includes('insufficient') || lower.includes('0x1')) return 'Insufficient SOL for this network. Add SOL to your Phantom wallet and try again.';
+  if (lower.includes('blockhash') || lower.includes('network') || lower.includes('fetch') || lower.includes('rpc')) return 'Solana RPC failed. Wait a moment and try again.';
   return message || 'Token creation failed. Review the form and try again.';
 }
 
-function WarningBox({ text }) {
+function WarningBox({ text, tone = 'warning' }) {
   return (
-    <div className="launchpad-warning-box">
+    <div className={`launchpad-warning-box ${tone}`}>
       <AlertTriangle size={18} />
       <span>{text}</span>
     </div>
+  );
+}
+
+function ConfirmationBox({ checked, onChange, text }) {
+  return (
+    <label className="confirmation-box">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <span>{text}</span>
+    </label>
   );
 }
 
@@ -3312,7 +3417,8 @@ function InfoItem({ label, value }) {
   );
 }
 
-function LaunchpadPreview({ project, form }) {
+function LaunchpadPreview({ project, form, network }) {
+  const config = launchpadNetworkConfig(network);
   const roadmapLines = form.roadmapText.split('\n').map((line) => line.trim()).filter(Boolean);
   return (
     <aside className="launchpad-preview">
@@ -3328,7 +3434,7 @@ function LaunchpadPreview({ project, form }) {
         <ScoreCircle score={project.trustScore} />
         <div>
           <strong>Estimated KHAN Trust Score</strong>
-          <p>{project.trustScore}/100 before devnet mint creation</p>
+          <p>{project.trustScore}/100 before {config.label.toLowerCase()} mint creation</p>
         </div>
       </div>
       <div className="preview-list">

@@ -1451,6 +1451,55 @@ main {
   margin-top: 2px;
 }
 
+.launchpad-warning-box.danger {
+  color: #ffd0cc;
+  border-color: rgba(255, 117, 110, 0.42);
+  background: rgba(255, 117, 110, 0.12);
+}
+
+.launchpad-network-panel {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+}
+
+.launchpad-network-panel p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.network-selector {
+  display: inline-flex;
+  width: fit-content;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(18, 17, 13, 0.9);
+}
+
+.network-selector button {
+  min-height: 40px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  padding: 0 16px;
+  font-weight: 850;
+}
+
+.network-selector button.active {
+  color: #141006;
+  background: linear-gradient(135deg, var(--gold-bright), #b88228);
+}
+
+.network-selector button.mainnet.active {
+  color: #160909;
+  background: linear-gradient(135deg, #ffb3a8, #f7be52);
+}
+
 .launchpad-network-row {
   display: flex;
   flex-wrap: wrap;
@@ -1473,6 +1522,12 @@ main {
   color: var(--success);
   border-color: rgba(103, 211, 156, 0.32);
   background: rgba(103, 211, 156, 0.1);
+}
+
+.network-badge.danger {
+  color: #ffd0cc;
+  border-color: rgba(255, 117, 110, 0.42);
+  background: rgba(255, 117, 110, 0.12);
 }
 
 .network-badge.disabled {
@@ -1547,6 +1602,31 @@ main {
 .launchpad-status.error {
   color: #ffd0cc;
   border-color: rgba(255, 117, 110, 0.28);
+}
+
+.mainnet-confirmations {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(255, 117, 110, 0.36);
+  border-radius: 8px;
+  background: rgba(255, 117, 110, 0.08);
+}
+
+.confirmation-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.confirmation-box input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--gold);
+  flex: 0 0 auto;
 }
 
 .launchpad-preview {

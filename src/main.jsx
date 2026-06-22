@@ -305,14 +305,26 @@ function normalizeProject(input) {
     roadmapText,
     riskNotes: input.riskNotes || 'Community-submitted profile. Review public links, activity, and risk signals.',
   };
-  const score = calculateTrustScore(baseProject, realData);
+  const scoringProject = {
+    ...baseProject,
+    website: firstPresent(baseProject.website, realData?.websiteUrl) || 'Not provided',
+    twitter: firstPresent(baseProject.twitter, realData?.twitterUrl) || 'Not provided',
+    telegram: firstPresent(baseProject.telegram, realData?.telegramUrl) || 'Not provided',
+    founderStatus: baseProject.founderStatus,
+    communitySize: baseProject.communitySize,
+    description: baseProject.description,
+    roadmap: baseProject.roadmap,
+    roadmapText: baseProject.roadmapText,
+    riskNotes: baseProject.riskNotes,
+  };
+  const score = calculateTrustScore(scoringProject, realData);
 
   return {
-    ...baseProject,
+    ...scoringProject,
     trustScore: score,
     riskLevel: scoreToRisk(score),
-    scoreBreakdown: buildScoreBreakdown(baseProject, holders, communitySize, score),
-    riskFlags: deriveRiskFlags(baseProject, holders, communitySize),
+    scoreBreakdown: buildScoreBreakdown(scoringProject, holders, communitySize, score),
+    riskFlags: deriveRiskFlags(scoringProject, holders, communitySize),
   };
 }
 
@@ -351,6 +363,10 @@ function calculateLiveScores(project = {}, data = {}) {
   const websiteScore = scorePresence(socialPresenceState('website', project, data));
   const twitterScore = scorePresence(socialPresenceState('twitter', project, data));
   const telegramScore = scorePresence(socialPresenceState('telegram', project, data));
+  const founderScore = scoreFounder(project.founderStatus);
+  const roadmapScore = hasRoadmap(project) ? 68 : null;
+  const communityScoreValue = scoreHolders(project.communitySize);
+  const descriptionScore = hasValue(project.description) ? 58 : null;
   const scores = {
     marketCapScore: scoreMarketCap(data.marketCapUsd),
     liquidityScore: scoreLiquidity(data.totalLiquidityUsd ?? data.liquidityUsd),
@@ -362,6 +378,10 @@ function calculateLiveScores(project = {}, data = {}) {
     twitterScore,
     telegramScore,
     socialScore: Math.round((websiteScore + twitterScore + telegramScore) / 3),
+    founderActivity: founderScore,
+    roadmapClarity: roadmapScore,
+    communityActivity: communityScoreValue,
+    transparency: descriptionScore,
     holderGrowthScore: scoreHolderGrowth(data.holderGrowthPercent),
     supplyScore: scoreSupply(data.supply),
   };
@@ -375,8 +395,12 @@ function calculateLiveScores(project = {}, data = {}) {
     [scores.websiteScore, 7],
     [scores.twitterScore, 7],
     [scores.telegramScore, 6],
+    [scores.founderActivity, 7],
+    [scores.roadmapClarity, 6],
+    [scores.communityActivity, 5],
+    [scores.transparency, 3],
   ]);
-  const penalty = liveDataPenalty(data, holderCount);
+  const penalty = liveDataPenalty(data, holderCount) + riskPenalty(project.riskNotes);
   return {
     ...scores,
     finalTrustScore: clamp(Math.max(5, weighted - penalty), 5, 100),
@@ -385,7 +409,7 @@ function calculateLiveScores(project = {}, data = {}) {
 
 function calculateManualScores(project = {}) {
   const socialScore = scoreSocial(project, project.realData);
-  const founderScore = isPublicFounder(project.founderStatus) ? 72 : project.founderStatus?.toLowerCase().includes('anonymous') ? 18 : 42;
+  const founderScore = scoreFounder(project.founderStatus) ?? 42;
   const roadmapScore = hasRoadmap(project) ? 68 : null;
   const communityScoreValue = scoreHolders(project.communitySize);
   const available = [socialScore, founderScore, roadmapScore, communityScoreValue].filter((value) => value !== null);
@@ -399,6 +423,14 @@ function calculateManualScores(project = {}) {
     socialProof: socialScore,
     finalTrustScore: clamp(Math.max(5, average - riskPenalty(project.riskNotes)), 5, 100),
   };
+}
+
+function scoreFounder(status = '') {
+  if (!hasValue(status)) return null;
+  const text = status.toLowerCase();
+  if (text.includes('anonymous')) return 18;
+  if (isPublicFounder(status)) return 72;
+  return 42;
 }
 
 function scoreMarketCap(value) {
@@ -1038,6 +1070,55 @@ function displayValue(value) {
   return hasValue(value) ? value : 'Not available';
 }
 
+function storedMetadataValue(value) {
+  if (typeof value === 'number') return value > 0 ? value : undefined;
+  if (Array.isArray(value)) return value.length ? value : undefined;
+  return hasValue(value) ? value : undefined;
+}
+
+function hasSavedRoadmap(project = {}) {
+  if (hasValue(project.roadmapText)) return true;
+  return Boolean(project.roadmap?.some((item) => hasValue(item.phase) && item.phase !== 'Roadmap proof needed'));
+}
+
+function findStoredProject(items = [], project = {}) {
+  const normalizedContract = project.contract?.toLowerCase();
+  return items.find((item) => {
+    const sameId = item.id === project.id;
+    const sameContract = normalizedContract && item.contract?.toLowerCase() === normalizedContract;
+    return sameId || sameContract;
+  });
+}
+
+function mergeStoredMetadata(liveProject = {}, storedProject = null) {
+  if (!storedProject) return liveProject;
+
+  const merged = {
+    ...liveProject,
+    id: storedProject.id || liveProject.id,
+  };
+  ['website', 'twitter', 'telegram', 'github', 'founderStatus', 'description', 'riskNotes'].forEach((field) => {
+    const savedValue = storedMetadataValue(storedProject[field]);
+    if (savedValue !== undefined) merged[field] = savedValue;
+  });
+
+  const savedCommunitySize = storedMetadataValue(storedProject.communitySize);
+  if (savedCommunitySize !== undefined) {
+    merged.communitySize = Number(savedCommunitySize);
+  }
+
+  if (hasSavedRoadmap(storedProject)) {
+    merged.roadmapText = storedProject.roadmapText || roadmapToText(storedProject.roadmap);
+    merged.roadmap = storedProject.roadmap;
+  }
+
+  if (merged.realData) {
+    merged.realData = syncSocialData(merged.realData, merged);
+  }
+
+  return merged;
+}
+
 function holderConcentrationStatus(data = {}) {
   if (data.topHolderPercent === null || data.topHolderPercent === undefined) {
     return 'Top holder data unavailable from public source';
@@ -1485,12 +1566,9 @@ function looksLikeSolanaAddress(value) {
 
 function upsertProject(items, project) {
   const normalizedContract = project.contract?.toLowerCase();
-  const existing = items.find((item) => {
-    const sameId = item.id === project.id;
-    const sameContract = normalizedContract && item.contract?.toLowerCase() === normalizedContract;
-    return sameId || sameContract;
-  });
-  const projectWithGrowth = applyHolderGrowth(project, existing);
+  const existing = findStoredProject(items, project);
+  const mergedProject = normalizeProject(mergeStoredMetadata(project, existing));
+  const projectWithGrowth = applyHolderGrowth(mergedProject, existing);
   const withoutExisting = items.filter((item) => {
     const sameId = item.id === projectWithGrowth.id;
     const sameContract = normalizedContract && item.contract?.toLowerCase() === normalizedContract;
@@ -1609,7 +1687,8 @@ function App() {
     setSearchState({ status: 'loading', message: 'Fetching live Solana token data...' });
     trackTokenScanStarted(term);
     try {
-      const liveProject = normalizeProject(await lookupSolanaToken(term));
+      const liveLookup = await lookupSolanaToken(term);
+      const liveProject = normalizeProject(mergeStoredMetadata(liveLookup, findStoredProject(userProjects, liveLookup)));
       setUserProjects((items) => upsertProject(items, liveProject));
       setSearchState({ status: 'success', message: `Opened live profile for ${liveProject.name || liveProject.ticker}.` });
       trackTokenScanCompleted(term, 'success');
@@ -1632,7 +1711,8 @@ function App() {
 
     try {
       trackTokenScanStarted(term);
-      const liveProject = normalizeProject(await lookupSolanaToken(term));
+      const liveLookup = await lookupSolanaToken(term);
+      const liveProject = normalizeProject(mergeStoredMetadata(liveLookup, findStoredProject(userProjects, liveLookup)));
       setUserProjects((items) => upsertProject(items, liveProject));
       trackTokenScanCompleted(term, 'success');
       navigate(`report/${liveProject.id}`);

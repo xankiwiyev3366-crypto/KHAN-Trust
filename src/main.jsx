@@ -2971,7 +2971,14 @@ function AddProjectPage({ onAdd }) {
 
   return (
     <section className="page-section">
-      <SectionTitle icon={Plus} eyebrow="Submit" title="Add a crypto project" />
+      <SectionTitle icon={Plus} eyebrow="Submit" title="Add Project to KHAN Trust" />
+      <p className="section-subtitle">
+        Add an existing crypto token or project to generate a KHAN Trust risk profile.
+      </p>
+      <div className="profile-only-notice" role="note">
+        <Info size={18} />
+        <p>This page does not create a blockchain token. It only adds a project profile to KHAN Trust for scoring, review, and sharing.</p>
+      </div>
       <form className="add-form" onSubmit={submit}>
         <FormField label="Project name" value={form.name} onChange={(value) => update('name', value)} required />
         <FormField label="Ticker" value={form.ticker} onChange={(value) => update('ticker', value)} required />
@@ -2991,7 +2998,7 @@ function AddProjectPage({ onAdd }) {
             <Search size={18} /> {lookupState.status === 'loading' ? 'Looking up...' : 'Lookup Solana Token'}
           </button>
           <p className={lookupState.status === 'error' ? 'lookup-message error' : 'lookup-message'}>
-            {lookupState.message || 'Fetches public liquidity, market cap, token age, supply, and holder signals.'}
+            {lookupState.message || 'Paste an existing token contract address. KHAN Trust will load available live data and merge it with your added metadata.'}
           </p>
         </div>
         <FormField label="Website" value={form.website} onChange={(value) => update('website', value)} />
@@ -3016,9 +3023,19 @@ function AddProjectPage({ onAdd }) {
           <textarea value={form.riskNotes} onChange={(event) => update('riskNotes', event.target.value)} />
         </label>
         <button className="primary-button wide-button" type="submit">
-          Save Project <ArrowRight size={18} />
+          Generate Trust Profile <ArrowRight size={18} />
         </button>
       </form>
+      <section className="launchpad-card" aria-label="KHAN Launchpad coming soon">
+        <div>
+          <span className="launchpad-kicker">Future tool</span>
+          <h3>KHAN Launchpad — Coming Soon</h3>
+          <p>Soon users will be able to connect Phantom, create Solana tokens, verify metadata, and instantly generate a KHAN Trust profile.</p>
+        </div>
+        <button className="secondary-button launchpad-button" type="button" disabled>
+          Create Token — Coming Soon
+        </button>
+      </section>
     </section>
   );
 }

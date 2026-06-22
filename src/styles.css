@@ -1353,6 +1353,74 @@ main {
   gap: 14px;
 }
 
+.section-subtitle {
+  max-width: 760px;
+  margin: -10px 0 18px;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+.profile-only-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 860px;
+  margin: 0 0 18px;
+  padding: 14px;
+  border: 1px solid rgba(244, 216, 137, 0.28);
+  border-radius: 8px;
+  color: var(--gold-bright);
+  background: var(--gold-soft);
+}
+
+.profile-only-notice svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.profile-only-notice p {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.launchpad-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 18px;
+  padding: 20px;
+  border: 1px dashed rgba(244, 216, 137, 0.34);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+}
+
+.launchpad-kicker {
+  color: var(--gold-bright);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.launchpad-card h3 {
+  margin: 8px 0 8px;
+  font-size: 24px;
+}
+
+.launchpad-card p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.launchpad-button:disabled {
+  cursor: not-allowed;
+}
+
 .compare-selectors {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1764,13 +1832,15 @@ button:disabled {
   .radar-score,
   .report-hero,
   .one-time-offer,
-  .unlock-bar {
+  .unlock-bar,
+  .launchpad-card {
     align-items: flex-start;
     flex-direction: column;
   }
 
   .one-time-offer .primary-button,
   .unlock-bar button,
+  .launchpad-card button,
   .token-check-actions button {
     width: 100%;
   }

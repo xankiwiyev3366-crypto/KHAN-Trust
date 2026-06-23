@@ -82,6 +82,30 @@ import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaP
 const PROJECTS_KEY = 'khan-trust-projects-v1';
 const WATCHLIST_KEY = 'khan-trust-watchlist-v1';
 const CRYPTO_PAYMENT_WALLET = import.meta.env.VITE_KHAN_PAYMENT_WALLET || '';
+const OFFICIAL_KHAN_LINKS = {
+  website: 'https://khantrust.netlify.app',
+  x: 'https://x.com/KXankiwiyev3366',
+  telegram: 'https://t.me/+RXCuwpSNwikzNTE0',
+};
+const LAUNCHPAD_PAYMENT_MODEL = {
+  devnetPrice: '$0',
+  mainnetPriceUsd: 9,
+  mainnetPriceLabel: '$9',
+  note: 'Launchpad payments are separate from KHAN Trust Premium plans.',
+};
+const verificationFoundation = [
+  'Verified Project Profiles',
+  'Ownership Verification',
+  'Team Verification',
+];
+const holderBenefitFoundation = [
+  'Premium Research Features',
+  'PDF Risk Reports',
+  'Wallet Connect',
+  'Advanced Analytics',
+  'Priority Support',
+  'Holder Badges',
+];
 const SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com';
 const SOLANA_DEVNET_RPC_URL = clusterApiUrl('devnet');
 const DEXSCREENER_SOLANA_TOKEN_URL = 'https://api.dexscreener.com/token-pairs/v1/solana';
@@ -93,9 +117,9 @@ const khanProject = {
   ticker: '$KHAN',
   chain: 'Solana',
   contract: 'Coming soon',
-  website: 'https://khantrust.local',
-  twitter: 'https://x.com/khantrust',
-  telegram: 'https://t.me/khantrust',
+  website: OFFICIAL_KHAN_LINKS.website,
+  twitter: OFFICIAL_KHAN_LINKS.x,
+  telegram: OFFICIAL_KHAN_LINKS.telegram,
   github: 'https://github.com/khantrust',
   launchDate: '2026-06-01',
   description: 'Building a crypto trust ecosystem from zero with community-first project profiles and public risk signals.',
@@ -312,6 +336,7 @@ function normalizeProject(input) {
     description: input.description || 'No description provided yet.',
     mission: input.mission || '',
     status: input.status || 'User submitted',
+    verificationStatus: input.verificationStatus || 'Unverified',
     lastUpdate: input.lastUpdate || now,
     logoUrl: input.logoUrl || '',
     createdBy: input.createdBy || '',
@@ -645,6 +670,7 @@ function resolvedMetadataRows(project = {}) {
     project.tokenSupply ? ['Token supply', project.tokenSupply, CircleDot] : null,
     project.tokenDecimals !== '' && project.tokenDecimals !== undefined ? ['Decimals', project.tokenDecimals, CircleDot] : null,
     project.transactionSignature ? ['Transaction', project.transactionSignature, BadgeCheck] : null,
+    ['Verification', project.verificationStatus || 'Unverified', BadgeCheck],
     ['Launch date', project.launchDate, CalendarDays],
     ['Status', project.status, BadgeCheck],
     ['Last update', project.lastUpdate, TimerReset],
@@ -1970,13 +1996,8 @@ function App() {
             <EmptyState title="No live profile loaded" text="Search a Solana contract address to create a real KHAN Trust profile." />
           </section>
         )}
-        {page === 'khan' && !selectedProject && (
-          <section className="page-section">
-            <KhanTokenRole />
-            <Disclaimer />
-          </section>
-        )}
-        {page === 'about' && <AboutPage openMethodology={() => setMethodologyOpen(true)} />}
+        {page === 'khan' && !selectedProject && <KhanEcosystemPage navigate={navigate} />}
+        {page === 'about' && <AboutPage openMethodology={() => setMethodologyOpen(true)} navigate={navigate} />}
       </main>
       <Footer />
       <MobileNav page={page} navigate={navigate} />
@@ -2069,6 +2090,9 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, onTokenChe
               <button className="ghost-button" onClick={() => navigate('khan')}>
                 View $KHAN <Star size={18} />
               </button>
+              <a className="secondary-button" href={OFFICIAL_KHAN_LINKS.telegram} target="_blank" rel="noreferrer" onClick={() => trackSocialClick('Telegram Community', OFFICIAL_KHAN_LINKS.telegram)}>
+                Join Telegram <MessageCircle size={18} />
+              </a>
             </div>
           </div>
           <div className="hero-panel">
@@ -2102,6 +2126,7 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, onTokenChe
         </div>
       </section>
       <CheckAnyTokenSection onTokenCheck={onTokenCheck} navigate={navigate} />
+      <KhanEcosystemStrip navigate={navigate} />
       <section className="content-band">
         <SectionTitle icon={BarChart3} eyebrow="Explore" title="Trust profiles, not hype feeds" />
         <div className="project-grid">
@@ -2111,7 +2136,8 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, onTokenChe
         </div>
         {!featured.length && <EmptyState title="No saved live profiles" text="Search a Solana contract address to create the first real trust profile." />}
       </section>
-      <KhanTokenRole />
+      <KhanTokenRole navigate={navigate} />
+      <FutureFoundationSection />
       <Disclaimer />
     </>
   );
@@ -2487,6 +2513,9 @@ function PricingPage({ navigate }) {
       <p className="pricing-note">
         KHAN Trust does not promise profit, returns, or investment outcomes. No investment claims.
       </p>
+      <p className="pricing-note payment-message">
+        KHAN Launchpad has its own payment model: devnet token creation is free, and mainnet token creation is {LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} per token. This is separate from KHAN Trust Premium.
+      </p>
       {paymentMessage && <p className="pricing-note payment-message">{paymentMessage}</p>}
       <div className="premium-value-strip">
         {premiumReportItems.map(([title]) => (
@@ -2806,7 +2835,8 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
           <Timeline items={project.timeline} />
           <Roadmap phases={project.roadmap} />
           <ShareReady project={project} />
-          <KhanTokenRole />
+          <KhanTokenRole navigate={navigate} />
+          <FutureFoundationSection />
         </div>
         <aside className="side-column">
           <CommunityProof project={project} />
@@ -2883,14 +2913,98 @@ function ShareReady({ project }) {
   );
 }
 
-function KhanTokenRole() {
+function EcosystemActions({ navigate }) {
+  return (
+    <div className="ecosystem-actions">
+      <button className="primary-button" type="button" onClick={() => navigate?.('home')}>
+        Visit KHAN Trust <ArrowRight size={18} />
+      </button>
+      <button className="secondary-button" type="button" onClick={() => navigate?.('khan')}>
+        Explore KHAN Ecosystem <Star size={18} />
+      </button>
+      <a className="secondary-button" href={OFFICIAL_KHAN_LINKS.x} target="_blank" rel="noreferrer" onClick={() => trackSocialClick('Official X', OFFICIAL_KHAN_LINKS.x)}>
+        Follow on X <ExternalLink size={18} />
+      </a>
+      <a className="secondary-button" href={OFFICIAL_KHAN_LINKS.telegram} target="_blank" rel="noreferrer" onClick={() => trackSocialClick('Telegram Community', OFFICIAL_KHAN_LINKS.telegram)}>
+        Join Telegram <MessageCircle size={18} />
+      </a>
+    </div>
+  );
+}
+
+function KhanEcosystemStrip({ navigate }) {
+  const items = [
+    ['KHAN Trust Platform', 'Public trust profiles, token scans, risk reports, and Launchpad profile creation.', Shield],
+    ['KHAN Token', 'Planned community and utility layer for future premium research and holder benefits.', Star],
+    ['KHAN Community', 'Official X and Telegram channels for updates, education, and ecosystem announcements.', Users],
+  ];
+  return (
+    <section className="content-band ecosystem-strip">
+      <SectionTitle icon={Globe2} eyebrow="KHAN Ecosystem" title="One ecosystem for trust, token utility, and community" />
+      <div className="ecosystem-grid">
+        {items.map(([title, text, Icon]) => (
+          <div className="ecosystem-card" key={title}>
+            <Icon size={20} />
+            <strong>{title}</strong>
+            <p>{text}</p>
+          </div>
+        ))}
+      </div>
+      <EcosystemActions navigate={navigate} />
+    </section>
+  );
+}
+
+function KhanTokenRole({ navigate }) {
   return (
     <section className="detail-section khan-token-role">
       <SectionTitle icon={Star} eyebrow="Ecosystem" title="KHAN Token Role" />
       <p>
-        KHAN is planned as the community/utility token of the KHAN Trust ecosystem. Future utility may include premium
-        analysis, early access, community features and holder-based benefits. No profit or investment promise.
+        KHAN is planned as the community and utility token of the KHAN Trust ecosystem. KHAN Trust is the platform layer,
+        KHAN Token is the future utility layer, and the KHAN Community gathers through the official X and Telegram channels.
+        No profit or investment promise.
       </p>
+      <EcosystemActions navigate={navigate} />
+    </section>
+  );
+}
+
+function FutureFoundationSection() {
+  return (
+    <section className="detail-section foundation-section">
+      <SectionTitle icon={BadgeCheck} eyebrow="Roadmap Foundation" title="Verified and holder benefit systems" />
+      <div className="foundation-grid">
+        <div>
+          <span className="status-badge">Verification foundation</span>
+          <p>Project profiles now have a future-ready verification status field. Current profiles default to Unverified until ownership and team checks are implemented.</p>
+          <div className="foundation-list">
+            {verificationFoundation.map((item) => <span key={item}><CheckCircle2 size={15} /> {item}</span>)}
+          </div>
+        </div>
+        <div>
+          <span className="status-badge">Holder utility foundation</span>
+          <p>Future KHAN holder benefits are documented as roadmap utilities. No token-gated access is active in this MVP.</p>
+          <div className="foundation-list">
+            {holderBenefitFoundation.map((item) => <span key={item}><CheckCircle2 size={15} /> {item}</span>)}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function KhanEcosystemPage({ navigate }) {
+  return (
+    <section className="page-section khan-ecosystem-page">
+      <SectionTitle icon={Star} eyebrow="$KHAN" title="KHAN Ecosystem" />
+      <p className="section-subtitle">
+        KHAN Trust, KHAN Token, and the KHAN Community are connected parts of one ecosystem for crypto trust signals,
+        public project profiles, and future holder utility.
+      </p>
+      <KhanEcosystemStrip navigate={navigate} />
+      <KhanTokenRole navigate={navigate} />
+      <FutureFoundationSection />
+      <Disclaimer />
     </section>
   );
 }
@@ -3129,6 +3243,7 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
   const [network, setNetwork] = useState('devnet');
   const [mainnetConfirmations, setMainnetConfirmations] = useState({
     realToken: false,
+    launchpadPayment: false,
     realFees: false,
     verifiedMetadata: false,
     noGuarantee: false,
@@ -3236,10 +3351,10 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
   return (
     <section className="page-section launchpad-page">
       <SectionTitle icon={Sparkles} eyebrow={isMainnet ? 'Mainnet guarded mode' : 'Devnet default mode'} title="KHAN Launchpad" />
-      <p className="section-subtitle">Create → Verify → Score → Share</p>
+      <p className="section-subtitle">Create, verify, score, and share Solana token profiles through KHAN Trust.</p>
 
       <div className="launchpad-warning-grid">
-        <WarningBox text={isMainnet ? 'Mainnet creates a real Solana token and uses real SOL for transaction fees.' : 'Devnet tokens are for testing only and have no real market value.'} tone={isMainnet ? 'danger' : 'warning'} />
+        <WarningBox text={isMainnet ? `Mainnet token creation requires a separate ${LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} Launchpad payment plus real SOL transaction fees.` : 'Devnet token creation is free and for testing only.'} tone={isMainnet ? 'danger' : 'warning'} />
         <WarningBox text="KHAN Launchpad does not guarantee profit, listing, liquidity, or token success." />
         <WarningBox text="Never share your seed phrase or private key." />
         <WarningBox text="Token creation is irreversible. Verify all metadata before approving the Phantom transaction." />
@@ -3252,7 +3367,7 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
       <div className="launchpad-network-panel">
         <div>
           <strong>Network</strong>
-          <p>{isMainnet ? 'Mainnet creates a real Solana token and uses real SOL for transaction fees.' : 'Devnet remains the default testing mode.'}</p>
+          <p>{isMainnet ? `Mainnet creates a real Solana token. KHAN Launchpad charges ${LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} per mainnet token creation, separate from KHAN Trust Premium.` : 'Devnet remains the default free testing mode.'}</p>
         </div>
         <div className="network-selector" role="group" aria-label="Launchpad network">
           <button className={network === 'devnet' ? 'active' : ''} type="button" onClick={() => updateNetwork('devnet')}>Devnet</button>
@@ -3260,9 +3375,27 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
         </div>
         <div className="launchpad-network-row">
           <span className={`network-badge ${isMainnet ? 'danger' : 'active'}`}>{selectedNetwork.label}</span>
+          <span className="network-badge">{isMainnet ? `${LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} Launchpad payment` : `${LAUNCHPAD_PAYMENT_MODEL.devnetPrice} Launchpad payment`}</span>
           <span className="network-badge disabled">Phantom approval required</span>
         </div>
       </div>
+
+      <section className="launchpad-payment-panel">
+        <SectionTitle icon={WalletCards} eyebrow="Payment Model" title="Launchpad payments are separate" />
+        <div className="launchpad-payment-grid">
+          <div>
+            <span>Devnet token creation</span>
+            <strong>{LAUNCHPAD_PAYMENT_MODEL.devnetPrice}</strong>
+            <p>Use devnet to test token metadata, wallet signing, and KHAN Trust profile generation.</p>
+          </div>
+          <div>
+            <span>Mainnet token creation</span>
+            <strong>{LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel}</strong>
+            <p>Mainnet creation requires Launchpad payment and real SOL network fees. Premium plans do not include this charge.</p>
+          </div>
+        </div>
+        <p className="inline-note">{LAUNCHPAD_PAYMENT_MODEL.note} Payment checkout can be connected later without changing the devnet flow.</p>
+      </section>
 
       <div className="launchpad-wallet-card">
         <div>
@@ -3312,13 +3445,14 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
           )}
           <div className="launchpad-inline-warning wide">
             <AlertTriangle size={18} />
-            <span>{isMainnet ? 'Mainnet creates a real SPL token. It still does not create liquidity, trading, or listings.' : 'Devnet tokens have no real value and do not create liquidity or listings.'}</span>
+            <span>{isMainnet ? `${LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} Launchpad payment is required for mainnet token creation. It still does not create liquidity, trading, or listings.` : 'Devnet token creation is free. Devnet tokens have no real value and do not create liquidity or listings.'}</span>
           </div>
 
           {isMainnet && (
             <div className="mainnet-confirmations wide">
               <strong>Mainnet confirmations</strong>
               <ConfirmationBox checked={mainnetConfirmations.realToken} onChange={(checked) => updateConfirmation('realToken', checked)} text="I understand this creates a real blockchain token." />
+              <ConfirmationBox checked={mainnetConfirmations.launchpadPayment} onChange={(checked) => updateConfirmation('launchpadPayment', checked)} text={`I understand mainnet token creation requires a separate ${LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} KHAN Launchpad payment.`} />
               <ConfirmationBox checked={mainnetConfirmations.realFees} onChange={(checked) => updateConfirmation('realFees', checked)} text="I understand real SOL fees may be charged." />
               <ConfirmationBox checked={mainnetConfirmations.verifiedMetadata} onChange={(checked) => updateConfirmation('verifiedMetadata', checked)} text="I verified token name, symbol, decimals, and supply." />
               <ConfirmationBox checked={mainnetConfirmations.noGuarantee} onChange={(checked) => updateConfirmation('noGuarantee', checked)} text="I understand KHAN Launchpad does not guarantee profit, liquidity, listing, or success." />
@@ -3641,7 +3775,7 @@ function EditProjectModal({ project, onSave, onClose }) {
   );
 }
 
-function AboutPage({ openMethodology }) {
+function AboutPage({ openMethodology, navigate }) {
   return (
     <section className="page-section about-page">
       <SectionTitle icon={Shield} eyebrow="About" title="Why KHAN Trust exists" />
@@ -3664,6 +3798,8 @@ function AboutPage({ openMethodology }) {
       <button className="primary-button" onClick={openMethodology}>
         View Trust Score Methodology <Info size={18} />
       </button>
+      <KhanEcosystemStrip navigate={navigate} />
+      <FutureFoundationSection />
       <Disclaimer />
     </section>
   );

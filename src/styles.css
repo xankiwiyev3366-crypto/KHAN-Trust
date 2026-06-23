@@ -50,7 +50,7 @@ button {
 
 .app-shell {
   min-height: 100vh;
-  padding-bottom: 78px;
+  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
 }
 
 .site-header {
@@ -266,6 +266,7 @@ main {
   border: 1px solid var(--border);
   font-weight: 800;
   transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  text-decoration: none;
 }
 
 .search-box button,
@@ -1175,8 +1176,97 @@ main {
   width: 100%;
 }
 
+.ecosystem-strip {
+  display: grid;
+  gap: 16px;
+}
+
+.ecosystem-grid,
+.foundation-grid,
+.launchpad-payment-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ecosystem-card,
+.foundation-grid > div,
+.launchpad-payment-grid > div {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+}
+
+.ecosystem-card {
+  display: grid;
+  gap: 9px;
+}
+
+.ecosystem-card svg,
+.foundation-list svg {
+  color: var(--gold);
+}
+
+.ecosystem-card strong,
+.launchpad-payment-grid strong {
+  color: var(--gold-bright);
+  font-size: 20px;
+}
+
+.ecosystem-card p,
+.foundation-grid p,
+.launchpad-payment-grid p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.ecosystem-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .khan-token-role {
   margin-top: 18px;
+}
+
+.khan-token-role .ecosystem-actions {
+  margin-top: 16px;
+}
+
+.foundation-section {
+  margin-top: 18px;
+}
+
+.foundation-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.foundation-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.foundation-list span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 9px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  color: var(--muted);
+  background: rgba(255,255,255,0.03);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.khan-ecosystem-page .content-band {
+  padding-top: 0;
 }
 
 .info-grid {
@@ -1464,6 +1554,30 @@ main {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(255,255,255,0.03);
+}
+
+.launchpad-payment-panel {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+}
+
+.launchpad-payment-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.launchpad-payment-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.launchpad-payment-grid strong {
+  display: block;
+  margin: 7px 0;
+  font-size: 28px;
 }
 
 .launchpad-network-panel p {
@@ -2005,23 +2119,33 @@ button:disabled {
   display: flex;
   justify-content: center;
   gap: 10px;
-  padding: 28px 16px 100px;
+  padding: 28px 16px calc(28px + env(safe-area-inset-bottom, 0px));
 }
 
 .mobile-nav {
   position: fixed;
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
+  left: max(10px, env(safe-area-inset-left, 0px));
+  right: max(10px, env(safe-area-inset-right, 0px));
+  bottom: max(10px, env(safe-area-inset-bottom, 0px));
   z-index: 60;
   display: none;
-  grid-template-columns: repeat(8, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(66px, 1fr);
+  grid-template-columns: none;
   gap: 4px;
   padding: 7px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(8, 8, 7, 0.92);
   backdrop-filter: blur(18px);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  box-shadow: 0 14px 44px rgba(0,0,0,0.55);
+}
+
+.mobile-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .mobile-nav button {
@@ -2030,6 +2154,7 @@ button:disabled {
   gap: 2px;
   min-width: 0;
   min-height: 48px;
+  padding: 4px 5px;
 }
 
 .mobile-nav span {
@@ -2067,6 +2192,10 @@ button:disabled {
 }
 
 @media (max-width: 740px) {
+  .app-shell {
+    padding-bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+  }
+
   .desktop-nav {
     display: none;
   }
@@ -2108,6 +2237,9 @@ button:disabled {
   .pricing-grid,
   .payment-methods,
   .add-form,
+  .ecosystem-grid,
+  .foundation-grid,
+  .launchpad-payment-grid,
   .compare-selectors,
   .launchpad-layout,
   .launchpad-warning-grid,
@@ -2202,7 +2334,9 @@ button:disabled {
 
   .profile-actions button,
   .hero-actions button,
-  .report-action-row button {
+  .report-action-row button,
+  .ecosystem-actions button,
+  .ecosystem-actions a {
     width: 100%;
   }
 

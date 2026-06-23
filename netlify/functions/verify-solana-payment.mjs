@@ -16,6 +16,7 @@ const FALLBACK_RPC_URLS = ['https://api.mainnet-beta.solana.com'];
 
 const PLAN_USD_AMOUNT = {
   premium: 9,
+  launchpad_mainnet: 9,
   early_supporter: 29,
 };
 

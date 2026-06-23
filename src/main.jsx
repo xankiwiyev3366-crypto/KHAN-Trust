@@ -90,6 +90,7 @@ const OFFICIAL_KHAN_LINKS = {
 const LAUNCHPAD_PAYMENT_MODEL = {
   devnetPrice: '$0',
   mainnetPriceUsd: 9,
+  mainnetPlan: 'launchpad_mainnet',
   mainnetPriceLabel: '$9',
   note: 'Launchpad payments are separate from KHAN Trust Premium plans.',
 };
@@ -319,7 +320,8 @@ const filters = ['All', 'Solana', 'Ethereum', 'BSC', 'Base', 'New Projects', 'Hi
 function normalizeProject(input) {
   const now = new Date().toISOString().slice(0, 10);
   const roadmapText = input.roadmapText || roadmapToText(input.roadmap);
-  const realData = input.realData ? syncSocialData(input.realData, input) : null;
+  const rawRealData = input.realData || null;
+  const realData = rawRealData ? syncSocialData(rawRealData, input) : null;
   const holders = Number(input.holders || input.holderCount || realData?.holderCount || 0);
   const communitySize = Number(input.communitySize || realData?.holderCount || 0);
   const baseProject = {
@@ -356,6 +358,21 @@ function normalizeProject(input) {
     roadmapText,
     riskNotes: input.riskNotes || 'Community-submitted profile. Review public links, activity, and risk signals.',
   };
+  const liveScoringProject = rawRealData ? {
+    ...baseProject,
+    website: rawRealData.websiteUrl || 'Not provided',
+    twitter: rawRealData.twitterUrl || 'Not provided',
+    telegram: rawRealData.telegramUrl || 'Not provided',
+    github: rawRealData.githubUrl || 'Not provided',
+    founderStatus: 'Not provided',
+    communitySize: Number(rawRealData.holderCount || 0),
+    holders: Number(rawRealData.holderCount || 0),
+    description: baseProject.description,
+    roadmap: roadmapFromText(''),
+    roadmapText: '',
+    riskNotes: buildCanonicalRiskNotes(rawRealData),
+    realData: rawRealData,
+  } : null;
   const scoringProject = {
     ...baseProject,
     website: firstPresent(baseProject.website, realData?.websiteUrl) || 'Not provided',
@@ -368,14 +385,17 @@ function normalizeProject(input) {
     roadmapText: baseProject.roadmapText,
     riskNotes: baseProject.riskNotes,
   };
-  const score = calculateTrustScore(scoringProject, realData);
+  const authoritativeProject = liveScoringProject || scoringProject;
+  const authoritativeHolders = liveScoringProject?.holders ?? holders;
+  const authoritativeCommunitySize = liveScoringProject?.communitySize ?? communitySize;
+  const score = calculateTrustScore(authoritativeProject, rawRealData);
 
   return {
     ...scoringProject,
     trustScore: score,
     riskLevel: scoreToRisk(score),
-    scoreBreakdown: buildScoreBreakdown(scoringProject, holders, communitySize, score),
-    riskFlags: deriveRiskFlags(scoringProject, holders, communitySize),
+    scoreBreakdown: buildScoreBreakdown(authoritativeProject, authoritativeHolders, authoritativeCommunitySize, score),
+    riskFlags: deriveRiskFlags(authoritativeProject, authoritativeHolders, authoritativeCommunitySize),
   };
 }
 
@@ -696,10 +716,10 @@ function hasRoadmap(project = {}) {
 function syncSocialData(data = {}, project = {}) {
   return {
     ...data,
-    websiteUrl: firstPresent(project.website, data.websiteUrl),
-    twitterUrl: firstPresent(project.twitter, data.twitterUrl),
-    telegramUrl: firstPresent(project.telegram, data.telegramUrl),
-    githubUrl: firstPresent(project.github, data.githubUrl),
+    websiteUrl: firstPresent(data.websiteUrl, project.website),
+    twitterUrl: firstPresent(data.twitterUrl, project.twitter),
+    telegramUrl: firstPresent(data.telegramUrl, project.telegram),
+    githubUrl: firstPresent(data.githubUrl, project.github),
   };
 }
 
@@ -1062,6 +1082,14 @@ function buildRealDataRiskNotes({ liquidityUsd, holderCount, tokenAgeDays }) {
   return notes.length ? notes.join(', ') : 'Live Solana data available. Continue reviewing public transparency signals.';
 }
 
+function buildCanonicalRiskNotes(data = {}) {
+  return buildRealDataRiskNotes({
+    liquidityUsd: Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0),
+    holderCount: Number(data.holderCount || 0),
+    tokenAgeDays: data.tokenAgeDays,
+  });
+}
+
 function roadmapFromText(text) {
   if (!text) {
     return [{ phase: 'Roadmap proof needed', status: 'Planned' }];
@@ -1302,21 +1330,8 @@ function mergeStoredMetadata(liveProject = {}, storedProject = null) {
   const merged = {
     ...liveProject,
     id: storedProject.id || liveProject.id,
+    verificationStatus: storedProject.verificationStatus || liveProject.verificationStatus,
   };
-  ['website', 'twitter', 'telegram', 'github', 'founderStatus', 'description', 'riskNotes'].forEach((field) => {
-    const savedValue = storedMetadataValue(storedProject[field]);
-    if (savedValue !== undefined) merged[field] = savedValue;
-  });
-
-  const savedCommunitySize = storedMetadataValue(storedProject.communitySize);
-  if (savedCommunitySize !== undefined) {
-    merged.communitySize = Number(savedCommunitySize);
-  }
-
-  if (hasSavedRoadmap(storedProject)) {
-    merged.roadmapText = storedProject.roadmapText || roadmapToText(storedProject.roadmap);
-    merged.roadmap = storedProject.roadmap;
-  }
 
   if (merged.realData) {
     merged.realData = syncSocialData(merged.realData, merged);
@@ -1766,6 +1781,14 @@ function writeStorage(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+function readProjectStorage() {
+  return readStorage(PROJECTS_KEY, []).filter((project) => !project?.realData?.isDemo);
+}
+
+function writeProjectStorage(projects) {
+  writeStorage(PROJECTS_KEY, projects.filter((project) => !project?.realData?.isDemo));
+}
+
 function looksLikeSolanaAddress(value) {
   return /^[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(value.trim());
 }
@@ -1773,6 +1796,9 @@ function looksLikeSolanaAddress(value) {
 function upsertProject(items, project) {
   const normalizedContract = project.contract?.toLowerCase();
   const existing = findStoredProject(items, project);
+  if (project.realData?.isDemo && existing?.realData && !existing.realData.isDemo) {
+    return [normalizeProject(existing), ...items.filter((item) => item !== existing)];
+  }
   const mergedProject = normalizeProject(mergeStoredMetadata(project, existing));
   const projectWithGrowth = applyHolderGrowth(mergedProject, existing);
   const withoutExisting = items.filter((item) => {
@@ -1784,21 +1810,7 @@ function upsertProject(items, project) {
 }
 
 function applyHolderGrowth(project, existing) {
-  if (!project.realData) return project;
-  if (project.realData.holderGrowthPercent !== null && project.realData.holderGrowthPercent !== undefined) {
-    return project;
-  }
-  const previous = Number(existing?.realData?.holderCount || 0);
-  const current = Number(project.realData.holderCount || 0);
-  const holderGrowthPercent = previous > 0 && current > 0 ? roundPercent((current - previous) / previous) : null;
-  return {
-    ...project,
-    realData: {
-      ...project.realData,
-      previousHolderCount: previous || null,
-      holderGrowthPercent,
-    },
-  };
+  return project;
 }
 
 function App() {
@@ -1806,7 +1818,7 @@ function App() {
   const [query, setQuery] = useState('');
   const [searchState, setSearchState] = useState({ status: 'idle', message: '' });
   const [activeFilter, setActiveFilter] = useState('All');
-  const [userProjects, setUserProjects] = useState(() => readStorage(PROJECTS_KEY, []));
+  const [userProjects, setUserProjects] = useState(() => readProjectStorage());
   const [watchlist, setWatchlist] = useState(() => readStorage(WATCHLIST_KEY, []));
   const [methodologyOpen, setMethodologyOpen] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
@@ -1817,7 +1829,7 @@ function App() {
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
-  useEffect(() => writeStorage(PROJECTS_KEY, userProjects), [userProjects]);
+  useEffect(() => writeProjectStorage(userProjects), [userProjects]);
   useEffect(() => writeStorage(WATCHLIST_KEY, watchlist), [watchlist]);
 
   useEffect(() => {
@@ -1929,6 +1941,13 @@ function App() {
       navigate(`report/${liveProject.id}`);
       return { status: 'success', message: `Opened free risk report for ${liveProject.name || liveProject.ticker}.` };
     } catch (error) {
+      const existing = findStoredProject(userProjects, { contract: term });
+      if (existing?.realData && !existing.realData.isDemo) {
+        const existingProject = normalizeProject(existing);
+        trackTokenScanCompleted(term, 'cached-live');
+        navigate(`report/${existingProject.id}`);
+        return { status: 'success', message: `Live lookup was unavailable, so KHAN Trust opened the existing authoritative report for ${existingProject.name || existingProject.ticker}.` };
+      }
       const demoProject = normalizeProject(createDemoRiskProject(term, error.message));
       setUserProjects((items) => upsertProject(items, demoProject));
       trackTokenScanCompleted(term, 'demo-fallback');
@@ -3253,10 +3272,18 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
   const [walletMessage, setWalletMessage] = useState('');
   const [status, setStatus] = useState({ state: 'idle', message: '' });
   const [created, setCreated] = useState(null);
+  const [launchpadPaymentHash, setLaunchpadPaymentHash] = useState('');
+  const [launchpadPaymentStatus, setLaunchpadPaymentStatus] = useState('idle');
+  const [launchpadPaymentMessage, setLaunchpadPaymentMessage] = useState('');
+  const [launchpadPaymentCopied, setLaunchpadPaymentCopied] = useState(false);
   const decimals = Number(form.decimals || 0);
   const isMainnet = network === 'mainnet-beta';
   const selectedNetwork = launchpadNetworkConfig(network);
   const mainnetReady = Object.values(mainnetConfirmations).every(Boolean);
+  const launchpadPaymentVerified = launchpadPaymentStatus === 'verified';
+  const mainnetUnlocked = !isMainnet || launchpadPaymentVerified;
+  const walletConfigured = Boolean(CRYPTO_PAYMENT_WALLET);
+  const verificationConfigured = isSolanaVerificationConfigured();
   const socialWarnings = [
     !hasValue(form.website) ? 'Website is missing.' : '',
     !hasValue(form.twitter) ? 'X/Twitter is missing.' : '',
@@ -3295,6 +3322,10 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
     setNetwork(value);
     setCreated(null);
     setStatus({ state: 'idle', message: '' });
+    if (value !== 'mainnet-beta') {
+      setLaunchpadPaymentStatus('idle');
+      setLaunchpadPaymentMessage('');
+    }
   };
 
   const updateConfirmation = (key, checked) => {
@@ -3312,6 +3343,47 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
     }
   };
 
+  const copyLaunchpadPaymentWallet = async () => {
+    if (!walletConfigured) return;
+    try {
+      await navigator.clipboard.writeText(CRYPTO_PAYMENT_WALLET);
+      setLaunchpadPaymentCopied(true);
+      window.setTimeout(() => setLaunchpadPaymentCopied(false), 1600);
+    } catch {
+      setLaunchpadPaymentCopied(false);
+    }
+  };
+
+  const verifyLaunchpadPayment = async () => {
+    if (!verificationConfigured) {
+      setLaunchpadPaymentStatus('not_configured');
+      setLaunchpadPaymentMessage(solanaUnavailableMessage());
+      return;
+    }
+    if (!launchpadPaymentHash.trim()) {
+      setLaunchpadPaymentStatus('idle');
+      setLaunchpadPaymentMessage('Paste the mainnet Launchpad payment transaction hash first.');
+      return;
+    }
+
+    trackCryptoVerifyStarted(LAUNCHPAD_PAYMENT_MODEL.mainnetPlan);
+    setLaunchpadPaymentStatus('verifying');
+    setLaunchpadPaymentMessage('');
+
+    const result = await verifySolanaPayment({
+      transactionHash: launchpadPaymentHash,
+      plan: LAUNCHPAD_PAYMENT_MODEL.mainnetPlan,
+    });
+    setLaunchpadPaymentStatus(result.status);
+    setLaunchpadPaymentMessage(result.message || VERIFY_STATUS_MESSAGE[result.status] || '');
+
+    if (result.status === 'verified') {
+      trackCryptoVerifySuccess(LAUNCHPAD_PAYMENT_MODEL.mainnetPlan);
+    } else {
+      trackCryptoVerifyFailed(LAUNCHPAD_PAYMENT_MODEL.mainnetPlan, result.status);
+    }
+  };
+
   const createToken = async (event) => {
     event.preventDefault();
     if (validationErrors.length) {
@@ -3324,6 +3396,10 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
     }
     if (isMainnet && !mainnetReady) {
       setStatus({ state: 'error', message: 'Complete every mainnet confirmation before creating a real token.' });
+      return;
+    }
+    if (isMainnet && !launchpadPaymentVerified) {
+      setStatus({ state: 'error', message: `Verify the ${LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} Launchpad payment before creating a mainnet token.` });
       return;
     }
 
@@ -3397,6 +3473,59 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
         <p className="inline-note">{LAUNCHPAD_PAYMENT_MODEL.note} Payment checkout can be connected later without changing the devnet flow.</p>
       </section>
 
+      {isMainnet && (
+        <section className="launchpad-payment-panel">
+          <SectionTitle icon={Lock} eyebrow="Mainnet Unlock" title="Verify Launchpad payment" />
+          <p className="launchpad-message">
+            Pay {LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} to the configured KHAN payment wallet, submit the transaction hash,
+            and unlock mainnet token creation after verification.
+          </p>
+          {walletConfigured ? (
+            <div className="wallet-copy-box">
+              <span>KHAN payment wallet</span>
+              <strong>{CRYPTO_PAYMENT_WALLET}</strong>
+              <button className="secondary-button" type="button" onClick={copyLaunchpadPaymentWallet}>
+                <Copy size={17} /> {launchpadPaymentCopied ? 'Copied' : 'Copy wallet address'}
+              </button>
+            </div>
+          ) : (
+            <p className="inline-note">Crypto payments are not configured yet.</p>
+          )}
+          {!verificationConfigured && <p className="inline-note">{solanaUnavailableMessage()}</p>}
+          <label className="form-field transaction-field">
+            <span>Launchpad payment transaction hash</span>
+            <input
+              value={launchpadPaymentHash}
+              onChange={(event) => {
+                setLaunchpadPaymentHash(event.target.value);
+                setLaunchpadPaymentStatus('idle');
+                setLaunchpadPaymentMessage('');
+              }}
+              placeholder="Paste the $9 mainnet payment transaction hash"
+              disabled={!walletConfigured || launchpadPaymentStatus === 'verifying'}
+            />
+          </label>
+          <div className="payment-action-row">
+            <button
+              className="primary-button"
+              type="button"
+              onClick={verifyLaunchpadPayment}
+              disabled={!walletConfigured || launchpadPaymentStatus === 'verifying'}
+            >
+              {launchpadPaymentStatus === 'verifying' ? 'Verifying...' : 'Verify Launchpad Payment'}
+            </button>
+            <span className={launchpadPaymentVerified ? 'network-badge active' : 'network-badge danger'}>
+              {launchpadPaymentVerified ? 'Mainnet unlocked' : 'Mainnet locked'}
+            </span>
+          </div>
+          {(launchpadPaymentMessage || launchpadPaymentStatus !== 'idle') && (
+            <p className={launchpadPaymentVerified ? 'inline-note verify-success' : 'inline-note'}>
+              {launchpadPaymentMessage || VERIFY_STATUS_MESSAGE[launchpadPaymentStatus] || VERIFY_STATUS_MESSAGE.idle}
+            </p>
+          )}
+        </section>
+      )}
+
       <div className="launchpad-wallet-card">
         <div>
           <strong>Phantom Wallet</strong>
@@ -3464,7 +3593,7 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
             <p className={`launchpad-status wide ${status.state}`}>{status.message}</p>
           )}
 
-          <button className="primary-button wide-button" type="submit" disabled={!walletAddress || status.state === 'loading' || (isMainnet && !mainnetReady)}>
+          <button className="primary-button wide-button" type="submit" disabled={!walletAddress || status.state === 'loading' || (isMainnet && (!mainnetReady || !mainnetUnlocked))}>
             {status.state === 'loading' ? 'Awaiting Approval...' : isMainnet ? 'Create Real Mainnet Token' : 'Create Devnet Token'}
           </button>
         </form>

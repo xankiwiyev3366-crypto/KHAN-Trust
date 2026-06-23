@@ -399,6 +399,11 @@ function normalizeProject(input) {
   };
 }
 
+// Maximum combined penalty (liveDataPenalty + riskPenalty) that can be subtracted from
+// the weighted score, so a fully-completed profile keeps a meaningful score advantage
+// over an identical project with no profile data, regardless of how risky the chain data is.
+const MAX_TRUST_SCORE_PENALTY = 35;
+
 function calculateTrustScore(project, liveData = project?.realData) {
   if (liveData) {
     return calculateLiveScores(project, liveData).finalTrustScore;
@@ -471,10 +476,16 @@ function calculateLiveScores(project = {}, data = {}) {
     [scores.communityActivity, 5],
     [scores.transparency, 3],
   ]);
-  const penalty = liveDataPenalty(data, holderCount) + riskPenalty(project.riskNotes);
+  const livePenaltyValue = liveDataPenalty(data, holderCount);
+  const riskPenaltyValue = riskPenalty(project.riskNotes, { excludeLiveDataDupes: true });
+  // Cap total penalty so a project with a complete profile (social links, founder
+  // status, description, roadmap) can never be fully cancelled out by on-chain risk
+  // signals alone — those signals still matter, but profile quality keeps contributing.
+  const penalty = Math.min(livePenaltyValue + riskPenaltyValue, MAX_TRUST_SCORE_PENALTY);
+  const finalTrustScore = clamp(Math.max(5, weighted - penalty), 5, 100);
   return {
     ...scores,
-    finalTrustScore: clamp(Math.max(5, weighted - penalty), 5, 100),
+    finalTrustScore,
   };
 }
 
@@ -492,7 +503,7 @@ function calculateManualScores(project = {}) {
     roadmapClarity: roadmapScore,
     transparency: socialScore,
     socialProof: socialScore,
-    finalTrustScore: clamp(Math.max(5, average - riskPenalty(project.riskNotes)), 5, 100),
+    finalTrustScore: clamp(Math.max(5, average - Math.min(riskPenalty(project.riskNotes), MAX_TRUST_SCORE_PENALTY)), 5, 100),
   };
 }
 
@@ -629,15 +640,19 @@ function communityScore(size) {
   return clamp(Math.round(Number(size) / 1000), 0, 15);
 }
 
-function riskPenalty(notes = '') {
+// Phrases here ('low liquidity', 'low holders', 'very new') describe the same conditions
+// already scored by liveDataPenalty (liquidity/holderCount/tokenAgeDays/concentration).
+// They are excluded when liveData is present so a project isn't penalized twice for one signal.
+function riskPenalty(notes = '', { excludeLiveDataDupes = false } = {}) {
   const text = notes.toLowerCase();
   const penalties = [
     ['anonymous', 10],
-    ['low liquidity', 10],
     ['no roadmap', 8],
-    ['low holders', 7],
-    ['very new project', 6],
-    ['very new', 6],
+    ...(excludeLiveDataDupes ? [] : [
+      ['low liquidity', 10],
+      ['low holders', 7],
+      ['very new', 6],
+    ]),
   ];
   return penalties.reduce((total, [phrase, value]) => total + (text.includes(phrase) ? value : 0), 0);
 }

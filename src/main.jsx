@@ -360,17 +360,17 @@ function normalizeProject(input) {
   };
   const liveScoringProject = rawRealData ? {
     ...baseProject,
-    website: rawRealData.websiteUrl || 'Not provided',
-    twitter: rawRealData.twitterUrl || 'Not provided',
-    telegram: rawRealData.telegramUrl || 'Not provided',
-    github: rawRealData.githubUrl || 'Not provided',
-    founderStatus: 'Not provided',
-    communitySize: Number(rawRealData.holderCount || 0),
-    holders: Number(rawRealData.holderCount || 0),
+    website: firstPresent(rawRealData.websiteUrl, baseProject.website) || 'Not provided',
+    twitter: firstPresent(rawRealData.twitterUrl, baseProject.twitter) || 'Not provided',
+    telegram: firstPresent(rawRealData.telegramUrl, baseProject.telegram) || 'Not provided',
+    github: firstPresent(rawRealData.githubUrl, baseProject.github) || 'Not provided',
+    founderStatus: baseProject.founderStatus,
+    communitySize: Number(rawRealData.holderCount || baseProject.communitySize || 0),
+    holders: Number(rawRealData.holderCount || baseProject.holders || 0),
     description: baseProject.description,
-    roadmap: roadmapFromText(''),
-    roadmapText: '',
-    riskNotes: buildCanonicalRiskNotes(rawRealData),
+    roadmap: baseProject.roadmap,
+    roadmapText: baseProject.roadmapText,
+    riskNotes: mergeRiskNotes(buildCanonicalRiskNotes(rawRealData), baseProject.riskNotes),
     realData: rawRealData,
   } : null;
   const scoringProject = {
@@ -1090,6 +1090,15 @@ function buildCanonicalRiskNotes(data = {}) {
   });
 }
 
+function mergeRiskNotes(...notes) {
+  const unique = notes
+    .flatMap((note) => String(note || '').split(','))
+    .map((note) => note.trim())
+    .filter(hasValue)
+    .filter((note, index, items) => items.findIndex((item) => item.toLowerCase() === note.toLowerCase()) === index);
+  return unique.length ? unique.join(', ') : 'Live Solana data available. Continue reviewing public transparency signals.';
+}
+
 function roadmapFromText(text) {
   if (!text) {
     return [{ phase: 'Roadmap proof needed', status: 'Planned' }];
@@ -1332,6 +1341,20 @@ function mergeStoredMetadata(liveProject = {}, storedProject = null) {
     id: storedProject.id || liveProject.id,
     verificationStatus: storedProject.verificationStatus || liveProject.verificationStatus,
   };
+  ['website', 'twitter', 'telegram', 'github', 'founderStatus', 'description', 'riskNotes'].forEach((field) => {
+    const savedValue = storedMetadataValue(storedProject[field]);
+    if (savedValue !== undefined && !hasValue(merged[field])) merged[field] = savedValue;
+  });
+
+  const savedCommunitySize = storedMetadataValue(storedProject.communitySize);
+  if (savedCommunitySize !== undefined && !Number(merged.communitySize || merged.realData?.holderCount || 0)) {
+    merged.communitySize = Number(savedCommunitySize);
+  }
+
+  if (!hasSavedRoadmap(merged) && hasSavedRoadmap(storedProject)) {
+    merged.roadmapText = storedProject.roadmapText || roadmapToText(storedProject.roadmap);
+    merged.roadmap = storedProject.roadmap;
+  }
 
   if (merged.realData) {
     merged.realData = syncSocialData(merged.realData, merged);

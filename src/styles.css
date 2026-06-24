@@ -2345,3 +2345,125 @@ button:disabled {
     flex-direction: column;
   }
 }
+
+.verified-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(103, 211, 156, 0.4);
+  background: rgba(103, 211, 156, 0.12);
+  color: var(--success);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.verification-pending-note {
+  color: var(--warning);
+  border-color: rgba(247, 190, 82, 0.35);
+  background: rgba(247, 190, 82, 0.08);
+}
+
+.verification-rejected-note {
+  color: var(--danger);
+  border-color: rgba(255, 117, 110, 0.35);
+  background: rgba(255, 117, 110, 0.08);
+}
+
+.verification-wallet-panel {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.verification-wallet-address {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.admin-login-form {
+  max-width: 360px;
+}
+
+.admin-section-heading {
+  margin: 28px 0 12px;
+  color: var(--gold-bright);
+}
+
+.admin-request-list {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-request-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(25, 23, 16, 0.95), rgba(12, 12, 10, 0.96));
+  padding: 16px;
+  display: grid;
+  gap: 6px;
+}
+
+.admin-request-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.admin-request-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.admin-request-card code {
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.admin-request-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.admin-request-card.reviewed {
+  opacity: 0.85;
+}
+
+.status-badge.verified {
+  color: var(--success);
+  background: rgba(103, 211, 156, 0.12);
+  border-color: rgba(103, 211, 156, 0.4);
+}
+
+.status-badge.rejected {
+  color: var(--danger);
+  background: rgba(255, 117, 110, 0.12);
+  border-color: rgba(255, 117, 110, 0.4);
+}
+
+@media (max-width: 720px) {
+  .verified-badge {
+    font-size: 11.5px;
+    padding: 5px 8px;
+  }
+
+  .verification-wallet-panel {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

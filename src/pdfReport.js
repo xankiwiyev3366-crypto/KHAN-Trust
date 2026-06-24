@@ -130,7 +130,22 @@ export function generatePdfReport(data = {}) {
   doc.setFontSize(10);
   doc.setTextColor(...COLORS.muted);
   doc.text(`${data.chain || 'Unknown chain'} - ${data.contract || 'Not provided'}`, MARGIN, y);
-  y += 12;
+  y += 7;
+
+  if (data.isVerified) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(...COLORS.success);
+    doc.text('VERIFIED BY KHAN TRUST', MARGIN, y);
+    y += 7;
+  } else {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(...COLORS.muted);
+    doc.text(`Verification status: ${data.verificationStatus || 'Unverified'}`, MARGIN, y);
+    y += 7;
+  }
+  y += 2;
 
   const boxWidth = (CONTENT_WIDTH - 12) / 3;
   const boxes = [

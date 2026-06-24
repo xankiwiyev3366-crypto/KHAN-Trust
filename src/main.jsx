@@ -78,6 +78,22 @@ import {
 } from './analytics.js';
 import { isStripeConfigured, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
+import {
+  VERIFICATION_STATUS,
+  normalizeVerificationStatus,
+  verificationStatusLabel,
+  buildVerificationMessage,
+  connectPhantomForVerification,
+  signVerificationMessage,
+  submitVerificationRequest,
+  fetchVerificationStatuses,
+  adminLogin,
+  getStoredAdminToken,
+  clearAdminToken,
+  fetchPendingRequests,
+  fetchAllRequests,
+  reviewVerificationRequest,
+} from './verification.js';
 
 const PROJECTS_KEY = 'khan-trust-projects-v1';
 const WATCHLIST_KEY = 'khan-trust-watchlist-v1';
@@ -338,7 +354,12 @@ function normalizeProject(input) {
     description: input.description || 'No description provided yet.',
     mission: input.mission || '',
     status: input.status || 'User submitted',
-    verificationStatus: input.verificationStatus || 'Unverified',
+    // Verification status is never trusted from user input (Add Project, Edit
+    // Project, Launchpad). It always starts unverified here; the only way a
+    // project becomes verified/pending/rejected is through the central
+    // verification store applied in applyVerificationStatus() after admin
+    // review - see src/verification.js and netlify/functions/verification-*.
+    verificationStatus: VERIFICATION_STATUS.UNVERIFIED,
     lastUpdate: input.lastUpdate || now,
     logoUrl: input.logoUrl || '',
     createdBy: input.createdBy || '',
@@ -705,12 +726,31 @@ function resolvedMetadataRows(project = {}) {
     project.tokenSupply ? ['Token supply', project.tokenSupply, CircleDot] : null,
     project.tokenDecimals !== '' && project.tokenDecimals !== undefined ? ['Decimals', project.tokenDecimals, CircleDot] : null,
     project.transactionSignature ? ['Transaction', project.transactionSignature, BadgeCheck] : null,
-    ['Verification', project.verificationStatus || 'Unverified', BadgeCheck],
+    ['Verification', verificationStatusLabel(project.verificationStatus), BadgeCheck],
     ['Launch date', project.launchDate, CalendarDays],
     ['Status', project.status, BadgeCheck],
     ['Last update', project.lastUpdate, TimerReset],
   ];
   return rows.filter(Boolean);
+}
+
+// Single source of truth merge: the project object itself is always created
+// unverified (see normalizeProject). The central verification store (fetched
+// from the backend in App()) is overlaid on top here so Explore, Profile,
+// Compare, and the PDF report all agree on the same status.
+function applyVerificationStatus(project, verificationMap = {}) {
+  const entry = verificationMap[project.id];
+  if (!entry) return project;
+  return { ...project, verificationStatus: normalizeVerificationStatus(entry.status), verificationNote: entry.adminNote || '' };
+}
+
+function VerifiedBadge({ status, size = 14 }) {
+  if (normalizeVerificationStatus(status) !== VERIFICATION_STATUS.VERIFIED) return null;
+  return (
+    <span className="verified-badge" title="Verified by KHAN Trust">
+      <BadgeCheck size={size} /> Verified by KHAN Trust
+    </span>
+  );
 }
 
 function linkPresenceState(value) {
@@ -1728,6 +1768,8 @@ function buildPdfReportData(project = {}) {
     contract: displayValue(project.contract),
     trustScore: project.trustScore,
     riskLevel: project.riskLevel,
+    verificationStatus: verificationStatusLabel(project.verificationStatus),
+    isVerified: normalizeVerificationStatus(project.verificationStatus) === VERIFICATION_STATUS.VERIFIED,
     confidenceLabel: confidence.label,
     riskReasons: riskSignals(project).slice(0, 3),
     riskNotes: project.riskNotes,
@@ -1860,6 +1902,17 @@ function App() {
   const [watchlist, setWatchlist] = useState(() => readStorage(WATCHLIST_KEY, []));
   const [methodologyOpen, setMethodologyOpen] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
+  const [verificationMap, setVerificationMap] = useState({});
+  const [requestingVerification, setRequestingVerification] = useState(null);
+
+  const refreshVerificationMap = async () => {
+    const statuses = await fetchVerificationStatuses();
+    setVerificationMap(statuses);
+  };
+
+  useEffect(() => {
+    refreshVerificationMap();
+  }, []);
 
   useEffect(() => {
     const onHash = () => setPage(window.location.hash.replace('#/', '') || 'home');
@@ -1882,7 +1935,10 @@ function App() {
     if (page === 'pricing') trackPricingView();
   }, [page]);
 
-  const projects = useMemo(() => userProjects.map((project) => normalizeProject(project)), [userProjects]);
+  const projects = useMemo(
+    () => userProjects.map((project) => applyVerificationStatus(normalizeProject(project), verificationMap)),
+    [userProjects, verificationMap]
+  );
   const selectedProject = useMemo(() => {
     if (page === 'khan') return projects.find((project) => project.contract === '6bSHkoMYqzyCZdWPQ45nUv73dvdfx4yEd4yEemefpump') || null;
     if (!page.startsWith('project/')) return null;
@@ -2046,6 +2102,7 @@ function App() {
             toggleWatch={() => toggleWatch(selectedProject.id)}
             onEdit={() => setEditingProject(selectedProject)}
             openMethodology={() => setMethodologyOpen(true)}
+            onRequestVerification={() => setRequestingVerification(selectedProject)}
           />
         )}
         {page.startsWith('project/') && !selectedProject && (
@@ -2055,10 +2112,21 @@ function App() {
         )}
         {page === 'khan' && !selectedProject && <KhanEcosystemPage navigate={navigate} />}
         {page === 'about' && <AboutPage openMethodology={() => setMethodologyOpen(true)} navigate={navigate} />}
+        {page === 'admin-verify' && <AdminVerificationPage onReviewed={refreshVerificationMap} />}
       </main>
       <Footer />
       <MobileNav page={page} navigate={navigate} />
       {methodologyOpen && <MethodologyModal onClose={() => setMethodologyOpen(false)} />}
+      {requestingVerification && (
+        <VerificationRequestModal
+          project={requestingVerification}
+          onClose={() => setRequestingVerification(null)}
+          onSubmitted={async () => {
+            await refreshVerificationMap();
+            setRequestingVerification(null);
+          }}
+        />
+      )}
       {editingProject && (
         <EditProjectModal
           project={editingProject}
@@ -2304,6 +2372,7 @@ function ComparePage({ projects, navigate }) {
           <div className="compare-table detail-section">
             <SectionTitle icon={BarChart3} eyebrow="Signal Review" title="Side-by-side checks" />
             <CompareRow label="Trust Score" first={`${first.trustScore}/100`} second={`${second.trustScore}/100`} />
+            <CompareRow label="Verification" first={verificationStatusLabel(first.verificationStatus)} second={verificationStatusLabel(second.verificationStatus)} />
             <CompareRow label="Chain" first={first.chain} second={second.chain} />
             <CompareRow label="Market Cap" first={formatCurrency(first.realData?.marketCapUsd)} second={formatCurrency(second.realData?.marketCapUsd)} />
             <CompareRow label="Liquidity" first={formatCurrency(first.realData?.totalLiquidityUsd ?? first.realData?.liquidityUsd)} second={formatCurrency(second.realData?.totalLiquidityUsd ?? second.realData?.liquidityUsd)} />
@@ -2346,6 +2415,7 @@ function ComparePanel({ project, navigate }) {
           <span className="status-badge">{project.chain}</span>
           <h3>{project.name}</h3>
           <p>{project.ticker}</p>
+          <VerifiedBadge status={project.verificationStatus} />
         </div>
         <ScoreCircle score={project.trustScore} />
       </div>
@@ -2814,6 +2884,7 @@ function ProjectCard({ project, navigate }) {
           <span className="status-badge">{project.status}</span>
           <h3>{project.name}</h3>
           <p>{project.ticker} on {project.chain}</p>
+          <VerifiedBadge status={project.verificationStatus} />
         </div>
         <ScoreCircle score={project.trustScore} />
       </div>
@@ -2834,8 +2905,10 @@ function ProjectCard({ project, navigate }) {
   );
 }
 
-function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openMethodology }) {
+function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openMethodology, onRequestVerification }) {
   const confidence = confidenceScore(project);
+  const canRequestVerification =
+    project.verificationStatus === VERIFICATION_STATUS.UNVERIFIED || project.verificationStatus === VERIFICATION_STATUS.REJECTED;
   const unlockPremium = async () => {
     const result = await handleUnlockPremiumClick(project);
     if (!result?.ok) alert(result?.message || stripeUnavailableMessage());
@@ -2849,9 +2922,18 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
           <div className="profile-title-row">
             <h1>{project.name}</h1>
             <span className="ticker-pill">{project.ticker}</span>
+            <VerifiedBadge status={project.verificationStatus} size={16} />
           </div>
           <p>{project.description}</p>
           {project.mission && <p className="mission-text">{project.mission}</p>}
+          {project.verificationStatus === VERIFICATION_STATUS.PENDING && (
+            <p className="inline-note verification-pending-note">Verification request submitted - pending KHAN Trust review.</p>
+          )}
+          {project.verificationStatus === VERIFICATION_STATUS.REJECTED && (
+            <p className="inline-note verification-rejected-note">
+              Verification request was rejected{project.verificationNote ? `: ${project.verificationNote}` : '.'}
+            </p>
+          )}
           <div className="profile-actions">
             <button className={watched ? 'primary-button watched' : 'primary-button'} onClick={toggleWatch}>
               <Bell size={18} /> {watched ? 'Watching Project' : 'Watch Project'}
@@ -2859,6 +2941,11 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
             <button className="secondary-button" onClick={onEdit}>
               <Plus size={18} /> Edit Project
             </button>
+            {canRequestVerification && (
+              <button className="primary-button" onClick={onRequestVerification}>
+                <BadgeCheck size={18} /> Request Verification
+              </button>
+            )}
             <button className="secondary-button" onClick={() => handleDownloadPdf(project)}>
               <Download size={18} /> Download PDF Report
             </button>
@@ -3033,7 +3120,7 @@ function FutureFoundationSection() {
       <div className="foundation-grid">
         <div>
           <span className="status-badge">Verification foundation</span>
-          <p>Project profiles now have a future-ready verification status field. Current profiles default to Unverified until ownership and team checks are implemented.</p>
+          <p>Project profiles default to Unverified until an owner connects a wallet, signs a KHAN Trust verification message, and an admin approves the request. Approved projects show a "Verified by KHAN Trust" badge everywhere.</p>
           <div className="foundation-list">
             {verificationFoundation.map((item) => <span key={item}><CheckCircle2 size={15} /> {item}</span>)}
           </div>
@@ -3939,6 +4026,266 @@ function EditProjectModal({ project, onSave, onClose }) {
         </div>
       </form>
     </div>
+  );
+}
+
+function VerificationRequestModal({ project, onClose, onSubmitted }) {
+  const [form, setForm] = useState({
+    projectName: project.name || '',
+    contract: project.contract || '',
+    website: hasValue(project.website) ? project.website : '',
+    twitter: hasValue(project.twitter) ? project.twitter : '',
+    telegram: hasValue(project.telegram) ? project.telegram : '',
+    ownerWallet: '',
+    proofNote: '',
+  });
+  const [wallet, setWallet] = useState('');
+  const [signature, setSignature] = useState('');
+  const [timestamp, setTimestamp] = useState('');
+  const [state, setState] = useState({ status: 'idle', message: '' });
+
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+
+  const connectWallet = async () => {
+    setState({ status: 'loading', message: 'Connecting Phantom wallet...' });
+    try {
+      const address = await connectPhantomForVerification();
+      setWallet(address);
+      update('ownerWallet', address);
+      setState({ status: 'idle', message: 'Phantom wallet connected.' });
+    } catch (error) {
+      setState({ status: 'error', message: error.message || 'Could not connect Phantom wallet.' });
+    }
+  };
+
+  const signMessage = async () => {
+    if (!wallet) {
+      setState({ status: 'error', message: 'Connect Phantom before signing.' });
+      return;
+    }
+    if (!form.contract.trim()) {
+      setState({ status: 'error', message: 'Enter the contract address before signing.' });
+      return;
+    }
+    const ts = new Date().toISOString();
+    const message = buildVerificationMessage({
+      projectName: form.projectName,
+      contract: form.contract,
+      walletAddress: wallet,
+      timestamp: ts,
+    });
+    setState({ status: 'loading', message: 'Waiting for Phantom signature...' });
+    try {
+      const sig = await signVerificationMessage(message);
+      setSignature(sig);
+      setTimestamp(ts);
+      setState({ status: 'idle', message: 'Message signed. Ready to submit.' });
+    } catch (error) {
+      setState({ status: 'error', message: error.message || 'Signing failed or was rejected.' });
+    }
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!wallet || !signature || !timestamp) {
+      setState({ status: 'error', message: 'Connect Phantom and sign the verification message before submitting.' });
+      return;
+    }
+    if (form.ownerWallet.trim() !== wallet) {
+      setState({ status: 'error', message: 'Owner wallet address must match the connected Phantom wallet.' });
+      return;
+    }
+    setState({ status: 'loading', message: 'Submitting verification request...' });
+    try {
+      await submitVerificationRequest({
+        projectId: project.id,
+        projectName: form.projectName,
+        contract: form.contract,
+        website: form.website,
+        twitter: form.twitter,
+        telegram: form.telegram,
+        ownerWallet: form.ownerWallet.trim(),
+        walletAddress: wallet,
+        signature,
+        timestamp,
+        proofNote: form.proofNote,
+      });
+      setState({ status: 'success', message: 'Verification request submitted. Status is now pending review.' });
+      await onSubmitted();
+    } catch (error) {
+      setState({ status: 'error', message: error.message || 'Could not submit verification request.' });
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Request Verification">
+      <form className="modal-panel edit-modal" onSubmit={submit}>
+        <button className="close-button" type="button" onClick={onClose} aria-label="Close verification request"><X size={20} /></button>
+        <SectionTitle icon={BadgeCheck} eyebrow="Verification" title={`Request verification for ${project.name}`} />
+        <p className="section-subtitle">
+          Prove ownership by connecting and signing with the project's wallet. KHAN Trust admins review every request manually.
+        </p>
+        <div className="add-form">
+          <FormField label="Project name" value={form.projectName} onChange={(value) => update('projectName', value)} required />
+          <FormField label="Contract address" value={form.contract} onChange={(value) => update('contract', value)} required />
+          <FormField label="Official website" value={form.website} onChange={(value) => update('website', value)} />
+          <FormField label="Official X/Twitter" value={form.twitter} onChange={(value) => update('twitter', value)} />
+          <FormField label="Official Telegram" value={form.telegram} onChange={(value) => update('telegram', value)} />
+          <FormField label="Owner wallet address" value={form.ownerWallet} onChange={(value) => update('ownerWallet', value)} required placeholder="Must match the connected Phantom wallet" />
+          <label className="form-field wide">
+            <span>Proof note / message</span>
+            <textarea value={form.proofNote} onChange={(event) => update('proofNote', event.target.value)} placeholder="Anything that helps KHAN Trust confirm ownership (team links, announcement, etc.)" />
+          </label>
+
+          <div className="verification-wallet-panel">
+            <button className="secondary-button" type="button" onClick={connectWallet}>
+              <WalletCards size={18} /> {wallet ? 'Phantom Connected' : 'Connect Phantom Wallet'}
+            </button>
+            {wallet && <span className="verification-wallet-address">{wallet}</span>}
+            <button className="secondary-button" type="button" onClick={signMessage} disabled={!wallet}>
+              <BadgeCheck size={18} /> {signature ? 'Message Signed' : 'Sign Verification Message'}
+            </button>
+          </div>
+
+          {state.message && (
+            <p className={state.status === 'error' ? 'lookup-message error' : 'lookup-message'}>{state.message}</p>
+          )}
+
+          <button className="primary-button wide-button" type="submit" disabled={state.status === 'loading' || state.status === 'success'}>
+            Submit Verification Request <ArrowRight size={18} />
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function AdminVerificationPage({ onReviewed }) {
+  const [token, setToken] = useState(() => getStoredAdminToken());
+  const [passcode, setPasscode] = useState('');
+  const [authState, setAuthState] = useState({ status: 'idle', message: '' });
+  const [requests, setRequests] = useState([]);
+  const [notes, setNotes] = useState({});
+  const [listState, setListState] = useState({ status: 'idle', message: '' });
+
+  const loadRequests = async (activeToken) => {
+    setListState({ status: 'loading', message: 'Loading verification requests...' });
+    try {
+      const items = await fetchAllRequests(activeToken);
+      setRequests(items);
+      setListState({ status: 'idle', message: '' });
+    } catch (error) {
+      setListState({ status: 'error', message: error.message || 'Could not load verification requests.' });
+    }
+  };
+
+  useEffect(() => {
+    if (token) loadRequests(token);
+  }, [token]);
+
+  const login = async (event) => {
+    event.preventDefault();
+    setAuthState({ status: 'loading', message: 'Checking passcode...' });
+    try {
+      const newToken = await adminLogin(passcode);
+      setToken(newToken);
+      setAuthState({ status: 'idle', message: '' });
+    } catch (error) {
+      setAuthState({ status: 'error', message: error.message || 'Login failed.' });
+    }
+  };
+
+  const logout = () => {
+    clearAdminToken();
+    setToken('');
+    setRequests([]);
+  };
+
+  const review = async (request, decision) => {
+    try {
+      await reviewVerificationRequest(token, { requestId: request.id, decision, adminNote: notes[request.id] || '' });
+      await loadRequests(token);
+      await onReviewed?.();
+    } catch (error) {
+      setListState({ status: 'error', message: error.message || 'Could not submit review.' });
+    }
+  };
+
+  if (!token) {
+    return (
+      <section className="page-section">
+        <SectionTitle icon={Lock} eyebrow="Admin" title="KHAN Trust Verification Review" />
+        <form className="add-form admin-login-form" onSubmit={login}>
+          <FormField label="Admin passcode" type="password" value={passcode} onChange={setPasscode} required />
+          <button className="primary-button wide-button" type="submit" disabled={authState.status === 'loading'}>
+            Sign In <ArrowRight size={18} />
+          </button>
+          {authState.message && <p className="lookup-message error">{authState.message}</p>}
+        </form>
+      </section>
+    );
+  }
+
+  const pending = requests.filter((request) => request.status === 'pending');
+  const reviewed = requests.filter((request) => request.status !== 'pending');
+
+  return (
+    <section className="page-section">
+      <SectionTitle icon={Shield} eyebrow="Admin" title="KHAN Trust Verification Review" />
+      <button className="secondary-button" type="button" onClick={logout}>Sign Out</button>
+      {listState.message && <p className={listState.status === 'error' ? 'lookup-message error' : 'lookup-message'}>{listState.message}</p>}
+
+      <h3 className="admin-section-heading">Pending requests ({pending.length})</h3>
+      {!pending.length && <EmptyState title="No pending requests" text="New verification requests will appear here." />}
+      <div className="admin-request-list">
+        {pending.map((request) => (
+          <article className="admin-request-card" key={request.id}>
+            <header>
+              <strong>{request.projectName}</strong>
+              <span className="status-badge">{request.contract}</span>
+            </header>
+            <p>Owner wallet: {request.ownerWallet}</p>
+            <p>Signed wallet: {request.walletAddress}</p>
+            <p>Signature: <code>{request.signature}</code></p>
+            <p>Timestamp: {request.timestamp}</p>
+            {request.website && <p>Website: {request.website}</p>}
+            {request.twitter && <p>X/Twitter: {request.twitter}</p>}
+            {request.telegram && <p>Telegram: {request.telegram}</p>}
+            {request.proofNote && <p>Proof note: {request.proofNote}</p>}
+            <label className="form-field wide">
+              <span>Admin note</span>
+              <textarea
+                value={notes[request.id] || ''}
+                onChange={(event) => setNotes((current) => ({ ...current, [request.id]: event.target.value }))}
+                placeholder="Optional note shown if rejected"
+              />
+            </label>
+            <div className="admin-request-actions">
+              <button className="primary-button" type="button" onClick={() => review(request, 'verified')}>
+                <CheckCircle2 size={18} /> Approve
+              </button>
+              <button className="secondary-button" type="button" onClick={() => review(request, 'rejected')}>
+                <X size={18} /> Reject
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <h3 className="admin-section-heading">Reviewed history ({reviewed.length})</h3>
+      <div className="admin-request-list">
+        {reviewed.map((request) => (
+          <article className="admin-request-card reviewed" key={request.id}>
+            <header>
+              <strong>{request.projectName}</strong>
+              <span className={request.status === 'verified' ? 'status-badge verified' : 'status-badge rejected'}>{verificationStatusLabel(request.status)}</span>
+            </header>
+            <p>Reviewed: {request.reviewedAt || 'Not available'}</p>
+            {request.adminNote && <p>Admin note: {request.adminNote}</p>}
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }
 

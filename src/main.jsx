@@ -744,11 +744,23 @@ function applyVerificationStatus(project, verificationMap = {}) {
   return { ...project, verificationStatus: normalizeVerificationStatus(entry.status), verificationNote: entry.adminNote || '' };
 }
 
+// Visible on Explore, Project Profile, and Compare so all three pages and
+// mobile/desktop always agree on the same status (see applyVerificationStatus
+// above, the single source of truth). Unverified projects show no badge.
+const VERIFICATION_BADGE_CONFIG = {
+  [VERIFICATION_STATUS.VERIFIED]: { className: 'status-pill-verified', Icon: BadgeCheck, label: 'Verified by KHAN Trust' },
+  [VERIFICATION_STATUS.PENDING]: { className: 'status-pill-pending', Icon: Clock3, label: 'Verification Pending' },
+  [VERIFICATION_STATUS.REJECTED]: { className: 'status-pill-rejected', Icon: X, label: 'Verification Rejected' },
+};
+
 function VerifiedBadge({ status, size = 14 }) {
-  if (normalizeVerificationStatus(status) !== VERIFICATION_STATUS.VERIFIED) return null;
+  const normalized = normalizeVerificationStatus(status);
+  const config = VERIFICATION_BADGE_CONFIG[normalized];
+  if (!config) return null;
+  const { className, Icon, label } = config;
   return (
-    <span className="verified-badge" title="Verified by KHAN Trust">
-      <BadgeCheck size={size} /> Verified by KHAN Trust
+    <span className={`verification-status-pill ${className}`} title={label}>
+      <Icon size={size} /> {label}
     </span>
   );
 }

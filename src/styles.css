@@ -2346,18 +2346,33 @@ button:disabled {
   }
 }
 
-.verified-badge {
+.verification-status-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(103, 211, 156, 0.4);
-  background: rgba(103, 211, 156, 0.12);
-  color: var(--success);
   font-size: 12.5px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.status-pill-verified {
+  border: 1px solid rgba(103, 211, 156, 0.4);
+  background: rgba(103, 211, 156, 0.12);
+  color: var(--success);
+}
+
+.status-pill-pending {
+  border: 1px solid rgba(247, 190, 82, 0.4);
+  background: rgba(247, 190, 82, 0.12);
+  color: var(--warning);
+}
+
+.status-pill-rejected {
+  border: 1px solid rgba(255, 117, 110, 0.4);
+  background: rgba(255, 117, 110, 0.12);
+  color: var(--danger);
 }
 
 .verification-pending-note {

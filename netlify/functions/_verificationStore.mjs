@@ -8,7 +8,11 @@ const REQUESTS_KEY = 'requests.json';
 const STATUSES_KEY = 'statuses.json';
 
 function store() {
-  return getStore(STORE_NAME);
+  try {
+    return getStore(STORE_NAME);
+  } catch (error) {
+    throw new Error(`Netlify Blobs getStore("${STORE_NAME}") failed: ${error.message}`);
+  }
 }
 
 export async function readRequests() {

@@ -57,8 +57,15 @@ function writeFallbackStore(store) {
   }
 }
 
+// Only treat the backend as "unavailable" (eligible for the dev-only
+// localStorage fallback) when the function genuinely could not be reached:
+// a network-level failure (no response.status at all, e.g. plain `vite dev`
+// with no Netlify Functions server) or a 404 because the route doesn't
+// exist. Any other status (400/401/500/502...) means the function DID run
+// and returned a real error - that must surface to the caller, not be
+// silently swallowed into the fallback store.
 function isFunctionUnavailable(error) {
-  return Boolean(error);
+  return Boolean(error) && (error.status === undefined || error.status === 404);
 }
 
 async function callFunction(path, options) {

@@ -4,9 +4,13 @@ import { readStatuses, jsonResponse } from './_verificationStore.mjs';
 // map ({ [projectId]: { status, updatedAt, adminNote } }) consumed by
 // Explore, Project Profile, Compare, and the PDF report.
 export async function handler(event) {
-  if (event.httpMethod !== 'GET') {
-    return jsonResponse(405, { message: 'Method not allowed' });
+  try {
+    if (event.httpMethod !== 'GET') {
+      return jsonResponse(405, { message: 'Method not allowed' });
+    }
+    const statuses = await readStatuses();
+    return jsonResponse(200, { statuses });
+  } catch (error) {
+    return jsonResponse(500, { message: `verification-status crashed: ${error.message}`, stack: error.stack });
   }
-  const statuses = await readStatuses();
-  return jsonResponse(200, { statuses });
 }

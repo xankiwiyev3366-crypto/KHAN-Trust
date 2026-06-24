@@ -17,6 +17,19 @@ const STATUSES_KEY = 'statuses.json';
 const SITE_ID = process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
 const BLOBS_TOKEN = process.env.NETLIFY_BLOBS_TOKEN;
 
+// TEMPORARY diagnostic - masked, no secrets leaked. Remove once the 400 from
+// the Blobs API is root-caused (see investigation in netlify functions PR).
+function diagnostics() {
+  return {
+    siteIdPresent: Boolean(SITE_ID),
+    siteIdLength: SITE_ID ? SITE_ID.length : 0,
+    siteIdLooksLikeUuid: SITE_ID ? /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(SITE_ID) : false,
+    tokenPresent: Boolean(BLOBS_TOKEN),
+    tokenLength: BLOBS_TOKEN ? BLOBS_TOKEN.length : 0,
+    tokenPrefix: BLOBS_TOKEN ? BLOBS_TOKEN.slice(0, 4) : null,
+  };
+}
+
 function store() {
   try {
     if (SITE_ID && BLOBS_TOKEN) {
@@ -24,26 +37,39 @@ function store() {
     }
     return getStore(STORE_NAME);
   } catch (error) {
-    throw new Error(`Netlify Blobs getStore("${STORE_NAME}") failed: ${error.message}`);
+    throw new Error(`Netlify Blobs getStore("${STORE_NAME}") failed: ${error.message}. diagnostics=${JSON.stringify(diagnostics())}`);
+  }
+}
+
+async function withDiagnostics(fn) {
+  try {
+    return await fn();
+  } catch (error) {
+    error.message = `${error.message} diagnostics=${JSON.stringify(diagnostics())}`;
+    throw error;
   }
 }
 
 export async function readRequests() {
-  const data = await store().get(REQUESTS_KEY, { type: 'json' });
-  return Array.isArray(data) ? data : [];
+  return withDiagnostics(async () => {
+    const data = await store().get(REQUESTS_KEY, { type: 'json' });
+    return Array.isArray(data) ? data : [];
+  });
 }
 
 export async function writeRequests(requests) {
-  await store().setJSON(REQUESTS_KEY, requests);
+  return withDiagnostics(() => store().setJSON(REQUESTS_KEY, requests));
 }
 
 export async function readStatuses() {
-  const data = await store().get(STATUSES_KEY, { type: 'json' });
-  return data && typeof data === 'object' ? data : {};
+  return withDiagnostics(async () => {
+    const data = await store().get(STATUSES_KEY, { type: 'json' });
+    return data && typeof data === 'object' ? data : {};
+  });
 }
 
 export async function writeStatuses(statuses) {
-  await store().setJSON(STATUSES_KEY, statuses);
+  return withDiagnostics(() => store().setJSON(STATUSES_KEY, statuses));
 }
 
 export function jsonResponse(statusCode, body) {

@@ -1,6 +1,7 @@
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { readRequests, writeRequests, readStatuses, writeStatuses, jsonResponse } from './_verificationStore.mjs';
+import { appendEvent } from './_analyticsStore.mjs';
 
 const REQUIRED_FIELDS = ['projectId', 'projectName', 'contract', 'ownerWallet', 'walletAddress', 'signature', 'timestamp'];
 
@@ -79,6 +80,23 @@ export async function handler(event) {
 
     statuses[payload.projectId] = { status: 'pending', updatedAt: request.createdAt, adminNote: '' };
     await writeStatuses(statuses);
+
+    await appendEvent({
+      id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: 'verification_submitted',
+      timestamp: request.createdAt,
+      visitorId: '',
+      isNewVisitor: false,
+      device: 'desktop',
+      trafficSource: 'other',
+      path: '',
+      projectId: payload.projectId,
+      projectName: payload.projectName,
+      ticker: '',
+      contract: payload.contract,
+      trustScore: null,
+      query: '',
+    }).catch(() => {});
 
     return jsonResponse(200, { ok: true, request });
   } catch (error) {

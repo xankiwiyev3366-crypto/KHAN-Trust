@@ -94,6 +94,18 @@ import {
   fetchAllRequests,
   reviewVerificationRequest,
 } from './verification.js';
+import {
+  initAnalyticsContext,
+  trackPageViewEvent,
+  trackTokenScanEvent,
+  trackProjectViewEvent,
+  trackProjectAddedEvent,
+  trackCompareUsedEvent,
+  trackSearchEvent,
+  fetchAnalyticsSummary,
+  downloadAsFile,
+  summaryToCsv,
+} from './platformAnalytics.js';
 
 const PROJECTS_KEY = 'khan-trust-projects-v1';
 const WATCHLIST_KEY = 'khan-trust-watchlist-v1';
@@ -1937,10 +1949,12 @@ function App() {
 
   useEffect(() => {
     initAnalytics();
+    initAnalyticsContext();
   }, []);
 
   useEffect(() => {
     trackPageView(`/${page}`);
+    trackPageViewEvent(`/${page}`);
   }, [page]);
 
   useEffect(() => {
@@ -1967,6 +1981,10 @@ function App() {
     if (reportProject) trackReportViewed(reportProject);
   }, [reportProject]);
 
+  useEffect(() => {
+    if (selectedProject) trackProjectViewEvent(selectedProject);
+  }, [selectedProject?.id]);
+
   const navigate = (target) => {
     window.location.hash = `/${target}`;
     setPage(target);
@@ -1981,6 +1999,7 @@ function App() {
 
   const addProject = (project) => {
     const normalized = saveProjectProfile(project);
+    trackProjectAddedEvent(normalized);
     navigate(`project/${normalized.id}`);
   };
 
@@ -2015,12 +2034,14 @@ function App() {
 
     setSearchState({ status: 'loading', message: 'Fetching live Solana token data...' });
     trackTokenScanStarted(term);
+    trackSearchEvent(term);
     try {
       const liveLookup = await lookupSolanaToken(term);
       const liveProject = normalizeProject(mergeStoredMetadata(liveLookup, findStoredProject(userProjects, liveLookup)));
       setUserProjects((items) => upsertProject(items, liveProject));
       setSearchState({ status: 'success', message: `Opened live profile for ${liveProject.name || liveProject.ticker}.` });
       trackTokenScanCompleted(term, 'success');
+      trackTokenScanEvent(liveProject);
       navigate(`project/${liveProject.id}`);
     } catch (error) {
       setSearchState({ status: 'error', message: error.message || 'No live Solana token data was found.' });
@@ -2040,10 +2061,12 @@ function App() {
 
     try {
       trackTokenScanStarted(term);
+      trackSearchEvent(term);
       const liveLookup = await lookupSolanaToken(term);
       const liveProject = normalizeProject(mergeStoredMetadata(liveLookup, findStoredProject(userProjects, liveLookup)));
       setUserProjects((items) => upsertProject(items, liveProject));
       trackTokenScanCompleted(term, 'success');
+      trackTokenScanEvent(liveProject);
       navigate(`report/${liveProject.id}`);
       return { status: 'success', message: `Opened free risk report for ${liveProject.name || liveProject.ticker}.` };
     } catch (error) {
@@ -2051,6 +2074,7 @@ function App() {
       if (existing?.realData && !existing.realData.isDemo) {
         const existingProject = normalizeProject(existing);
         trackTokenScanCompleted(term, 'cached-live');
+        trackTokenScanEvent(existingProject);
         navigate(`report/${existingProject.id}`);
         return { status: 'success', message: `Live lookup was unavailable, so KHAN Trust opened the existing authoritative report for ${existingProject.name || existingProject.ticker}.` };
       }
@@ -2125,6 +2149,7 @@ function App() {
         {page === 'khan' && !selectedProject && <KhanEcosystemPage navigate={navigate} />}
         {page === 'about' && <AboutPage openMethodology={() => setMethodologyOpen(true)} navigate={navigate} />}
         {page === 'admin-verify' && <AdminVerificationPage onReviewed={refreshVerificationMap} />}
+        {page === 'admin-analytics' && <AdminAnalyticsPage />}
       </main>
       <Footer />
       <MobileNav page={page} navigate={navigate} />
@@ -2366,6 +2391,10 @@ function ComparePage({ projects, navigate }) {
   const [secondId, setSecondId] = useState(projects[1]?.id || projects[0]?.id || '');
   const first = projects.find((project) => project.id === firstId) || projects[0];
   const second = projects.find((project) => project.id === secondId) || projects[1] || projects[0];
+
+  useEffect(() => {
+    if (first && second) trackCompareUsedEvent(first, second);
+  }, [first?.id, second?.id]);
 
   return (
     <section className="page-section compare-page">
@@ -4296,6 +4325,361 @@ function AdminVerificationPage({ onReviewed }) {
             {request.adminNote && <p>Admin note: {request.adminNote}</p>}
           </article>
         ))}
+      </div>
+
+      <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-analytics'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+        <BarChart3 size={18} /> Open Analytics Dashboard
+      </button>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Internal Analytics Dashboard - admin-only. Reuses the same admin token
+// system as AdminVerificationPage (one shared KHAN_ADMIN_PASSCODE), so an
+// admin who is already signed in in this browser session does not need to
+// log in twice. All numbers come from analytics-summary, which derives them
+// from the one shared event log - the same single source of truth used by
+// every page that calls trackEvent() (see src/platformAnalytics.js).
+// ---------------------------------------------------------------------------
+
+function Sparkline({ data, color = 'var(--gold)', height = 64 }) {
+  if (!data?.length) return null;
+  const max = Math.max(1, ...data.map((point) => point.count));
+  const width = 100;
+  const stepX = width / Math.max(1, data.length - 1);
+  const points = data.map((point, index) => `${(index * stepX).toFixed(2)},${(height - (point.count / max) * height).toFixed(2)}`).join(' ');
+  return (
+    <svg className="analytics-sparkline" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+      <polyline points={points} fill="none" stroke={color} strokeWidth="2" />
+    </svg>
+  );
+}
+
+function MiniBarChart({ data, color = 'var(--gold)' }) {
+  if (!data?.length) return null;
+  const max = Math.max(1, ...data.map((item) => item.value));
+  return (
+    <div className="analytics-bar-chart">
+      {data.map((item) => (
+        <div className="analytics-bar-row" key={item.label}>
+          <span className="analytics-bar-label">{item.label}</span>
+          <div className="analytics-bar-track">
+            <div className="analytics-bar-fill" style={{ width: `${(item.value / max) * 100}%`, background: item.color || color }} />
+          </div>
+          <span className="analytics-bar-value">{item.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DonutChart({ data, size = 140 }) {
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+  if (!total) return <EmptyState title="No data yet" text="Distribution will appear once activity is tracked." />;
+  const radius = size / 2;
+  const circumference = 2 * Math.PI * (radius - 10);
+  let offset = 0;
+  return (
+    <div className="analytics-donut-wrap">
+      <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size}>
+        <circle cx={radius} cy={radius} r={radius - 10} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="14" />
+        {data.map((item) => {
+          const fraction = item.value / total;
+          const length = fraction * circumference;
+          const dasharray = `${length} ${circumference - length}`;
+          const dashoffset = circumference - offset;
+          offset += length;
+          return (
+            <circle
+              key={item.label}
+              cx={radius}
+              cy={radius}
+              r={radius - 10}
+              fill="none"
+              stroke={item.color}
+              strokeWidth="14"
+              strokeDasharray={dasharray}
+              strokeDashoffset={dashoffset}
+              transform={`rotate(-90 ${radius} ${radius})`}
+            />
+          );
+        })}
+      </svg>
+      <div className="analytics-donut-legend">
+        {data.map((item) => (
+          <span key={item.label}>
+            <i style={{ background: item.color }} /> {item.label} ({item.value})
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ icon: Icon, label, value, sublabel }) {
+  return (
+    <div className="analytics-stat-card">
+      <Icon size={20} />
+      <strong>{value}</strong>
+      <span>{label}</span>
+      {sublabel && <small>{sublabel}</small>}
+    </div>
+  );
+}
+
+function RankTable({ title, columns, rows, emptyText }) {
+  return (
+    <div className="analytics-table-card">
+      <h4>{title}</h4>
+      {!rows.length ? (
+        <EmptyState title="No data yet" text={emptyText || 'Data will appear once activity is tracked.'} />
+      ) : (
+        <table className="analytics-table">
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th key={column}>{column}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={index}>
+                {row.map((cell, cellIndex) => (
+                  <td key={cellIndex}>{cell}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function AdminAnalyticsPage() {
+  const [token, setToken] = useState(() => getStoredAdminToken());
+  const [passcode, setPasscode] = useState('');
+  const [authState, setAuthState] = useState({ status: 'idle', message: '' });
+  const [summary, setSummary] = useState(null);
+  const [loadState, setLoadState] = useState({ status: 'idle', message: '' });
+  const [range, setRange] = useState(30);
+
+  const loadSummary = async (activeToken) => {
+    setLoadState({ status: 'loading', message: 'Loading analytics...' });
+    try {
+      const data = await fetchAnalyticsSummary(activeToken);
+      setSummary(data);
+      setLoadState({ status: 'idle', message: '' });
+    } catch (error) {
+      setLoadState({ status: 'error', message: error.message || 'Could not load analytics.' });
+    }
+  };
+
+  useEffect(() => {
+    if (token) loadSummary(token);
+  }, [token]);
+
+  const login = async (event) => {
+    event.preventDefault();
+    setAuthState({ status: 'loading', message: 'Checking passcode...' });
+    try {
+      const newToken = await adminLogin(passcode);
+      setToken(newToken);
+      setAuthState({ status: 'idle', message: '' });
+    } catch (error) {
+      setAuthState({ status: 'error', message: error.message || 'Login failed.' });
+    }
+  };
+
+  const logout = () => {
+    clearAdminToken();
+    setToken('');
+    setSummary(null);
+  };
+
+  const exportJson = () => {
+    if (!summary) return;
+    downloadAsFile(`khan-trust-analytics-${Date.now()}.json`, JSON.stringify(summary, null, 2), 'application/json');
+  };
+
+  const exportCsv = () => {
+    if (!summary) return;
+    downloadAsFile(`khan-trust-analytics-${Date.now()}.csv`, summaryToCsv(summary), 'text/csv');
+  };
+
+  if (!token) {
+    return (
+      <section className="page-section">
+        <SectionTitle icon={Lock} eyebrow="Admin" title="KHAN Trust Analytics Dashboard" />
+        <form className="add-form admin-login-form" onSubmit={login}>
+          <FormField label="Admin passcode" type="password" value={passcode} onChange={setPasscode} required />
+          <button className="primary-button wide-button" type="submit" disabled={authState.status === 'loading'}>
+            Sign In <ArrowRight size={18} />
+          </button>
+          {authState.message && <p className="lookup-message error">{authState.message}</p>}
+        </form>
+      </section>
+    );
+  }
+
+  if (loadState.status === 'loading' && !summary) {
+    return (
+      <section className="page-section">
+        <SectionTitle icon={BarChart3} eyebrow="Admin" title="KHAN Trust Analytics Dashboard" />
+        <p className="lookup-message">Loading analytics...</p>
+      </section>
+    );
+  }
+
+  if (!summary) {
+    return (
+      <section className="page-section">
+        <SectionTitle icon={BarChart3} eyebrow="Admin" title="KHAN Trust Analytics Dashboard" />
+        <p className="lookup-message error">{loadState.message || 'Analytics unavailable.'}</p>
+        <button className="secondary-button" type="button" onClick={() => loadSummary(token)}>Retry</button>
+      </section>
+    );
+  }
+
+  const scanSeries = range === 7 ? summary.scanAnalytics.last7 : range === 90 ? summary.scanAnalytics.last90 : summary.scanAnalytics.last30;
+  const trustColors = { '0-20': 'var(--danger)', '21-40': '#f08a4b', '41-60': 'var(--warning)', '61-80': '#9bd97a', '81-100': 'var(--success)' };
+  const distributionData = Object.entries(summary.trustScoreAnalytics.distribution).map(([label, value]) => ({ label, value, color: trustColors[label] }));
+  const deviceData = [
+    { label: 'Desktop', value: summary.visitorAnalytics.desktop, color: 'var(--gold)' },
+    { label: 'Mobile', value: summary.visitorAnalytics.mobile, color: 'var(--gold-bright)' },
+  ];
+  const trafficData = Object.entries(summary.visitorAnalytics.trafficSources).map(([label, value]) => ({
+    label: label === 'x' ? 'X (Twitter)' : label.charAt(0).toUpperCase() + label.slice(1),
+    value,
+  }));
+
+  return (
+    <section className="page-section analytics-dashboard">
+      <SectionTitle icon={BarChart3} eyebrow="Admin" title="KHAN Trust Analytics Dashboard" />
+      <div className="analytics-toolbar">
+        <button className="secondary-button" type="button" onClick={() => loadSummary(token)}>Refresh</button>
+        <button className="secondary-button" type="button" onClick={exportCsv}><Download size={16} /> Export CSV</button>
+        <button className="secondary-button" type="button" onClick={exportJson}><Download size={16} /> Export JSON</button>
+        <button className="secondary-button" type="button" onClick={() => { window.location.hash = '/admin-verify'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+          <Shield size={16} /> Verification Review
+        </button>
+        <button className="ghost-button" type="button" onClick={logout}>Sign Out</button>
+      </div>
+      <p className="analytics-meta">Generated {new Date(summary.generatedAt).toLocaleString()} - {summary.eventCount} events tracked</p>
+
+      <div className="analytics-stat-grid">
+        <StatCard icon={Activity} label="Total Scans" value={formatNumber(summary.overview.totalScans)} />
+        <StatCard icon={Users} label="Total Users" value={formatNumber(summary.overview.totalUsers)} sublabel="unique visitors" />
+        <StatCard icon={Layers3} label="Total Projects" value={formatNumber(summary.overview.totalProjects)} />
+        <StatCard icon={BadgeCheck} label="Verified Projects" value={formatNumber(summary.overview.verifiedProjects)} />
+        <StatCard icon={Clock3} label="Pending Verification" value={formatNumber(summary.overview.pendingVerification)} />
+        <StatCard icon={X} label="Rejected Verification" value={formatNumber(summary.overview.rejectedVerification)} />
+      </div>
+
+      <div className="detail-section analytics-section">
+        <SectionTitle icon={LineChart} eyebrow="Scans" title="Scan Activity" />
+        <div className="analytics-range-row">
+          {[7, 30, 90].map((days) => (
+            <button key={days} className={range === days ? 'active' : ''} onClick={() => setRange(days)}>Last {days} days</button>
+          ))}
+        </div>
+        <Sparkline data={scanSeries} height={80} />
+        <div className="analytics-mini-stats">
+          <span>This week: <strong>{summary.scanAnalytics.totalThisWeek}</strong></span>
+          <span>This month: <strong>{summary.scanAnalytics.totalThisMonth}</strong></span>
+          <span>7d growth: <strong className={summary.scanAnalytics.growth7d >= 0 ? 'trend-up' : 'trend-down'}>{summary.scanAnalytics.growth7d}%</strong></span>
+          <span>30d growth: <strong className={summary.scanAnalytics.growth30d >= 0 ? 'trend-up' : 'trend-down'}>{summary.scanAnalytics.growth30d}%</strong></span>
+        </div>
+      </div>
+
+      <div className="detail-section analytics-section">
+        <RankTable
+          title="Most Scanned Tokens"
+          columns={['Name', 'Ticker', 'Contract', 'Scans', 'Avg Trust Score']}
+          rows={summary.mostScannedTokens.map((token) => [
+            token.name,
+            token.ticker,
+            <code key="contract">{token.contract}</code>,
+            token.scanCount,
+            token.avgTrustScore ?? 'N/A',
+          ])}
+        />
+      </div>
+
+      <div className="detail-section analytics-section analytics-grid-2">
+        <RankTable
+          title="Most Viewed Projects"
+          columns={['Name', 'Ticker', 'Views']}
+          rows={summary.projectAnalytics.mostViewed.map((item) => [item.name, item.ticker, item.count])}
+        />
+        <RankTable
+          title="Most Trusted Projects"
+          columns={['Name', 'Ticker', 'Trust Score']}
+          rows={summary.projectAnalytics.mostTrusted.map((item) => [item.name, item.ticker, item.trustScore])}
+        />
+        <RankTable
+          title="Lowest Trust Score Projects"
+          columns={['Name', 'Ticker', 'Trust Score']}
+          rows={summary.projectAnalytics.lowestTrust.map((item) => [item.name, item.ticker, item.trustScore])}
+        />
+        <RankTable
+          title="Top 20 Popular Searches"
+          columns={['Query', 'Count']}
+          rows={summary.popularSearches.map((item) => [item.query, item.count])}
+        />
+      </div>
+
+      <div className="detail-section analytics-section analytics-grid-2">
+        <div>
+          <h4>Trust Score Distribution</h4>
+          <p className="analytics-meta">Average platform Trust Score: <strong>{summary.trustScoreAnalytics.average ?? 'N/A'}</strong> ({summary.trustScoreAnalytics.sampleSize} scored projects)</p>
+          <DonutChart data={distributionData} />
+        </div>
+        <div>
+          <h4>Trust Score Trend (30 days)</h4>
+          <Sparkline data={summary.trustScoreAnalytics.trend.map((point) => ({ count: point.average }))} color="var(--success)" height={80} />
+        </div>
+      </div>
+
+      <div className="detail-section analytics-section analytics-grid-2">
+        <div>
+          <h4>Visitor Analytics</h4>
+          <div className="analytics-mini-stats">
+            <span>Total visitors: <strong>{summary.visitorAnalytics.totalVisitors}</strong></span>
+            <span>Unique visitors: <strong>{summary.visitorAnalytics.uniqueVisitors}</strong></span>
+            <span>New: <strong>{summary.visitorAnalytics.newVisitors}</strong></span>
+            <span>Returning: <strong>{summary.visitorAnalytics.returningVisitors}</strong></span>
+          </div>
+          <MiniBarChart data={deviceData} />
+        </div>
+        <div>
+          <h4>Traffic Sources</h4>
+          <MiniBarChart data={trafficData} color="var(--gold-bright)" />
+        </div>
+      </div>
+
+      <div className="detail-section analytics-section analytics-grid-2">
+        <div>
+          <h4>Verification Activity</h4>
+          <div className="analytics-mini-stats">
+            <span>Total requests: <strong>{summary.verificationAnalytics.totalRequests}</strong></span>
+            <span>Pending: <strong>{summary.verificationAnalytics.pending}</strong></span>
+            <span>Approved: <strong>{summary.verificationAnalytics.approved}</strong></span>
+            <span>Rejected: <strong>{summary.verificationAnalytics.rejected}</strong></span>
+            <span>Approval rate: <strong className="trend-up">{summary.verificationAnalytics.approvalRate}%</strong></span>
+            <span>Rejection rate: <strong className="trend-down">{summary.verificationAnalytics.rejectionRate}%</strong></span>
+          </div>
+        </div>
+        <div>
+          <h4>Top Platform Activity</h4>
+          <div className="analytics-mini-stats">
+            <span>Most active day: <strong>{summary.topActivity.mostActiveDay.date || 'N/A'}</strong> ({summary.topActivity.mostActiveDay.count})</span>
+            <span>Most active week: <strong>{summary.topActivity.mostActiveWeek.weekStarting || 'N/A'}</strong> ({summary.topActivity.mostActiveWeek.count})</span>
+            <span>Most active month: <strong>{summary.topActivity.mostActiveMonth.month || 'N/A'}</strong> ({summary.topActivity.mostActiveMonth.count})</span>
+          </div>
+        </div>
       </div>
     </section>
   );

@@ -1,5 +1,6 @@
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readRequests, writeRequests, readStatuses, writeStatuses, jsonResponse } from './_verificationStore.mjs';
+import { appendEvent } from './_analyticsStore.mjs';
 
 const VALID_DECISIONS = new Set(['verified', 'rejected']);
 
@@ -38,6 +39,23 @@ export async function handler(event) {
     const statuses = await readStatuses();
     statuses[request.projectId] = { status: payload.decision, updatedAt: reviewedAt, adminNote: request.adminNote };
     await writeStatuses(statuses);
+
+    await appendEvent({
+      id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type: payload.decision === 'verified' ? 'verification_approved' : 'verification_rejected',
+      timestamp: reviewedAt,
+      visitorId: '',
+      isNewVisitor: false,
+      device: 'desktop',
+      trafficSource: 'other',
+      path: '',
+      projectId: request.projectId,
+      projectName: request.projectName,
+      ticker: '',
+      contract: request.contract,
+      trustScore: null,
+      query: '',
+    }).catch(() => {});
 
     return jsonResponse(200, { ok: true, request });
   } catch (error) {

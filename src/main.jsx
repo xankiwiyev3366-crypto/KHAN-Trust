@@ -61,6 +61,9 @@ import {
 } from 'lucide-react';
 import './styles.css';
 import { WHITEPAPER } from './whitepaperConfig.js';
+import { I18nProvider, useTranslation } from './i18n/I18nContext.jsx';
+import { translate, getLanguage } from './i18n/index.js';
+import LanguageSwitcher from './LanguageSwitcher.jsx';
 import {
   initAnalytics,
   trackPageView,
@@ -125,19 +128,6 @@ const LAUNCHPAD_PAYMENT_MODEL = {
   mainnetPriceLabel: '$9',
   note: 'Launchpad payments are separate from KHAN Trust Premium plans.',
 };
-const verificationFoundation = [
-  'Verified Project Profiles',
-  'Ownership Verification',
-  'Team Verification',
-];
-const holderBenefitFoundation = [
-  'Premium Research Features',
-  'PDF Risk Reports',
-  'Wallet Connect',
-  'Advanced Analytics',
-  'Priority Support',
-  'Holder Badges',
-];
 const SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com';
 const SOLANA_DEVNET_RPC_URL = clusterApiUrl('devnet');
 const DEXSCREENER_SOLANA_TOKEN_URL = 'https://api.dexscreener.com/token-pairs/v1/solana';
@@ -339,15 +329,17 @@ const navItems = [
   { id: 'khan', label: '$KHAN', icon: Star },
 ];
 
-const premiumReportItems = [
-  ['Saved reports', 'Keep previous scans organized in a future Premium workspace.'],
-  ['Watchlist', 'Track selected tokens and changing risk signals when Premium launches.'],
-  ['Deeper risk analysis', 'Expanded checks across liquidity, age, holders, links, and transparency.'],
-  ['Advanced holder insights', 'Largest wallets, top 10 concentration, and whale-pressure warnings.'],
-  ['Telegram alerts', 'Alerts for watched tokens and changing risk signals.'],
-];
-
 const filters = ['All', 'Solana', 'Ethereum', 'BSC', 'Base', 'New Projects', 'High Risk', 'Strong Community'];
+const FILTER_KEY_MAP = {
+  All: 'all',
+  Solana: 'solana',
+  Ethereum: 'ethereum',
+  BSC: 'bsc',
+  Base: 'base',
+  'New Projects': 'newProjects',
+  'High Risk': 'highRisk',
+  'Strong Community': 'strongCommunity',
+};
 
 function normalizeProject(input) {
   const now = new Date().toISOString().slice(0, 10);
@@ -729,23 +721,24 @@ function socialPresenceState(kind, project = {}, data = {}) {
 
 function resolvedMetadataRows(project = {}) {
   const data = project.realData || {};
+  const m = (key) => translate(`profileSections.metadataRows.${key}`);
   const rows = [
-    ['Chain', project.chain, Layers3],
-    project.network ? ['Network', project.network, BadgeCheck] : null,
-    ['Contract', project.contract, Lock],
-    ['Website', socialPresenceState('website', project, data), Globe2],
-    ['X/Twitter', socialPresenceState('twitter', project, data), ExternalLink],
-    ['Telegram', socialPresenceState('telegram', project, data), MessageCircle],
-    ['GitHub', linkPresenceState(firstPresent(project.github, data.githubUrl)), Github],
-    project.createdBy ? ['Created by', project.createdBy, WalletCards] : null,
-    project.launchpadSource ? ['Source', project.launchpadSource, Sparkles] : null,
-    project.tokenSupply ? ['Token supply', project.tokenSupply, CircleDot] : null,
-    project.tokenDecimals !== '' && project.tokenDecimals !== undefined ? ['Decimals', project.tokenDecimals, CircleDot] : null,
-    project.transactionSignature ? ['Transaction', project.transactionSignature, BadgeCheck] : null,
-    ['Verification', verificationStatusLabel(project.verificationStatus), BadgeCheck],
-    ['Launch date', project.launchDate, CalendarDays],
-    ['Status', project.status, BadgeCheck],
-    ['Last update', project.lastUpdate, TimerReset],
+    [m('chain'), project.chain, Layers3],
+    project.network ? [m('network'), project.network, BadgeCheck] : null,
+    [m('contract'), project.contract, Lock],
+    [m('website'), socialPresenceState('website', project, data), Globe2],
+    [m('twitter'), socialPresenceState('twitter', project, data), ExternalLink],
+    [m('telegram'), socialPresenceState('telegram', project, data), MessageCircle],
+    [m('github'), linkPresenceState(firstPresent(project.github, data.githubUrl)), Github],
+    project.createdBy ? [m('createdBy'), project.createdBy, WalletCards] : null,
+    project.launchpadSource ? [m('source'), project.launchpadSource, Sparkles] : null,
+    project.tokenSupply ? [m('tokenSupply'), project.tokenSupply, CircleDot] : null,
+    project.tokenDecimals !== '' && project.tokenDecimals !== undefined ? [m('decimals'), project.tokenDecimals, CircleDot] : null,
+    project.transactionSignature ? [m('transaction'), project.transactionSignature, BadgeCheck] : null,
+    [m('verification'), translatedVerificationStatusLabel(project.verificationStatus), BadgeCheck],
+    [m('launchDate'), project.launchDate, CalendarDays],
+    [m('status'), project.status, BadgeCheck],
+    [m('lastUpdate'), project.lastUpdate, TimerReset],
   ];
   return rows.filter(Boolean);
 }
@@ -764,21 +757,35 @@ function applyVerificationStatus(project, verificationMap = {}) {
 // mobile/desktop always agree on the same status (see applyVerificationStatus
 // above, the single source of truth). Unverified projects show no badge.
 const VERIFICATION_BADGE_CONFIG = {
-  [VERIFICATION_STATUS.VERIFIED]: { className: 'status-pill-verified', Icon: BadgeCheck, label: 'Verified by KHAN Trust' },
-  [VERIFICATION_STATUS.PENDING]: { className: 'status-pill-pending', Icon: Clock3, label: 'Verification Pending' },
-  [VERIFICATION_STATUS.REJECTED]: { className: 'status-pill-rejected', Icon: X, label: 'Verification Rejected' },
+  [VERIFICATION_STATUS.VERIFIED]: { className: 'status-pill-verified', Icon: BadgeCheck, key: 'common.verified' },
+  [VERIFICATION_STATUS.PENDING]: { className: 'status-pill-pending', Icon: Clock3, key: 'common.pendingReview' },
+  [VERIFICATION_STATUS.REJECTED]: { className: 'status-pill-rejected', Icon: X, key: 'common.rejected' },
 };
 
 function VerifiedBadge({ status, size = 14 }) {
+  const { t } = useTranslation();
   const normalized = normalizeVerificationStatus(status);
   const config = VERIFICATION_BADGE_CONFIG[normalized];
   if (!config) return null;
-  const { className, Icon, label } = config;
+  const { className, Icon, key } = config;
+  const label = t(key);
   return (
     <span className={`verification-status-pill ${className}`} title={label}>
       <Icon size={size} /> {label}
     </span>
   );
+}
+
+const VERIFICATION_SHORT_KEY = {
+  [VERIFICATION_STATUS.VERIFIED]: 'common.verifiedShort',
+  [VERIFICATION_STATUS.PENDING]: 'common.pendingShort',
+  [VERIFICATION_STATUS.REJECTED]: 'common.rejectedShort',
+  [VERIFICATION_STATUS.UNVERIFIED]: 'common.unverifiedShort',
+};
+
+function translatedVerificationStatusLabel(status) {
+  const normalized = normalizeVerificationStatus(status);
+  return translate(VERIFICATION_SHORT_KEY[normalized] || 'common.unverifiedShort');
 }
 
 function linkPresenceState(value) {
@@ -810,17 +817,17 @@ function deriveRiskFlags(project, holders, communitySize) {
   const factorFlags = riskFactors({ ...project, holders, communitySize })
     .filter((factor) => factor.severity === 'High' || factor.severity === 'Medium' || factor.severity === 'Limited')
     .map((factor) => `${factor.title} - ${factor.signal}`);
-  return factorFlags.length ? factorFlags : ['No major public risk flags detected'];
+  return factorFlags.length ? factorFlags : [translate('scoring.riskFlags.none')];
 }
 
 function buildUpdatesTimeline(project, now) {
   const date = project.launchDate || now;
-  const updates = [{ label: 'Project submitted', date: now }];
-  if (hasValue(project.website)) updates.push({ label: 'Website added', date });
-  if (hasValue(project.twitter)) updates.push({ label: 'X added', date });
-  if (hasValue(project.telegram)) updates.push({ label: 'Telegram added', date });
-  if (hasValue(project.github)) updates.push({ label: 'GitHub added', date });
-  if (hasValue(project.roadmapText) || project.roadmap?.length) updates.push({ label: 'Roadmap added', date });
+  const updates = [{ label: translate('timeline.projectSubmitted'), date: now }];
+  if (hasValue(project.website)) updates.push({ label: translate('timeline.websiteAdded'), date });
+  if (hasValue(project.twitter)) updates.push({ label: translate('timeline.xAdded'), date });
+  if (hasValue(project.telegram)) updates.push({ label: translate('timeline.telegramAdded'), date });
+  if (hasValue(project.github)) updates.push({ label: translate('timeline.githubAdded'), date });
+  if (hasValue(project.roadmapText) || project.roadmap?.length) updates.push({ label: translate('timeline.roadmapAdded'), date });
   return updates;
 }
 
@@ -1162,7 +1169,7 @@ function buildRealDataRiskNotes({ liquidityUsd, holderCount, tokenAgeDays }) {
   if (liquidityUsd > 0 && liquidityUsd < 5000) notes.push('low liquidity');
   if (holderCount > 0 && holderCount < 500) notes.push('low holders');
   if (tokenAgeDays !== null && tokenAgeDays < 14) notes.push('very new project');
-  return notes.length ? notes.join(', ') : 'Live Solana data available. Continue reviewing public transparency signals.';
+  return notes.length ? notes.join(', ') : translate('scoring.riskNotes.liveDataAvailable');
 }
 
 function buildCanonicalRiskNotes(data = {}) {
@@ -1179,12 +1186,12 @@ function mergeRiskNotes(...notes) {
     .map((note) => note.trim())
     .filter(hasValue)
     .filter((note, index, items) => items.findIndex((item) => item.toLowerCase() === note.toLowerCase()) === index);
-  return unique.length ? unique.join(', ') : 'Live Solana data available. Continue reviewing public transparency signals.';
+  return unique.length ? unique.join(', ') : translate('scoring.riskNotes.liveDataAvailable');
 }
 
 function roadmapFromText(text) {
   if (!text) {
-    return [{ phase: 'Roadmap proof needed', status: 'Planned' }];
+    return [{ phase: translate('scoring.roadmapNeeded'), status: 'Planned' }];
   }
   return text
     .split('\n')
@@ -1214,7 +1221,7 @@ function parseTokenAmount(value, decimals) {
 }
 
 function formatWalletAddress(address = '') {
-  return address ? `${address.slice(0, 4)}...${address.slice(-4)}` : 'Not connected';
+  return address ? `${address.slice(0, 4)}...${address.slice(-4)}` : translate('common.notConnected');
 }
 
 function phantomProvider() {
@@ -1236,7 +1243,7 @@ function launchpadNetworkConfig(network = 'devnet') {
     return {
       network,
       rpcUrl: SOLANA_RPC_URL,
-      label: 'Mainnet',
+      label: translate('common.mainnet'),
       explorerCluster: '',
       profileNetwork: 'mainnet-beta',
     };
@@ -1244,7 +1251,7 @@ function launchpadNetworkConfig(network = 'devnet') {
   return {
     network: 'devnet',
     rpcUrl: SOLANA_DEVNET_RPC_URL,
-    label: 'Devnet',
+    label: translate('common.devnet'),
     explorerCluster: '?cluster=devnet',
     profileNetwork: 'devnet',
   };
@@ -1320,7 +1327,7 @@ function launchpadProfileFromForm(form, walletAddress, result, network = 'devnet
     logoUrl: form.logoUrl,
     launchDate: now,
     description: form.description,
-    status: isMainnet ? 'KHAN Launchpad mainnet token' : 'KHAN Launchpad devnet token',
+    status: isMainnet ? translate('launchpad.status.mainnetToken') : translate('launchpad.status.devnetToken'),
     lastUpdate: now,
     tokenSupply: form.totalSupply,
     tokenDecimals: Number(form.decimals || 0),
@@ -1329,14 +1336,14 @@ function launchpadProfileFromForm(form, walletAddress, result, network = 'devnet
     roadmap,
     roadmapText: form.roadmapText,
     riskNotes: form.riskNotes || (isMainnet
-      ? 'Mainnet SPL token created with KHAN Launchpad. Liquidity, listings, and market success are not included or guaranteed.'
-      : 'Devnet token created for testing. Verify all metadata before any future mainnet launch.'),
+      ? translate('launchpad.riskNotes.mainnet')
+      : translate('launchpad.riskNotes.devnet')),
     createdBy: walletAddress,
     launchpadSource: 'KHAN Launchpad',
     transactionSignature: result.signature,
     timeline: [
-      { label: `${config.label} token created`, date: now },
-      { label: 'KHAN Trust profile generated', date: now },
+      { label: translate('timeline.tokenCreated', { network: config.label }), date: now },
+      { label: translate('timeline.profileGenerated'), date: now },
     ],
   };
 }
@@ -1345,6 +1352,10 @@ function scoreToRisk(score) {
   if (score >= 78) return 'Low';
   if (score >= 55) return 'Medium';
   return 'High';
+}
+
+function translateRiskLevel(level = '') {
+  return translate(`common.${level.toLowerCase()}`) || level;
 }
 
 function daysSince(date) {
@@ -1361,7 +1372,7 @@ function clamp(value, min, max) {
 
 function formatCurrency(value) {
   const number = Number(value || 0);
-  if (!number) return 'Not available';
+  if (!number) return translate('common.notAvailable');
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
@@ -1371,29 +1382,29 @@ function formatCurrency(value) {
 
 function formatNumber(value) {
   const number = Number(value || 0);
-  if (!number) return 'Not available';
+  if (!number) return translate('common.notAvailable');
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(number);
 }
 
 function formatAge(days) {
-  if (days === null || days === undefined) return 'Not available';
-  if (days < 1) return 'Less than 1 day';
-  if (days < 30) return `${days} days`;
-  if (days < 365) return `${Math.round(days / 30)} months`;
-  return `${Math.round(days / 365)} years`;
+  if (days === null || days === undefined) return translate('common.notAvailable');
+  if (days < 1) return translate('common.ageLessThanDay');
+  if (days < 30) return translate('common.ageDays', { count: days });
+  if (days < 365) return translate('common.ageMonths', { count: Math.round(days / 30) });
+  return translate('common.ageYears', { count: Math.round(days / 365) });
 }
 
 function formatPercent(value) {
-  if (value === null || value === undefined) return 'Not available';
+  if (value === null || value === undefined) return translate('common.notAvailable');
   return `${Number(value).toFixed(2)}%`;
 }
 
 function formatScore(value) {
-  return value === null || value === undefined ? 'Not available' : `${value}/100`;
+  return value === null || value === undefined ? translate('common.notAvailable') : `${value}/100`;
 }
 
 function displayValue(value) {
-  return hasValue(value) ? value : 'Not available';
+  return hasValue(value) ? value : translate('common.notAvailable');
 }
 
 function storedMetadataValue(value) {
@@ -1448,23 +1459,23 @@ function mergeStoredMetadata(liveProject = {}, storedProject = null) {
 
 function holderConcentrationStatus(data = {}) {
   if (data.topHolderPercent === null || data.topHolderPercent === undefined) {
-    return 'Top holder data unavailable from public source';
+    return translate('scoring.holderConcentration.unavailable');
   }
-  if (data.topHolderPercent > 35 || data.topTenHolderPercent > 70) return 'Whale concentration warning';
-  return 'No major whale concentration signal';
+  if (data.topHolderPercent > 35 || data.topTenHolderPercent > 70) return translate('scoring.holderConcentration.warning');
+  return translate('scoring.holderConcentration.ok');
 }
 
 function holderRiskLevel(data = {}) {
-  if (data.topHolderPercent === null || data.topHolderPercent === undefined) return 'Limited data';
-  if (data.topHolderPercent > 35 || data.topTenHolderPercent > 70) return 'High risk signal';
-  if (data.topHolderPercent > 20 || data.topTenHolderPercent > 50) return 'Moderate risk signal';
-  return 'Lower concentration risk';
+  if (data.topHolderPercent === null || data.topHolderPercent === undefined) return translate('scoring.holderRiskLevel.limited');
+  if (data.topHolderPercent > 35 || data.topTenHolderPercent > 70) return translate('scoring.holderRiskLevel.high');
+  if (data.topHolderPercent > 20 || data.topTenHolderPercent > 50) return translate('scoring.holderRiskLevel.medium');
+  return translate('scoring.holderRiskLevel.low');
 }
 
 function riskBadge(score) {
-  if (score >= 78) return 'Low Risk';
-  if (score >= 55) return 'Medium Risk';
-  return 'High Risk';
+  if (score >= 78) return translate('common.lowRisk');
+  if (score >= 55) return translate('common.mediumRisk');
+  return translate('common.highRisk');
 }
 
 function confidenceScore(project = {}) {
@@ -1482,11 +1493,11 @@ function confidenceScore(project = {}) {
   ];
   const available = checks.filter(Boolean).length;
   if (data.isDemo) {
-    return { label: 'Limited data', available, total: checks.length };
+    return { label: translate('scoring.confidence.limited'), available, total: checks.length };
   }
-  if (available >= 7) return { label: 'High confidence', available, total: checks.length };
-  if (available >= 5) return { label: 'Medium confidence', available, total: checks.length };
-  return { label: 'Limited data', available, total: checks.length };
+  if (available >= 7) return { label: translate('scoring.confidence.high'), available, total: checks.length };
+  if (available >= 5) return { label: translate('scoring.confidence.medium'), available, total: checks.length };
+  return { label: translate('scoring.confidence.limited'), available, total: checks.length };
 }
 
 function riskFactors(project = {}) {
@@ -1506,206 +1517,222 @@ function riskFactors(project = {}) {
     topTenHolderFactor(topTen),
     tokenAgeFactor(tokenAgeDays),
     liquidityFactor(liquidity, data.poolCount),
-    presenceFactor('Website presence', website, 'Website found', 'Missing website', 'A website gives users a basic place to verify project information, docs, and official links.'),
-    presenceFactor('X/Twitter presence', twitter, 'X/Twitter found', 'Missing X/Twitter', 'An active X/Twitter account is a public communication signal. Missing X/Twitter makes community verification harder.'),
-    presenceFactor('Telegram presence', telegram, 'Telegram found', 'Missing Telegram', 'Telegram is a common Solana community channel. Missing Telegram limits community visibility.'),
+    presenceFactor('website', website),
+    presenceFactor('twitter', twitter),
+    presenceFactor('telegram', telegram),
   ];
 
   return factors.sort((a, b) => riskSeverityRank(b.severity) - riskSeverityRank(a.severity));
 }
 
 function holderCountFactor(holders, source = '') {
+  const title = translate('scoring.factors.holderCountTitle');
   if (!holders) {
     return {
-      title: 'Holder count',
+      title,
       severity: 'Limited',
-      signal: 'Holder count unavailable',
-      value: 'Not available',
-      explanation: 'KHAN Trust could not confirm holder count from the public data sources available in this browser scan.',
+      signal: translate('scoring.factors.holderCountUnavailableSignal'),
+      value: translate('common.notAvailable'),
+      explanation: translate('scoring.factors.holderCountUnavailableExplain'),
     };
   }
+  const sourceText = source ? translate('scoring.factors.viaSource', { source }) : '';
   if (holders < 100) {
     return {
-      title: 'Holder count',
+      title,
       severity: 'High',
-      signal: 'Very low holder count',
+      signal: translate('scoring.factors.holderCountVeryLowSignal'),
       value: formatNumber(holders),
-      explanation: `${formatNumber(holders)} holders were found${source ? ` via ${source}` : ''}. Very low holder count can make price action easier to manipulate.`,
+      explanation: translate('scoring.factors.holderCountVeryLowExplain', { count: formatNumber(holders), sourceText }),
     };
   }
   if (holders < 500) {
     return {
-      title: 'Holder count',
+      title,
       severity: 'Medium',
-      signal: 'Low holder count',
+      signal: translate('scoring.factors.holderCountLowSignal'),
       value: formatNumber(holders),
-      explanation: `${formatNumber(holders)} holders were found. This is still a small holder base, so concentration and liquidity deserve closer review.`,
+      explanation: translate('scoring.factors.holderCountLowExplain', { count: formatNumber(holders) }),
     };
   }
   return {
-    title: 'Holder count',
+    title,
     severity: 'Low',
-    signal: 'Holder count available',
+    signal: translate('scoring.factors.holderCountOkSignal'),
     value: formatNumber(holders),
-    explanation: `${formatNumber(holders)} holders were found. Holder count alone is not enough, but it improves the available risk picture.`,
+    explanation: translate('scoring.factors.holderCountOkExplain', { count: formatNumber(holders) }),
   };
 }
 
 function largestHolderFactor(percent) {
+  const title = translate('scoring.factors.largestHolderTitle');
   if (percent === null || percent === undefined) {
     return {
-      title: 'Largest holder concentration',
+      title,
       severity: 'Limited',
-      signal: 'Largest holder unavailable',
-      value: 'Not available',
-      explanation: 'The largest holder percentage was not available from public Solana holder data during this scan.',
+      signal: translate('scoring.factors.largestHolderUnavailableSignal'),
+      value: translate('common.notAvailable'),
+      explanation: translate('scoring.factors.largestHolderUnavailableExplain'),
     };
   }
   if (percent > 35) {
     return {
-      title: 'Largest holder concentration',
+      title,
       severity: 'High',
-      signal: 'High holder concentration',
+      signal: translate('scoring.factors.largestHolderHighSignal'),
       value: formatPercent(percent),
-      explanation: `The largest holder controls ${formatPercent(percent)} of supply, which is a strong concentration warning.`,
+      explanation: translate('scoring.factors.largestHolderHighExplain', { percent: formatPercent(percent) }),
     };
   }
   if (percent > 20) {
     return {
-      title: 'Largest holder concentration',
+      title,
       severity: 'Medium',
-      signal: 'Moderate holder concentration',
+      signal: translate('scoring.factors.largestHolderMediumSignal'),
       value: formatPercent(percent),
-      explanation: `The largest holder controls ${formatPercent(percent)} of supply. This is not automatically unsafe, but it deserves attention.`,
+      explanation: translate('scoring.factors.largestHolderMediumExplain', { percent: formatPercent(percent) }),
     };
   }
   return {
-    title: 'Largest holder concentration',
+    title,
     severity: 'Low',
-    signal: 'No major largest-holder warning',
+    signal: translate('scoring.factors.largestHolderLowSignal'),
     value: formatPercent(percent),
-    explanation: `The largest holder controls ${formatPercent(percent)} of supply, which is below KHAN Trust's major-warning threshold.`,
+    explanation: translate('scoring.factors.largestHolderLowExplain', { percent: formatPercent(percent) }),
   };
 }
 
 function topTenHolderFactor(percent) {
+  const title = translate('scoring.factors.topTenTitle');
   if (percent === null || percent === undefined) {
     return {
-      title: 'Top 10 holder concentration',
+      title,
       severity: 'Limited',
-      signal: 'Top 10 concentration unavailable',
-      value: 'Not available',
-      explanation: 'Top 10 holder concentration could not be confirmed from the available public holder data.',
+      signal: translate('scoring.factors.topTenUnavailableSignal'),
+      value: translate('common.notAvailable'),
+      explanation: translate('scoring.factors.topTenUnavailableExplain'),
     };
   }
   if (percent > 70) {
     return {
-      title: 'Top 10 holder concentration',
+      title,
       severity: 'High',
-      signal: 'High holder concentration',
+      signal: translate('scoring.factors.topTenHighSignal'),
       value: formatPercent(percent),
-      explanation: `The top 10 holders control ${formatPercent(percent)} of supply, which can increase sell-pressure and manipulation risk.`,
+      explanation: translate('scoring.factors.topTenHighExplain', { percent: formatPercent(percent) }),
     };
   }
   if (percent > 50) {
     return {
-      title: 'Top 10 holder concentration',
+      title,
       severity: 'Medium',
-      signal: 'Moderate top 10 concentration',
+      signal: translate('scoring.factors.topTenMediumSignal'),
       value: formatPercent(percent),
-      explanation: `The top 10 holders control ${formatPercent(percent)} of supply. This is a concentration signal to monitor.`,
+      explanation: translate('scoring.factors.topTenMediumExplain', { percent: formatPercent(percent) }),
     };
   }
   return {
-    title: 'Top 10 holder concentration',
+    title,
     severity: 'Low',
-    signal: 'No major top 10 warning',
+    signal: translate('scoring.factors.topTenLowSignal'),
     value: formatPercent(percent),
-    explanation: `The top 10 holders control ${formatPercent(percent)} of supply, below KHAN Trust's major-warning threshold.`,
+    explanation: translate('scoring.factors.topTenLowExplain', { percent: formatPercent(percent) }),
   };
 }
 
 function tokenAgeFactor(days) {
+  const title = translate('scoring.factors.tokenAgeTitle');
   if (days === null || days === undefined || Number.isNaN(days)) {
     return {
-      title: 'Token age',
+      title,
       severity: 'Limited',
-      signal: 'Token age unavailable',
-      value: 'Not available',
-      explanation: 'Token age could not be confirmed from pool creation or token index data.',
+      signal: translate('scoring.factors.tokenAgeUnavailableSignal'),
+      value: translate('common.notAvailable'),
+      explanation: translate('scoring.factors.tokenAgeUnavailableExplain'),
     };
   }
   if (days < 14) {
     return {
-      title: 'Token age',
+      title,
       severity: 'High',
-      signal: 'New token warning',
+      signal: translate('scoring.factors.tokenAgeHighSignal'),
       value: formatAge(days),
-      explanation: `This token appears to be ${formatAge(days)} old. Very new tokens usually have less trading history and less community proof.`,
+      explanation: translate('scoring.factors.tokenAgeHighExplain', { age: formatAge(days) }),
     };
   }
   if (days < 60) {
     return {
-      title: 'Token age',
+      title,
       severity: 'Medium',
-      signal: 'New token warning',
+      signal: translate('scoring.factors.tokenAgeMediumSignal'),
       value: formatAge(days),
-      explanation: `This token appears to be ${formatAge(days)} old. It is still early, so users should expect higher uncertainty.`,
+      explanation: translate('scoring.factors.tokenAgeMediumExplain', { age: formatAge(days) }),
     };
   }
   return {
-    title: 'Token age',
+    title,
     severity: 'Low',
-    signal: 'Token has public age history',
+    signal: translate('scoring.factors.tokenAgeLowSignal'),
     value: formatAge(days),
-    explanation: `This token appears to be ${formatAge(days)} old based on public pool or index data.`,
+    explanation: translate('scoring.factors.tokenAgeLowExplain', { age: formatAge(days) }),
   };
 }
 
 function liquidityFactor(liquidity, poolCount = 0) {
+  const title = translate('scoring.factors.liquidityTitle');
   if (!liquidity) {
     return {
-      title: 'Liquidity indicators',
+      title,
       severity: 'Limited',
-      signal: 'Liquidity warning',
-      value: 'Not available',
-      explanation: 'No public liquidity was found from the connected market sources. Thin or missing liquidity can make exits difficult.',
+      signal: translate('scoring.factors.liquidityUnavailableSignal'),
+      value: translate('common.notAvailable'),
+      explanation: translate('scoring.factors.liquidityUnavailableExplain'),
     };
   }
+  const poolText = poolCount ? translate('scoring.factors.acrossPools', { count: formatNumber(poolCount) }) : '';
   if (liquidity < 5000) {
     return {
-      title: 'Liquidity indicators',
+      title,
       severity: 'High',
-      signal: 'Liquidity warning',
+      signal: translate('scoring.factors.liquidityHighSignal'),
       value: formatCurrency(liquidity),
-      explanation: `Only ${formatCurrency(liquidity)} public liquidity was found${poolCount ? ` across ${formatNumber(poolCount)} pool(s)` : ''}. This is a high liquidity-risk signal.`,
+      explanation: translate('scoring.factors.liquidityHighExplain', { value: formatCurrency(liquidity), poolText }),
     };
   }
   if (liquidity < 50000) {
     return {
-      title: 'Liquidity indicators',
+      title,
       severity: 'Medium',
-      signal: 'Liquidity warning',
+      signal: translate('scoring.factors.liquidityMediumSignal'),
       value: formatCurrency(liquidity),
-      explanation: `${formatCurrency(liquidity)} public liquidity was found. This is usable data, but still shallow for many token trades.`,
+      explanation: translate('scoring.factors.liquidityMediumExplain', { value: formatCurrency(liquidity) }),
     };
   }
   return {
-    title: 'Liquidity indicators',
+    title,
     severity: 'Low',
-    signal: 'Liquidity found',
+    signal: translate('scoring.factors.liquidityLowSignal'),
     value: formatCurrency(liquidity),
-    explanation: `${formatCurrency(liquidity)} public liquidity was found${poolCount ? ` across ${formatNumber(poolCount)} pool(s)` : ''}. Liquidity still changes quickly, so review it before acting.`,
+    explanation: translate('scoring.factors.liquidityLowExplain', { value: formatCurrency(liquidity), poolText }),
   };
 }
 
-function presenceFactor(title, presence, okSignal, missingSignal, explanation) {
+const PRESENCE_FACTOR_KEYS = {
+  website: { title: 'presenceWebsiteTitle', ok: 'presenceWebsiteOk', missing: 'presenceWebsiteMissing', explain: 'presenceWebsiteExplain' },
+  twitter: { title: 'presenceTwitterTitle', ok: 'presenceTwitterOk', missing: 'presenceTwitterMissing', explain: 'presenceTwitterExplain' },
+  telegram: { title: 'presenceTelegramTitle', ok: 'presenceTelegramOk', missing: 'presenceTelegramMissing', explain: 'presenceTelegramExplain' },
+};
+
+function presenceFactor(kind, presence) {
+  const keys = PRESENCE_FACTOR_KEYS[kind];
+  const title = translate(`scoring.factors.${keys.title}`);
   if (presence.state === 'Present') {
+    const okSignal = translate(`scoring.factors.${keys.ok}`);
     return {
       title,
       severity: 'Low',
       signal: okSignal,
-      value: `Present: ${presence.value}`,
+      value: translate('scoring.factors.presenceFound', { value: presence.value }),
       explanation: `${okSignal}: ${presence.value}`,
     };
   }
@@ -1713,17 +1740,17 @@ function presenceFactor(title, presence, okSignal, missingSignal, explanation) {
     return {
       title,
       severity: 'Limited',
-      signal: 'Data unavailable',
-      value: 'Data unavailable',
-      explanation: `KHAN Trust could not confirm ${title.toLowerCase()} from the available token metadata sources.`,
+      signal: translate('common.dataUnavailable'),
+      value: translate('common.dataUnavailable'),
+      explanation: translate('scoring.factors.presenceDataUnavailable', { title: title.toLowerCase() }),
     };
   }
   return {
     title,
     severity: 'Medium',
-    signal: missingSignal,
-    value: 'Missing',
-    explanation,
+    signal: translate(`scoring.factors.${keys.missing}`),
+    value: translate('common.missing'),
+    explanation: translate(`scoring.factors.${keys.explain}`),
   };
 }
 
@@ -1778,25 +1805,28 @@ function founderRoadmapLabel(project = {}) {
 function plainRiskExplanation(project = {}) {
   const score = project.trustScore || 0;
   if (score >= 78) {
-    return 'This token has stronger public signals, but users should still check holders, liquidity, links, and recent updates before acting.';
+    return translate('scoring.plainExplanation.strong');
   }
   if (score >= 55) {
-    return 'This token has some useful public signals, but there are still gaps. Review holder concentration, liquidity, social links, and roadmap proof carefully.';
+    return translate('scoring.plainExplanation.mixed');
   }
-  return 'This token has weak or limited public signals. Treat it as high risk until stronger holder, liquidity, social, founder, and roadmap proof is available.';
+  return translate('scoring.plainExplanation.weak');
 }
+
+const PDF_LOCALE_MAP = { en: 'en-US', az: 'az-AZ', tr: 'tr-TR', ru: 'ru-RU' };
 
 function buildPdfReportData(project = {}) {
   const confidence = confidenceScore(project);
   const data = project.realData || {};
+  const language = getLanguage();
   return {
     name: project.name,
     ticker: project.ticker,
     chain: project.chain,
     contract: displayValue(project.contract),
     trustScore: project.trustScore,
-    riskLevel: project.riskLevel,
-    verificationStatus: verificationStatusLabel(project.verificationStatus),
+    riskLevel: translateRiskLevel(project.riskLevel),
+    verificationStatus: translatedVerificationStatusLabel(project.verificationStatus),
     isVerified: normalizeVerificationStatus(project.verificationStatus) === VERIFICATION_STATUS.VERIFIED,
     confidenceLabel: confidence.label,
     riskReasons: riskSignals(project).slice(0, 3),
@@ -1818,7 +1848,8 @@ function buildPdfReportData(project = {}) {
     },
     tokenAge: project.realData ? formatAge(data.tokenAgeDays) : formatAge(project.launchDate ? daysSince(project.launchDate) : null),
     scoreBreakdown: project.scoreBreakdown || {},
-    generatedDate: new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
+    generatedDate: new Date().toLocaleString(PDF_LOCALE_MAP[language] || 'en-US', { dateStyle: 'medium', timeStyle: 'short' }),
+    labels: translate('pdfReport', null, language),
   };
 }
 
@@ -1862,14 +1893,12 @@ async function handleCheckout(plan) {
 }
 
 function shareText(project = {}, channel = 'x') {
-  const name = project.name || 'this token';
+  const name = project.name || translate('scoring.shareText.thisToken');
   const score = project.trustScore || 0;
   const risk = riskBadge(score);
-  const contract = hasValue(project.contract) ? ` Contract: ${project.contract}` : '';
-  if (channel === 'telegram') {
-    return `KHAN Trust check: ${name} has a Trust Score of ${score}/100 (${risk}). Review holder, liquidity, social and founder risks before buying.${contract}`;
-  }
-  return `Checked ${name} on KHAN Trust: Trust Score ${score}/100 (${risk}). Review holder, liquidity, social and founder risks before buying.${contract}`;
+  const contract = hasValue(project.contract) ? translate('scoring.shareText.contractSuffix', { contract: project.contract }) : '';
+  const key = channel === 'telegram' ? 'scoring.shareText.telegram' : 'scoring.shareText.x';
+  return translate(key, { name, score, risk, contract });
 }
 
 function roundPercent(ratio) {
@@ -1922,6 +1951,7 @@ function applyHolderGrowth(project, existing) {
 }
 
 function App() {
+  const { t } = useTranslation();
   const [page, setPage] = useState(() => window.location.hash.replace('#/', '') || 'home');
   const [query, setQuery] = useState('');
   const [searchState, setSearchState] = useState({ status: 'idle', message: '' });
@@ -2036,19 +2066,19 @@ function App() {
       return;
     }
 
-    setSearchState({ status: 'loading', message: 'Fetching live Solana token data...' });
+    setSearchState({ status: 'loading', message: t('search.fetching') });
     trackTokenScanStarted(term);
     trackSearchEvent(term);
     try {
       const liveLookup = await lookupSolanaToken(term);
       const liveProject = normalizeProject(mergeStoredMetadata(liveLookup, findStoredProject(userProjects, liveLookup)));
       setUserProjects((items) => upsertProject(items, liveProject));
-      setSearchState({ status: 'success', message: `Opened live profile for ${liveProject.name || liveProject.ticker}.` });
+      setSearchState({ status: 'success', message: t('search.successOpened', { name: liveProject.name || liveProject.ticker }) });
       trackTokenScanCompleted(term, 'success');
       trackTokenScanEvent(liveProject);
       navigate(`project/${liveProject.id}`);
     } catch (error) {
-      setSearchState({ status: 'error', message: error.message || 'No live Solana token data was found.' });
+      setSearchState({ status: 'error', message: error.message || t('search.errorNone') });
       trackTokenScanCompleted(term, 'error');
       navigate('explore');
     }
@@ -2057,10 +2087,10 @@ function App() {
   const handleTokenCheck = async (contractAddress) => {
     const term = contractAddress.trim();
     if (!term) {
-      return { status: 'error', message: 'Paste a Solana token contract address first.' };
+      return { status: 'error', message: t('checkToken.errorEmpty') };
     }
     if (!looksLikeSolanaAddress(term)) {
-      return { status: 'error', message: 'Enter a valid Solana token contract address, usually 32-48 base58 characters.' };
+      return { status: 'error', message: t('checkToken.errorInvalid') };
     }
 
     try {
@@ -2072,7 +2102,7 @@ function App() {
       trackTokenScanCompleted(term, 'success');
       trackTokenScanEvent(liveProject);
       navigate(`report/${liveProject.id}`);
-      return { status: 'success', message: `Opened free risk report for ${liveProject.name || liveProject.ticker}.` };
+      return { status: 'success', message: t('checkToken.successOpened', { name: liveProject.name || liveProject.ticker }) };
     } catch (error) {
       const existing = findStoredProject(userProjects, { contract: term });
       if (existing?.realData && !existing.realData.isDemo) {
@@ -2080,13 +2110,13 @@ function App() {
         trackTokenScanCompleted(term, 'cached-live');
         trackTokenScanEvent(existingProject);
         navigate(`report/${existingProject.id}`);
-        return { status: 'success', message: `Live lookup was unavailable, so KHAN Trust opened the existing authoritative report for ${existingProject.name || existingProject.ticker}.` };
+        return { status: 'success', message: t('checkToken.successCachedLive', { name: existingProject.name || existingProject.ticker }) };
       }
       const demoProject = normalizeProject(createDemoRiskProject(term, error.message));
       setUserProjects((items) => upsertProject(items, demoProject));
       trackTokenScanCompleted(term, 'demo-fallback');
       navigate(`report/${demoProject.id}`);
-      return { status: 'success', message: 'Live API data was unavailable, so KHAN Trust opened a demo risk report.' };
+      return { status: 'success', message: t('checkToken.successDemo') };
     }
   };
 
@@ -2132,7 +2162,7 @@ function App() {
         )}
         {page.startsWith('report/') && !reportProject && (
           <section className="page-section">
-            <EmptyState title="No report loaded" text="Paste a Solana contract address on the homepage to create a free risk report." />
+            <EmptyState title={t('explore.emptyNoReportTitle')} text={t('explore.emptyNoReportText')} />
           </section>
         )}
         {(page.startsWith('project/') || page === 'khan') && selectedProject && (
@@ -2148,7 +2178,7 @@ function App() {
         )}
         {page.startsWith('project/') && !selectedProject && (
           <section className="page-section">
-            <EmptyState title="No live profile loaded" text="Search a Solana contract address to create a real KHAN Trust profile." />
+            <EmptyState title={t('explore.emptyNoProfileTitle')} text={t('explore.emptyNoProfileText')} />
           </section>
         )}
         {page === 'khan' && !selectedProject && <KhanEcosystemPage navigate={navigate} />}
@@ -2181,27 +2211,32 @@ function App() {
 }
 
 function Header({ page, navigate }) {
+  const { t } = useTranslation();
   return (
     <header className="site-header">
-      <button className="brand" onClick={() => navigate('home')} aria-label="Go to home">
+      <button className="brand" onClick={() => navigate('home')} aria-label={t('header.goHome')}>
         <span className="brand-mark">K</span>
         <span>
           <strong>KHAN Trust</strong>
-          <small>Trust before hype</small>
+          <small>{t('header.tagline')}</small>
         </span>
       </button>
-      <nav className="desktop-nav">
-        {navItems.map((item) => (
-          <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navigate(item.id)}>
-            {item.label}
-          </button>
-        ))}
-      </nav>
+      <div className="header-right">
+        <nav className="desktop-nav">
+          {navItems.map((item) => (
+            <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navigate(item.id)}>
+              {t(`nav.${item.id}`)}
+            </button>
+          ))}
+        </nav>
+        <LanguageSwitcher variant="desktop" />
+      </div>
     </header>
   );
 }
 
 function MobileNav({ page, navigate }) {
+  const { t } = useTranslation();
   return (
     <nav className="mobile-nav">
       {navItems.map((item) => {
@@ -2209,10 +2244,11 @@ function MobileNav({ page, navigate }) {
         return (
           <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navigate(item.id)}>
             <Icon size={18} />
-            <span>{item.label}</span>
+            <span>{t(`nav.${item.id}`)}</span>
           </button>
         );
       })}
+      <LanguageSwitcher variant="mobile" />
     </nav>
   );
 }
@@ -2224,6 +2260,7 @@ function isActive(page, id) {
 }
 
 function HomePage({ projects, query, setQuery, searchState, onSearch, onTokenCheck, navigate, openMethodology }) {
+  const { t } = useTranslation();
   const featured = projects.slice(0, 4);
   const heroProject = featured[0];
   return (
@@ -2231,16 +2268,14 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, onTokenChe
       <section className="hero-section">
         <div className="hero-grid">
           <div className="hero-copy">
-            <p className="eyebrow"><Shield size={16} /> Trust before hype.</p>
-            <h1>KHAN Trust</h1>
-            <p className="hero-subtitle">Check token risk before you buy.</p>
-            <p className="hero-explainer">
-              KHAN Trust helps users understand holder, liquidity, social and founder risks.
-            </p>
+            <p className="eyebrow"><Shield size={16} /> {t('home.eyebrow')}</p>
+            <h1>{t('home.title')}</h1>
+            <p className="hero-subtitle">{t('home.subtitle')}</p>
+            <p className="hero-explainer">{t('home.explainer')}</p>
             <SearchBox value={query} onChange={setQuery} onSubmit={onSearch} loading={searchState.status === 'loading'} />
             <SearchStatus state={searchState} />
-            <div className="flow-steps" aria-label="KHAN Trust flow">
-              {['Paste token contract', 'Get Trust Score', 'Read simple risk explanation', 'Share result'].map((step, index) => (
+            <div className="flow-steps" aria-label={t('home.flowAriaLabel')}>
+              {t('home.flowSteps').map((step, index) => (
                 <div className="flow-step" key={step}>
                   <span>{index + 1}</span>
                   <strong>{step}</strong>
@@ -2249,45 +2284,45 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, onTokenChe
             </div>
             <div className="hero-actions">
               <button className="primary-button" onClick={() => navigate('explore')}>
-                Explore Projects <ArrowRight size={18} />
+                {t('home.exploreProjects')} <ArrowRight size={18} />
               </button>
               <button className="secondary-button" onClick={() => navigate('add')}>
-                Add Project <Plus size={18} />
+                {t('home.addProject')} <Plus size={18} />
               </button>
               <button className="ghost-button" onClick={() => navigate('khan')}>
-                View $KHAN <Star size={18} />
+                {t('home.viewKhan')} <Star size={18} />
               </button>
               <a className="secondary-button" href={OFFICIAL_KHAN_LINKS.telegram} target="_blank" rel="noreferrer" onClick={() => trackSocialClick('Telegram Community', OFFICIAL_KHAN_LINKS.telegram)}>
-                Join Telegram <MessageCircle size={18} />
+                {t('home.joinTelegram')} <MessageCircle size={18} />
               </a>
             </div>
           </div>
           <div className="hero-panel">
             <div className="signal-header">
               <div>
-                <span className="tiny-label">Live trust radar</span>
-                <h2>Project Signals</h2>
+                <span className="tiny-label">{t('home.liveTrustRadar')}</span>
+                <h2>{t('home.projectSignals')}</h2>
               </div>
               <BadgeCheck className="gold-icon" />
             </div>
             <div className="radar-score">
               {heroProject ? <ScoreCircle score={heroProject.trustScore} size="large" /> : <BadgeCheck className="gold-icon hero-empty-icon" size={56} />}
               <div>
-                <strong>{heroProject ? heroProject.name : 'Live token lookup'}</strong>
-                <span>{heroProject ? `${heroProject.ticker} on ${heroProject.chain}` : 'Paste a Solana contract to fetch real data'}</span>
+                <strong>{heroProject ? heroProject.name : t('home.liveTokenLookup')}</strong>
+                <span>{heroProject ? `${heroProject.ticker} on ${heroProject.chain}` : t('home.pasteContractToFetch')}</span>
               </div>
             </div>
             <div className="signal-list">
-              {['Holder risk', 'Liquidity risk', 'Social risk', 'Founder / roadmap status'].map((item) => (
+              {t('home.signalRows').map((item) => (
                 <div key={item} className="signal-row">
                   <CheckCircle2 size={18} />
                   <span>{item}</span>
-                  <small>tracked</small>
+                  <small>{t('home.tracked')}</small>
                 </div>
               ))}
             </div>
             <button className="method-button" onClick={openMethodology}>
-              Trust Score Methodology <Info size={16} />
+              {t('home.methodology')} <Info size={16} />
             </button>
           </div>
         </div>
@@ -2295,13 +2330,13 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, onTokenChe
       <CheckAnyTokenSection onTokenCheck={onTokenCheck} navigate={navigate} />
       <KhanEcosystemStrip navigate={navigate} />
       <section className="content-band">
-        <SectionTitle icon={BarChart3} eyebrow="Explore" title="Trust profiles, not hype feeds" />
+        <SectionTitle icon={BarChart3} eyebrow={t('home.exploreEyebrow')} title={t('home.exploreTitle')} />
         <div className="project-grid">
           {featured.map((project) => (
             <ProjectCard key={project.id} project={project} navigate={navigate} />
           ))}
         </div>
-        {!featured.length && <EmptyState title="No saved live profiles" text="Search a Solana contract address to create the first real trust profile." />}
+        {!featured.length && <EmptyState title={t('home.emptyNoSavedTitle')} text={t('home.emptyNoSavedText')} />}
       </section>
       <KhanTokenRole navigate={navigate} />
       <FutureFoundationSection />
@@ -2311,12 +2346,13 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, onTokenChe
 }
 
 function CheckAnyTokenSection({ onTokenCheck, navigate }) {
+  const { t } = useTranslation();
   const [contractAddress, setContractAddress] = useState('');
   const [state, setState] = useState({ status: 'idle', message: '' });
 
   const submit = async (event) => {
     event.preventDefault();
-    setState({ status: 'loading', message: 'Checking token risk signals...' });
+    setState({ status: 'loading', message: t('checkToken.checking') });
     const result = await onTokenCheck(contractAddress);
     setState(result);
   };
@@ -2325,29 +2361,26 @@ function CheckAnyTokenSection({ onTokenCheck, navigate }) {
     <section className="content-band check-token-section" id="check-token">
       <div className="check-token-grid">
         <div>
-          <SectionTitle icon={Search} eyebrow="Token checker" title="Check Any Token" />
-          <p>
-            Paste a Solana token contract address to generate a free KHAN Trust risk report. If live public APIs are unavailable,
-            the checker uses demo risk data so the report structure remains testable.
-          </p>
+          <SectionTitle icon={Search} eyebrow={t('checkToken.eyebrow')} title={t('checkToken.title')} />
+          <p>{t('checkToken.description')}</p>
         </div>
         <form className="token-check-card" onSubmit={submit}>
           <label className="form-field">
-            <span>Solana contract address</span>
+            <span>{t('checkToken.fieldLabel')}</span>
             <input
               value={contractAddress}
               onChange={(event) => setContractAddress(event.target.value)}
-              placeholder="Paste token mint address"
+              placeholder={t('checkToken.placeholder')}
               autoComplete="off"
             />
           </label>
           {state.message && <p className={`lookup-message ${state.status === 'error' ? 'error' : ''}`}>{state.message}</p>}
           <div className="token-check-actions">
             <button className="primary-button" type="submit" disabled={state.status === 'loading'}>
-              <Search size={18} /> {state.status === 'loading' ? 'Checking...' : 'Check Token'}
+              <Search size={18} /> {state.status === 'loading' ? t('checkToken.submitChecking') : t('checkToken.submit')}
             </button>
             <button className="ghost-button" type="button" onClick={() => navigate('pricing')}>
-              See Pricing <WalletCards size={18} />
+              {t('checkToken.seePricing')} <WalletCards size={18} />
             </button>
           </div>
         </form>
@@ -2357,6 +2390,7 @@ function CheckAnyTokenSection({ onTokenCheck, navigate }) {
 }
 
 function ExplorePage({ projects, query, setQuery, searchState, onSearch, activeFilter, setActiveFilter, navigate }) {
+  const { t } = useTranslation();
   const filtered = projects.filter((project) => {
     const text = `${project.name} ${project.ticker} ${project.chain} ${project.contract}`.toLowerCase();
     const matchesQuery = !query || text.includes(query.toLowerCase());
@@ -2371,13 +2405,13 @@ function ExplorePage({ projects, query, setQuery, searchState, onSearch, activeF
 
   return (
     <section className="page-section">
-      <SectionTitle icon={ListFilter} eyebrow="Explore" title="Crypto project trust profiles" />
+      <SectionTitle icon={ListFilter} eyebrow={t('explore.eyebrow')} title={t('explore.title')} />
       <SearchBox value={query} onChange={setQuery} onSubmit={onSearch} loading={searchState.status === 'loading'} />
       <SearchStatus state={searchState} />
       <div className="filter-row">
         {filters.map((filter) => (
           <button key={filter} className={activeFilter === filter ? 'active' : ''} onClick={() => setActiveFilter(filter)}>
-            {filter}
+            {t(`explore.filters.${FILTER_KEY_MAP[filter]}`)}
           </button>
         ))}
       </div>
@@ -2386,12 +2420,13 @@ function ExplorePage({ projects, query, setQuery, searchState, onSearch, activeF
           <ProjectCard key={project.id} project={project} navigate={navigate} />
         ))}
       </div>
-      {!filtered.length && <EmptyState title="No matching profiles" text="Try another search term or add the project manually." />}
+      {!filtered.length && <EmptyState title={t('explore.emptyNoMatchTitle')} text={t('explore.emptyNoMatchText')} />}
     </section>
   );
 }
 
 function ComparePage({ projects, navigate }) {
+  const { t } = useTranslation();
   const [firstId, setFirstId] = useState(projects[0]?.id || '');
   const [secondId, setSecondId] = useState(projects[1]?.id || projects[0]?.id || '');
   const first = projects.find((project) => project.id === firstId) || projects[0];
@@ -2403,11 +2438,11 @@ function ComparePage({ projects, navigate }) {
 
   return (
     <section className="page-section compare-page">
-      <SectionTitle icon={Scale} eyebrow="Compare" title="Compare project trust signals" />
-      {!projects.length && <EmptyState title="No live profiles yet" text="Search a Solana contract address first, then compare saved token profiles." />}
+      <SectionTitle icon={Scale} eyebrow={t('compare.eyebrow')} title={t('compare.title')} />
+      {!projects.length && <EmptyState title={t('compare.emptyTitle')} text={t('compare.emptyText')} />}
       <div className="compare-selectors">
-        <ProjectSelect label="Project A" value={first?.id || ''} projects={projects} onChange={setFirstId} />
-        <ProjectSelect label="Project B" value={second?.id || ''} projects={projects} onChange={setSecondId} />
+        <ProjectSelect label={t('compare.projectA')} value={first?.id || ''} projects={projects} onChange={setFirstId} />
+        <ProjectSelect label={t('compare.projectB')} value={second?.id || ''} projects={projects} onChange={setSecondId} />
       </div>
       {first && second && (
         <>
@@ -2416,20 +2451,20 @@ function ComparePage({ projects, navigate }) {
             <ComparePanel project={second} navigate={navigate} />
           </div>
           <div className="compare-table detail-section">
-            <SectionTitle icon={BarChart3} eyebrow="Signal Review" title="Side-by-side checks" />
-            <CompareRow label="Trust Score" first={`${first.trustScore}/100`} second={`${second.trustScore}/100`} />
-            <CompareRow label="Verification" first={verificationStatusLabel(first.verificationStatus)} second={verificationStatusLabel(second.verificationStatus)} />
-            <CompareRow label="Chain" first={first.chain} second={second.chain} />
-            <CompareRow label="Market Cap" first={formatCurrency(first.realData?.marketCapUsd)} second={formatCurrency(second.realData?.marketCapUsd)} />
-            <CompareRow label="Liquidity" first={formatCurrency(first.realData?.totalLiquidityUsd ?? first.realData?.liquidityUsd)} second={formatCurrency(second.realData?.totalLiquidityUsd ?? second.realData?.liquidityUsd)} />
-            <CompareRow label="Holder Count" first={formatNumber(first.realData?.holderCount || first.holders)} second={formatNumber(second.realData?.holderCount || second.holders)} />
-            <CompareRow label="Token Age" first={formatAge(first.realData?.tokenAgeDays)} second={formatAge(second.realData?.tokenAgeDays)} />
-            <CompareRow label="Largest Holder %" first={formatPercent(first.realData?.topHolderPercent)} second={formatPercent(second.realData?.topHolderPercent)} />
-            <CompareRow label="Top 10 Holders %" first={formatPercent(first.realData?.topTenHolderPercent)} second={formatPercent(second.realData?.topTenHolderPercent)} />
-            <CompareRow label="Social Score" first={formatScore(first.scoreBreakdown.socialScore)} second={formatScore(second.scoreBreakdown.socialScore)} />
-            <CompareRow label="Risk Flags" first={first.riskFlags.join(', ')} second={second.riskFlags.join(', ')} />
-            <CompareRow label="Roadmap status" first={roadmapClarity(first)} second={roadmapClarity(second)} />
-            <CompareRow label="Founder status" first={displayValue(first.founderStatus)} second={displayValue(second.founderStatus)} />
+            <SectionTitle icon={BarChart3} eyebrow={t('compare.signalReviewEyebrow')} title={t('compare.sideBySide')} />
+            <CompareRow label={t('compare.rows.trustScore')} first={`${first.trustScore}/100`} second={`${second.trustScore}/100`} />
+            <CompareRow label={t('compare.rows.verification')} first={translatedVerificationStatusLabel(first.verificationStatus)} second={translatedVerificationStatusLabel(second.verificationStatus)} />
+            <CompareRow label={t('compare.rows.chain')} first={first.chain} second={second.chain} />
+            <CompareRow label={t('compare.rows.marketCap')} first={formatCurrency(first.realData?.marketCapUsd)} second={formatCurrency(second.realData?.marketCapUsd)} />
+            <CompareRow label={t('compare.rows.liquidity')} first={formatCurrency(first.realData?.totalLiquidityUsd ?? first.realData?.liquidityUsd)} second={formatCurrency(second.realData?.totalLiquidityUsd ?? second.realData?.liquidityUsd)} />
+            <CompareRow label={t('compare.rows.holderCount')} first={formatNumber(first.realData?.holderCount || first.holders)} second={formatNumber(second.realData?.holderCount || second.holders)} />
+            <CompareRow label={t('compare.rows.tokenAge')} first={formatAge(first.realData?.tokenAgeDays)} second={formatAge(second.realData?.tokenAgeDays)} />
+            <CompareRow label={t('compare.rows.largestHolder')} first={formatPercent(first.realData?.topHolderPercent)} second={formatPercent(second.realData?.topHolderPercent)} />
+            <CompareRow label={t('compare.rows.topTen')} first={formatPercent(first.realData?.topTenHolderPercent)} second={formatPercent(second.realData?.topTenHolderPercent)} />
+            <CompareRow label={t('compare.rows.socialScore')} first={formatScore(first.scoreBreakdown.socialScore)} second={formatScore(second.scoreBreakdown.socialScore)} />
+            <CompareRow label={t('compare.rows.riskFlags')} first={first.riskFlags.join(', ')} second={second.riskFlags.join(', ')} />
+            <CompareRow label={t('compare.rows.roadmapStatus')} first={roadmapClarity(first)} second={roadmapClarity(second)} />
+            <CompareRow label={t('compare.rows.founderStatus')} first={displayValue(first.founderStatus)} second={displayValue(second.founderStatus)} />
           </div>
         </>
       )}
@@ -2438,11 +2473,12 @@ function ComparePage({ projects, navigate }) {
 }
 
 function ProjectSelect({ label, value, projects, onChange }) {
+  const { t } = useTranslation();
   return (
     <label className="form-field compare-select">
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
-        {!projects.length && <option value="">No live profiles</option>}
+        {!projects.length && <option value="">{t('compare.noLiveProfiles')}</option>}
         {projects.map((project) => (
           <option key={project.id} value={project.id}>
             {project.name} ({project.ticker})
@@ -2454,6 +2490,7 @@ function ProjectSelect({ label, value, projects, onChange }) {
 }
 
 function ComparePanel({ project, navigate }) {
+  const { t } = useTranslation();
   return (
     <article className="compare-panel">
       <div className="compare-panel-top">
@@ -2466,12 +2503,12 @@ function ComparePanel({ project, navigate }) {
         <ScoreCircle score={project.trustScore} />
       </div>
       <div className="compare-metrics">
-        <span><Users size={16} /> {formatNumber(project.realData?.holderCount || project.holders)} holders</span>
+        <span><Users size={16} /> {formatNumber(project.realData?.holderCount || project.holders)} {t('compare.holders')}</span>
         <span><Shield size={16} /> {project.founderStatus}</span>
         <RiskPill level={project.riskLevel} />
       </div>
       <button className="card-button" onClick={() => navigate(`project/${project.id}`)}>
-        Open profile <ArrowRight size={17} />
+        {t('compare.openProfile')} <ArrowRight size={17} />
       </button>
     </article>
   );
@@ -2488,16 +2525,17 @@ function CompareRow({ label, first, second }) {
 }
 
 function RiskReportPage({ project, navigate }) {
+  const { t } = useTranslation();
   const reasons = riskSignals(project).slice(0, 3);
   const factors = riskFactors(project);
   const confidence = confidenceScore(project);
   return (
     <section className="page-section report-page">
-      <button className="back-button" onClick={() => navigate('home')}>Check another token</button>
+      <button className="back-button" onClick={() => navigate('home')}>{t('riskReport.checkAnother')}</button>
       <div className="report-hero detail-section">
         <div>
-          <span className="status-badge">{project.realData?.isDemo ? 'Demo report' : 'Free report'}</span>
-          <h1>Risk Report</h1>
+          <span className="status-badge">{project.realData?.isDemo ? t('riskReport.demoReport') : t('riskReport.freeReport')}</span>
+          <h1>{t('riskReport.title')}</h1>
           <p>{project.name} on {project.chain}</p>
           <strong className="contract-line">{project.contract}</strong>
         </div>
@@ -2510,39 +2548,39 @@ function RiskReportPage({ project, navigate }) {
       <div className="report-action-row">
         <div className="pdf-export-cta">
           <button className="secondary-button" type="button" onClick={() => handleDownloadPdf(project)}>
-            <Download size={18} /> Download PDF Report
+            <Download size={18} /> {t('riskReport.downloadPdf')}
           </button>
-          <small>Export this report for sharing or research.</small>
+          <small>{t('riskReport.downloadHint')}</small>
         </div>
       </div>
 
       <div className="report-layout">
         <div className="main-column">
           <section className="detail-section">
-            <SectionTitle icon={Shield} eyebrow="Free scan" title="Basic Risk View" />
+            <SectionTitle icon={Shield} eyebrow={t('riskReport.basicScanEyebrow')} title={t('riskReport.basicViewTitle')} />
             <div className="report-metrics">
               <div>
-                <span>Trust Score</span>
+                <span>{t('riskReport.trustScoreLabel')}</span>
                 <strong>{project.trustScore}/100</strong>
               </div>
               <div>
-                <span>Risk Level</span>
-                <strong>{project.riskLevel}</strong>
+                <span>{t('riskReport.riskLevelLabel')}</span>
+                <strong>{translateRiskLevel(project.riskLevel)}</strong>
               </div>
               <div>
-                <span>Data mode</span>
-                <strong>{project.realData?.isDemo ? 'Mock demo' : 'Live/public'}</strong>
+                <span>{t('riskReport.dataModeLabel')}</span>
+                <strong>{project.realData?.isDemo ? t('riskReport.dataModeMock') : t('riskReport.dataModeLive')}</strong>
               </div>
               <div>
-                <span>Confidence Score</span>
+                <span>{t('riskReport.confidenceScoreLabel')}</span>
                 <strong>{confidence.label}</strong>
               </div>
             </div>
-            <p className="inline-note">Signal coverage: {confidence.available}/{confidence.total} data points available.</p>
+            <p className="inline-note">{t('riskReport.signalCoverage', { available: confidence.available, total: confidence.total })}</p>
           </section>
 
           <section className="detail-section">
-            <SectionTitle icon={AlertTriangle} eyebrow="Reasons" title="3 Main Risk Reasons" />
+            <SectionTitle icon={AlertTriangle} eyebrow={t('riskReport.reasonsEyebrow')} title={t('riskReport.reasonsTitle')} />
             <div className="risk-reason-list">
               {reasons.map((reason) => (
                 <div className="risk-reason" key={reason.label}>
@@ -2556,7 +2594,7 @@ function RiskReportPage({ project, navigate }) {
           </section>
 
           <section className="detail-section">
-            <SectionTitle icon={ListFilter} eyebrow="Risk factors" title="Real Solana Signal Explanations" />
+            <SectionTitle icon={ListFilter} eyebrow={t('riskReport.factorsEyebrow')} title={t('riskReport.factorsTitle')} />
             <div className="risk-factor-grid">
               {factors.map((factor) => (
                 <div className={`risk-factor-card ${factor.severity.toLowerCase()}`} key={factor.title}>
@@ -2584,6 +2622,7 @@ function RiskReportPage({ project, navigate }) {
 }
 
 function PremiumLockedSection({ project, navigate }) {
+  const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
   const unlockPremium = async () => {
     const result = await handleUnlockPremiumClick(project);
@@ -2592,10 +2631,10 @@ function PremiumLockedSection({ project, navigate }) {
 
   return (
     <section className="detail-section premium-lock-section">
-      <SectionTitle icon={Lock} eyebrow="Premium" title="Unlock premium risk tools" />
-      <p className="inline-note">Premium features are optional. Payments unlock platform features only. PDF export remains free for now.</p>
+      <SectionTitle icon={Lock} eyebrow={t('premium.eyebrow')} title={t('premium.unlockToolsTitle')} />
+      <p className="inline-note">{t('premium.optionalNote')}</p>
       <div className="premium-feature-grid">
-        {premiumReportItems.map(([title, text]) => (
+        {t('premium.items').map(([title, text]) => (
           <div className="premium-feature locked" key={title}>
             <Lock size={17} />
             <span>{title}</span>
@@ -2604,13 +2643,13 @@ function PremiumLockedSection({ project, navigate }) {
         ))}
       </div>
       <div className="unlock-bar">
-        <strong>Unlock Premium</strong>
+        <strong>{t('premium.unlockBarTitle')}</strong>
         <div>
           <button className="primary-button" type="button" onClick={unlockPremium}>
-            Unlock Premium
+            {t('premium.unlockPremium')}
           </button>
           <button className="secondary-button" type="button" onClick={() => navigate('pricing')}>
-            View plans <ArrowRight size={18} />
+            {t('premium.viewPlans')} <ArrowRight size={18} />
           </button>
         </div>
       </div>
@@ -2620,6 +2659,7 @@ function PremiumLockedSection({ project, navigate }) {
 }
 
 function OneTimeUnlockCard({ project, navigate }) {
+  const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
   const unlockPremium = async () => {
     const result = await handleUnlockPremiumClick(project);
@@ -2628,14 +2668,14 @@ function OneTimeUnlockCard({ project, navigate }) {
 
   return (
     <section className="detail-section one-time-card">
-      <SectionTitle icon={FileWarning} eyebrow="Premium" title="Premium Access" />
-      <strong>$9/month</strong>
-      <p>Premium features are optional. Payments unlock platform features only.</p>
+      <SectionTitle icon={FileWarning} eyebrow={t('premium.eyebrow')} title={t('premium.accessTitle')} />
+      <strong>{t('premium.priceMonthly')}</strong>
+      <p>{t('premium.accessNote')}</p>
       <button className="primary-button" type="button" onClick={unlockPremium}>
-        Unlock Premium
+        {t('premium.unlockPremium')}
       </button>
       <button className="secondary-button" type="button" onClick={() => navigate('pricing')}>
-        View Pricing <WalletCards size={18} />
+        {t('premium.viewPricing')} <WalletCards size={18} />
       </button>
       {paymentMessage && <p className="inline-note">{paymentMessage}</p>}
     </section>
@@ -2643,6 +2683,7 @@ function OneTimeUnlockCard({ project, navigate }) {
 }
 
 function PricingPage({ navigate }) {
+  const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
   const beginCheckout = async (plan) => {
     const result = plan === 'early_supporter' ? await handleEarlySupporterClick() : await handleUnlockPremiumClick();
@@ -2650,48 +2691,22 @@ function PricingPage({ navigate }) {
   };
 
   const plans = [
-    {
-      name: 'Free',
-      price: '$0',
-      description: 'Basic token scan and shareable PDF report export.',
-      features: ['Trust Score', 'Risk Level', '3 main risk reasons', 'PDF report export'],
-      cta: 'Start free scan',
-      action: () => navigate('home'),
-    },
-    {
-      name: 'Premium',
-      price: '$9/month or 9 USDT/month',
-      description: 'Optional Premium access for saved reports, watchlist, and deeper analysis placeholders.',
-      features: ['Saved reports', 'Watchlist', 'Deeper risk analysis', 'Advanced holder insights', 'Telegram alerts'],
-      cta: 'Unlock Premium',
-      action: () => beginCheckout('premium'),
-      featured: true,
-    },
-    {
-      name: 'Early Supporter',
-      price: '$29 one-time or 29 USDT one-time',
-      description: 'Optional one-time supporter access. Early supporters may receive benefits later.',
-      features: ['Early supporter badge placeholder', 'Potential future benefits', 'No token investment claims', 'No profit promises'],
-      cta: 'Become Early Supporter',
-      action: () => beginCheckout('early_supporter'),
-    },
+    { ...t('pricing.plans.free'), action: () => navigate('home') },
+    { ...t('pricing.plans.premium'), action: () => beginCheckout('premium'), featured: true },
+    { ...t('pricing.plans.earlySupporter'), action: () => beginCheckout('early_supporter') },
   ];
 
   return (
     <section className="page-section pricing-page">
-      <SectionTitle icon={WalletCards} eyebrow="Pricing" title="Plans for KHAN Trust" />
-      <p className="pricing-intro">
-        Basic scans remain free and PDF report export remains available for now. Premium features are optional, and payments unlock platform features only.
-      </p>
-      <p className="pricing-note">
-        KHAN Trust does not promise profit, returns, or investment outcomes. No investment claims.
-      </p>
+      <SectionTitle icon={WalletCards} eyebrow={t('pricing.eyebrow')} title={t('pricing.title')} />
+      <p className="pricing-intro">{t('pricing.intro')}</p>
+      <p className="pricing-note">{t('pricing.noInvestmentNote')}</p>
       <p className="pricing-note payment-message">
-        KHAN Launchpad has its own payment model: devnet token creation is free, and mainnet token creation is {LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} per token. This is separate from KHAN Trust Premium.
+        {t('pricing.launchpadNote', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel })}
       </p>
       {paymentMessage && <p className="pricing-note payment-message">{paymentMessage}</p>}
       <div className="premium-value-strip">
-        {premiumReportItems.map(([title]) => (
+        {t('premium.items').map(([title]) => (
           <span key={title}><CheckCircle2 size={16} /> {title}</span>
         ))}
       </div>
@@ -2713,9 +2728,7 @@ function PricingPage({ navigate }) {
         ))}
       </div>
       <PaymentMethodsSection beginCheckout={beginCheckout} />
-      <p className="pricing-note">
-        Premium features are optional. Early supporters may receive benefits later. Payments unlock platform features only. KHAN Trust does not promise profit, returns, or investment outcomes.
-      </p>
+      <p className="pricing-note">{t('pricing.footerNote')}</p>
       <Disclaimer />
     </section>
   );
@@ -2731,37 +2744,41 @@ function PaymentMethodsSection({ beginCheckout }) {
 }
 
 function CardPaymentSection({ beginCheckout }) {
+  const { t } = useTranslation();
   const cardReady = isStripeConfigured('premium') || isStripeConfigured('early_supporter');
   return (
     <div className="payment-method-card">
-      <span className="status-badge">Card payment via Stripe</span>
-      <h3>Card payments</h3>
-      <p>Use Stripe Checkout for Premium or Early Supporter access. Payments unlock platform features only.</p>
-      {!cardReady && <p className="inline-note">Card payments are not configured yet</p>}
+      <span className="status-badge">{t('pricing.payment.cardBadge')}</span>
+      <h3>{t('pricing.payment.cardTitle')}</h3>
+      <p>{t('pricing.payment.cardDescription')}</p>
+      {!cardReady && <p className="inline-note">{t('pricing.payment.cardNotConfigured')}</p>}
       <div className="payment-action-row">
         <button className="primary-button" type="button" onClick={() => beginCheckout('premium')}>
-          Unlock Premium
+          {t('premium.unlockPremium')}
         </button>
         <button className="secondary-button" type="button" onClick={() => beginCheckout('early_supporter')}>
-          Become Early Supporter
+          {t('pricing.plans.earlySupporter').cta}
         </button>
       </div>
     </div>
   );
 }
 
-const VERIFY_STATUS_MESSAGE = {
-  idle: 'Waiting for transaction hash',
-  not_configured: 'Automatic verification is not configured yet',
-  verifying: 'Verifying payment...',
-  verified: 'Payment verified',
-  failed: 'Payment failed',
-  amount_too_low: 'Amount too low',
-  wrong_receiver: 'Wrong receiver wallet',
-  not_confirmed: 'Transaction not confirmed yet',
-};
+function verifyStatusMessageKey(status) {
+  return {
+    idle: 'pricing.payment.status.idle',
+    not_configured: 'pricing.payment.status.notConfigured',
+    verifying: 'pricing.payment.status.verifying',
+    verified: 'pricing.payment.status.verified',
+    failed: 'pricing.payment.status.failed',
+    amount_too_low: 'pricing.payment.status.amountTooLow',
+    wrong_receiver: 'pricing.payment.status.wrongReceiver',
+    not_confirmed: 'pricing.payment.status.notConfirmed',
+  }[status] || 'pricing.payment.status.idle';
+}
 
 function CryptoPaymentSection() {
+  const { t } = useTranslation();
   const [transactionHash, setTransactionHash] = useState('');
   const [copied, setCopied] = useState(false);
   const [plan, setPlan] = useState('premium');
@@ -2813,41 +2830,41 @@ function CryptoPaymentSection() {
     }
   };
 
-  const statusMessage = resultMessage || VERIFY_STATUS_MESSAGE[verifyStatus] || VERIFY_STATUS_MESSAGE.idle;
+  const statusMessage = resultMessage || t(verifyStatusMessageKey(verifyStatus));
 
   return (
     <div className="payment-method-card">
-      <span className="status-badge">Crypto payment via USDT/SOL</span>
-      <h3>Crypto payments</h3>
-      <p>Supported networks: Solana / USDT / SOL. Automatic on-chain verification of your transaction hash.</p>
+      <span className="status-badge">{t('pricing.payment.cryptoBadge')}</span>
+      <h3>{t('pricing.payment.cryptoTitle')}</h3>
+      <p>{t('pricing.payment.cryptoDescription')}</p>
       <div className="crypto-price-grid">
-        <span>Premium: 9 USDT/month</span>
-        <span>Early Supporter: 29 USDT one-time</span>
+        <span>{t('pricing.payment.premiumPrice')}</span>
+        <span>{t('pricing.payment.earlySupporterPrice')}</span>
       </div>
       {walletConfigured ? (
         <div className="wallet-copy-box">
-          <span>Payment wallet</span>
+          <span>{t('pricing.payment.walletLabel')}</span>
           <strong>{CRYPTO_PAYMENT_WALLET}</strong>
           <button className="secondary-button" type="button" onClick={copyWallet}>
-            <Copy size={17} /> {copied ? 'Copied' : 'Copy wallet address'}
+            <Copy size={17} /> {copied ? t('common.copied') : t('pricing.payment.copyWallet')}
           </button>
         </div>
       ) : (
-        <p className="inline-note">Crypto payments are not configured yet</p>
+        <p className="inline-note">{t('pricing.payment.cryptoNotConfigured')}</p>
       )}
 
       {!verificationConfigured && <p className="inline-note">{solanaUnavailableMessage()}</p>}
 
       <label className="form-field">
-        <span>Plan</span>
+        <span>{t('pricing.payment.planLabel')}</span>
         <select value={plan} onChange={(event) => setPlan(event.target.value)} disabled={!walletConfigured}>
-          <option value="premium">Premium - 9 USDT/month</option>
-          <option value="early_supporter">Early Supporter - 29 USDT one-time</option>
+          <option value="premium">{t('pricing.payment.planPremiumOption')}</option>
+          <option value="early_supporter">{t('pricing.payment.planEarlySupporterOption')}</option>
         </select>
       </label>
 
       <label className="form-field transaction-field">
-        <span>Transaction hash</span>
+        <span>{t('pricing.payment.transactionHashLabel')}</span>
         <input
           value={transactionHash}
           onChange={(event) => {
@@ -2856,7 +2873,7 @@ function CryptoPaymentSection() {
             setResultMessage('');
             setDebugInfo(null);
           }}
-          placeholder="Paste transaction hash after payment"
+          placeholder={t('pricing.payment.transactionHashPlaceholder')}
           disabled={!walletConfigured}
         />
       </label>
@@ -2867,7 +2884,7 @@ function CryptoPaymentSection() {
         onClick={verifyPayment}
         disabled={!walletConfigured || verifyStatus === 'verifying'}
       >
-        Verify payment
+        {t('pricing.payment.verifyPayment')}
       </button>
 
       <p className={verifyStatus === 'verified' ? 'inline-note verify-success' : 'inline-note'}>
@@ -2875,14 +2892,12 @@ function CryptoPaymentSection() {
       </p>
 
       {verifyStatus === 'verified' && (
-        <p className="inline-note">
-          Payment verified. Premium activation will be handled by the team until user accounts are added.
-        </p>
+        <p className="inline-note">{t('pricing.payment.verifiedFollowUp')}</p>
       )}
 
       {debugInfo && (
         <div className="inline-note verify-debug-panel">
-          <strong>Debug output (temporary)</strong>
+          <strong>{t('pricing.payment.debugTitle')}</strong>
           <ul>
             <li>Signature length: {debugInfo.signatureLength}</li>
             <li>RPC URL used: {debugInfo.rpcUrlUsed ?? 'n/a'}</li>
@@ -2910,19 +2925,20 @@ function CryptoPaymentSection() {
         </div>
       )}
 
-      <p className="inline-note">If automatic verification fails, contact the team with your transaction hash.</p>
+      <p className="inline-note">{t('pricing.payment.contactSupport')}</p>
     </div>
   );
 }
 
 function roadmapClarity(project) {
-  if (!project.roadmap?.length) return 'No roadmap proof';
+  if (!project.roadmap?.length) return translate('scoring.noRoadmapProof');
   const completed = project.roadmap.filter((phase) => phase.status === 'Completed').length;
   const inProgress = project.roadmap.filter((phase) => phase.status === 'In progress').length;
-  return `${project.roadmap.length} phases, ${completed} completed, ${inProgress} in progress`;
+  return translate('scoring.roadmapClarity', { count: project.roadmap.length, completed, inProgress });
 }
 
 function ProjectCard({ project, navigate }) {
+  const { t } = useTranslation();
   return (
     <article className="project-card">
       <div className="card-top">
@@ -2938,20 +2954,21 @@ function ProjectCard({ project, navigate }) {
       <div className="card-signal-strip">
         <span>{project.chain}</span>
         <span>{project.ticker}</span>
-        <span>{project.communitySize.toLocaleString()} community</span>
+        <span>{project.communitySize.toLocaleString()} {t('explore.community')}</span>
       </div>
       <div className="card-meta">
         <RiskPill level={project.riskLevel} />
         <span><Clock3 size={15} /> {project.lastUpdate}</span>
       </div>
       <button className="card-button" onClick={() => navigate(`project/${project.id}`)}>
-        Open trust profile <ArrowRight size={17} />
+        {t('explore.openTrustProfile')} <ArrowRight size={17} />
       </button>
     </article>
   );
 }
 
 function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openMethodology, onRequestVerification }) {
+  const { t } = useTranslation();
   const confidence = confidenceScore(project);
   const canRequestVerification =
     project.verificationStatus === VERIFICATION_STATUS.UNVERIFIED || project.verificationStatus === VERIFICATION_STATUS.REJECTED;
@@ -2964,7 +2981,7 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
     <section className="profile-page">
       <div className="profile-hero">
         <div>
-          <button className="back-button" onClick={() => navigate('explore')}>Explore Projects</button>
+          <button className="back-button" onClick={() => navigate('explore')}>{t('projectProfile.backToExplore')}</button>
           <div className="profile-title-row">
             <h1>{project.name}</h1>
             <span className="ticker-pill">{project.ticker}</span>
@@ -2973,36 +2990,36 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
           <p>{project.description}</p>
           {project.mission && <p className="mission-text">{project.mission}</p>}
           {project.verificationStatus === VERIFICATION_STATUS.PENDING && (
-            <p className="inline-note verification-pending-note">Verification request submitted - pending KHAN Trust review.</p>
+            <p className="inline-note verification-pending-note">{t('projectProfile.pendingNote')}</p>
           )}
           {project.verificationStatus === VERIFICATION_STATUS.REJECTED && (
             <p className="inline-note verification-rejected-note">
-              Verification request was rejected{project.verificationNote ? `: ${project.verificationNote}` : '.'}
+              {t('projectProfile.rejectedNote', { note: project.verificationNote ? `: ${project.verificationNote}` : '.' })}
             </p>
           )}
           <div className="profile-actions">
             <button className={watched ? 'primary-button watched' : 'primary-button'} onClick={toggleWatch}>
-              <Bell size={18} /> {watched ? 'Watching Project' : 'Watch Project'}
+              <Bell size={18} /> {watched ? t('projectProfile.watchingProject') : t('projectProfile.watchProject')}
             </button>
             <button className="secondary-button" onClick={onEdit}>
-              <Plus size={18} /> Edit Project
+              <Plus size={18} /> {t('projectProfile.editProject')}
             </button>
             {canRequestVerification && (
               <button className="primary-button" onClick={onRequestVerification}>
-                <BadgeCheck size={18} /> Request Verification
+                <BadgeCheck size={18} /> {t('projectProfile.requestVerification')}
               </button>
             )}
             <button className="secondary-button" onClick={() => handleDownloadPdf(project)}>
-              <Download size={18} /> Download PDF Report
+              <Download size={18} /> {t('projectProfile.downloadPdf')}
             </button>
             <button className="primary-button" onClick={unlockPremium}>
-              <Lock size={18} /> Unlock Premium
+              <Lock size={18} /> {t('projectProfile.unlockPremium')}
             </button>
-            <button className="secondary-button" onClick={() => alert('Suggestion noted locally for the MVP. In a future version this can open a moderation flow.')}>
-              <Flag size={18} /> Report / Suggest Update
+            <button className="secondary-button" onClick={() => alert(t('projectProfile.reportSuggestAlert'))}>
+              <Flag size={18} /> {t('projectProfile.reportSuggest')}
             </button>
             <button className="ghost-button" onClick={openMethodology}>
-              <Info size={18} /> Methodology
+              <Info size={18} /> {t('projectProfile.methodology')}
             </button>
           </div>
         </div>
@@ -3038,17 +3055,18 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
 }
 
 function RiskSummary({ project }) {
+  const { t } = useTranslation();
   const confidence = confidenceScore(project);
   return (
     <section className="detail-section">
-      <SectionTitle icon={AlertTriangle} eyebrow="Result" title="Simple Risk Summary" />
+      <SectionTitle icon={AlertTriangle} eyebrow={t('riskSummary.eyebrow')} title={t('riskSummary.title')} />
       <div className="result-score-row">
         <div>
-          <span>Trust Score</span>
+          <span>{t('riskSummary.trustScore')}</span>
           <strong>{project.trustScore}/100</strong>
         </div>
         <div>
-          <span>Confidence Score</span>
+          <span>{t('riskSummary.confidenceScore')}</span>
           <strong>{confidence.label}</strong>
         </div>
         <RiskPill level={project.riskLevel} />
@@ -3068,6 +3086,7 @@ function RiskSummary({ project }) {
 }
 
 function ShareReady({ project }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState('');
   const copy = async (channel) => {
     const text = shareText(project, channel);
@@ -3083,62 +3102,63 @@ function ShareReady({ project }) {
 
   return (
     <section className="detail-section">
-      <SectionTitle icon={MessageCircle} eyebrow="Share" title="Share-ready Result" />
+      <SectionTitle icon={MessageCircle} eyebrow={t('shareReady.eyebrow')} title={t('shareReady.title')} />
       <div className="share-grid">
         {[
-          ['x', 'X/Twitter', shareText(project, 'x')],
-          ['telegram', 'Telegram', shareText(project, 'telegram')],
+          ['x', t('scoring.shareChannels.x'), shareText(project, 'x')],
+          ['telegram', t('scoring.shareChannels.telegram'), shareText(project, 'telegram')],
         ].map(([channel, label, text]) => (
           <div className="share-card" key={channel}>
             <span>{label}</span>
             <p>{text}</p>
             <button className="secondary-button" type="button" onClick={() => copy(channel)}>
-              <Copy size={17} /> {copied === channel ? 'Copied' : 'Copy text'}
+              <Copy size={17} /> {copied === channel ? t('common.copied') : t('shareReady.copyText')}
             </button>
           </div>
         ))}
       </div>
-      {copied === 'error' && <p className="inline-note">Copy is not available in this browser. Select the text manually.</p>}
+      {copied === 'error' && <p className="inline-note">{t('shareReady.copyUnavailable')}</p>}
     </section>
   );
 }
 
 function EcosystemActions({ navigate }) {
+  const { t } = useTranslation();
   return (
     <div className="ecosystem-actions">
       <button className="primary-button" type="button" onClick={() => navigate?.('home')}>
-        Visit KHAN Trust <ArrowRight size={18} />
+        {t('ecosystem.visitKhanTrust')} <ArrowRight size={18} />
       </button>
       <button className="secondary-button" type="button" onClick={() => navigate?.('khan')}>
-        Explore KHAN Ecosystem <Star size={18} />
+        {t('ecosystem.exploreEcosystem')} <Star size={18} />
       </button>
       <a className="secondary-button" href={OFFICIAL_KHAN_LINKS.x} target="_blank" rel="noreferrer" onClick={() => trackSocialClick('Official X', OFFICIAL_KHAN_LINKS.x)}>
-        Follow on X <ExternalLink size={18} />
+        {t('ecosystem.followX')} <ExternalLink size={18} />
       </a>
       <a className="secondary-button" href={OFFICIAL_KHAN_LINKS.telegram} target="_blank" rel="noreferrer" onClick={() => trackSocialClick('Telegram Community', OFFICIAL_KHAN_LINKS.telegram)}>
-        Join Telegram <MessageCircle size={18} />
+        {t('ecosystem.joinTelegram')} <MessageCircle size={18} />
       </a>
     </div>
   );
 }
 
 function KhanEcosystemStrip({ navigate }) {
-  const items = [
-    ['KHAN Trust Platform', 'Public trust profiles, token scans, risk reports, and Launchpad profile creation.', Shield],
-    ['KHAN Token', 'Planned community and utility layer for future premium research and holder benefits.', Star],
-    ['KHAN Community', 'Official X and Telegram channels for updates, education, and ecosystem announcements.', Users],
-  ];
+  const { t } = useTranslation();
+  const icons = [Shield, Star, Users];
   return (
     <section className="content-band ecosystem-strip">
-      <SectionTitle icon={Globe2} eyebrow="KHAN Ecosystem" title="One ecosystem for trust, token utility, and community" />
+      <SectionTitle icon={Globe2} eyebrow={t('ecosystem.stripEyebrow')} title={t('ecosystem.stripTitle')} />
       <div className="ecosystem-grid">
-        {items.map(([title, text, Icon]) => (
-          <div className="ecosystem-card" key={title}>
-            <Icon size={20} />
-            <strong>{title}</strong>
-            <p>{text}</p>
-          </div>
-        ))}
+        {t('ecosystem.items').map(([title, text], index) => {
+          const Icon = icons[index];
+          return (
+            <div className="ecosystem-card" key={title}>
+              <Icon size={20} />
+              <strong>{title}</strong>
+              <p>{text}</p>
+            </div>
+          );
+        })}
       </div>
       <EcosystemActions navigate={navigate} />
     </section>
@@ -3146,36 +3166,34 @@ function KhanEcosystemStrip({ navigate }) {
 }
 
 function KhanTokenRole({ navigate }) {
+  const { t } = useTranslation();
   return (
     <section className="detail-section khan-token-role">
-      <SectionTitle icon={Star} eyebrow="Ecosystem" title="KHAN Token Role" />
-      <p>
-        KHAN is planned as the community and utility token of the KHAN Trust ecosystem. KHAN Trust is the platform layer,
-        KHAN Token is the future utility layer, and the KHAN Community gathers through the official X and Telegram channels.
-        No profit or investment promise.
-      </p>
+      <SectionTitle icon={Star} eyebrow={t('ecosystem.tokenRoleEyebrow')} title={t('ecosystem.tokenRoleTitle')} />
+      <p>{t('ecosystem.tokenRoleText')}</p>
       <EcosystemActions navigate={navigate} />
     </section>
   );
 }
 
 function FutureFoundationSection() {
+  const { t } = useTranslation();
   return (
     <section className="detail-section foundation-section">
-      <SectionTitle icon={BadgeCheck} eyebrow="Roadmap Foundation" title="Verified and holder benefit systems" />
+      <SectionTitle icon={BadgeCheck} eyebrow={t('ecosystem.foundationEyebrow')} title={t('ecosystem.foundationTitle')} />
       <div className="foundation-grid">
         <div>
-          <span className="status-badge">Verification foundation</span>
-          <p>Project profiles default to Unverified until an owner connects a wallet, signs a KHAN Trust verification message, and an admin approves the request. Approved projects show a "Verified by KHAN Trust" badge everywhere.</p>
+          <span className="status-badge">{t('ecosystem.verificationBadge')}</span>
+          <p>{t('ecosystem.verificationText')}</p>
           <div className="foundation-list">
-            {verificationFoundation.map((item) => <span key={item}><CheckCircle2 size={15} /> {item}</span>)}
+            {t('ecosystem.verificationItems').map((item) => <span key={item}><CheckCircle2 size={15} /> {item}</span>)}
           </div>
         </div>
         <div>
-          <span className="status-badge">Holder utility foundation</span>
-          <p>Future KHAN holder benefits are documented as roadmap utilities. No token-gated access is active in this MVP.</p>
+          <span className="status-badge">{t('ecosystem.holderBadge')}</span>
+          <p>{t('ecosystem.holderText')}</p>
           <div className="foundation-list">
-            {holderBenefitFoundation.map((item) => <span key={item}><CheckCircle2 size={15} /> {item}</span>)}
+            {t('ecosystem.holderItems').map((item) => <span key={item}><CheckCircle2 size={15} /> {item}</span>)}
           </div>
         </div>
       </div>
@@ -3184,13 +3202,11 @@ function FutureFoundationSection() {
 }
 
 function KhanEcosystemPage({ navigate }) {
+  const { t } = useTranslation();
   return (
     <section className="page-section khan-ecosystem-page">
-      <SectionTitle icon={Star} eyebrow="$KHAN" title="KHAN Ecosystem" />
-      <p className="section-subtitle">
-        KHAN Trust, KHAN Token, and the KHAN Community are connected parts of one ecosystem for crypto trust signals,
-        public project profiles, and future holder utility.
-      </p>
+      <SectionTitle icon={Star} eyebrow={t('ecosystem.pageEyebrow')} title={t('ecosystem.pageTitle')} />
+      <p className="section-subtitle">{t('ecosystem.pageSubtitle')}</p>
       <KhanEcosystemStrip navigate={navigate} />
       <KhanTokenRole navigate={navigate} />
       <FutureFoundationSection />
@@ -3200,10 +3216,11 @@ function KhanEcosystemPage({ navigate }) {
 }
 
 function InfoGrid({ project }) {
+  const { t } = useTranslation();
   const rows = resolvedMetadataRows(project);
   return (
     <section className="detail-section">
-      <SectionTitle icon={Shield} eyebrow="Profile" title="Project Information" />
+      <SectionTitle icon={Shield} eyebrow={t('profileSections.profileEyebrow')} title={t('profileSections.infoTitle')} />
       <div className="info-grid">
         {rows.map(([label, value, Icon]) => (
           <div className="info-item" key={label}>
@@ -3220,13 +3237,14 @@ function InfoGrid({ project }) {
 function InfoValue({ value, network }) {
   if (value && typeof value === 'object' && 'state' in value) {
     if (value.state === 'Present') return <ClickableLink href={value.value} network={network} />;
-    return value.state;
+    return value.state === 'Missing' ? translate('common.missing') : value.state === 'Data unavailable' ? translate('common.dataUnavailable') : value.state;
   }
-  return <ClickableLink href={value} fallback={value || 'Not provided'} network={network} />;
+  return <ClickableLink href={value} fallback={value || translate('common.notProvided')} network={network} />;
 }
 
-function ClickableLink({ href, fallback = 'Not provided', network }) {
-  if (!hasValue(href)) return fallback;
+function ClickableLink({ href, fallback, network }) {
+  const resolvedFallback = fallback ?? translate('common.notProvided');
+  if (!hasValue(href)) return resolvedFallback;
   const url = normalizeExternalUrl(href);
   if (!url) return href;
   return (
@@ -3245,50 +3263,32 @@ function normalizeExternalUrl(value = '') {
 }
 
 function TrustBreakdown({ project }) {
-  const labels = {
-    founderActivity: 'Founder activity',
-    communityActivity: 'Community activity',
-    roadmapClarity: 'Roadmap clarity',
-    transparency: 'Transparency',
-    tokenRisk: 'Token risk',
-    socialProof: 'Social proof',
-    marketCapScore: 'Market Cap Score',
-    liquidityScore: 'Liquidity Score',
-    holderScore: 'Holder Score',
-    topHolderScore: 'Top Holder Score',
-    topTenHolderScore: 'Top 10 Holder Score',
-    tokenAgeScore: 'Token Age Score',
-    websiteScore: 'Website Presence',
-    twitterScore: 'X/Twitter Presence',
-    telegramScore: 'Telegram Presence',
-    socialScore: 'Social Score',
-    holderGrowthScore: 'Holder Growth Score',
-    supplyScore: 'Supply Score',
-    finalTrustScore: 'Final Trust Score',
-  };
+  const { t } = useTranslation();
+  const labels = t('profileSections.breakdownLabels');
   return (
     <section className="detail-section">
-      <SectionTitle icon={LineChart} eyebrow="Score" title="Trust Score Breakdown" />
+      <SectionTitle icon={LineChart} eyebrow={t('profileSections.scoreEyebrow')} title={t('profileSections.breakdownTitle')} />
       <div className="breakdown-list">
         {Object.entries(project.scoreBreakdown).map(([key, value]) => (
           <div className="score-row" key={key}>
             <span>{labels[key]}</span>
             <div className="score-bar"><i style={{ width: `${value || 0}%` }} /></div>
-            <strong>{value === null ? 'Not available' : value}</strong>
+            <strong>{value === null ? t('common.notAvailable') : value}</strong>
           </div>
         ))}
       </div>
       {project.scoreBreakdown.socialScore === null && (
-        <p className="inline-note">No public socials found</p>
+        <p className="inline-note">{t('profileSections.noSocialsFound')}</p>
       )}
     </section>
   );
 }
 
 function RiskFlags({ flags }) {
+  const { t } = useTranslation();
   return (
     <section className="detail-section">
-      <SectionTitle icon={FileWarning} eyebrow="Risk" title="Risk Flags" />
+      <SectionTitle icon={FileWarning} eyebrow={t('profileSections.riskEyebrow')} title={t('profileSections.riskFlagsTitle')} />
       <div className="flag-grid">
         {flags.map((flag) => (
           <span key={flag} className="warning-badge"><AlertTriangle size={15} /> {flag}</span>
@@ -3299,9 +3299,10 @@ function RiskFlags({ flags }) {
 }
 
 function Timeline({ items }) {
+  const { t } = useTranslation();
   return (
     <section className="detail-section">
-      <SectionTitle icon={History} eyebrow="Project Updates" title="Updates Timeline" />
+      <SectionTitle icon={History} eyebrow={t('profileSections.updatesEyebrow')} title={t('profileSections.timelineTitle')} />
       <div className="timeline">
         {items.map((item, index) => (
           <div className="timeline-item" key={`${item.label}-${index}`}>
@@ -3318,18 +3319,20 @@ function Timeline({ items }) {
 }
 
 function CommunityProof({ project }) {
+  const { t } = useTranslation();
+  const s = t('profileSections.communityProofStats');
   const stats = [
-    ['Holder count', project.holders.toLocaleString(), WalletCards],
-    ['Top holder', project.realData ? formatPercent(project.realData.topHolderPercent) : 'Not connected', Shield],
-    ['Liquidity', project.realData ? formatCurrency(project.realData.totalLiquidityUsd ?? project.realData.liquidityUsd) : 'Not connected', BarChart3],
-    ['Market cap', project.realData ? formatCurrency(project.realData.marketCapUsd) : 'Not connected', LineChart],
-    ['Token age', project.realData ? formatAge(project.realData.tokenAgeDays) : 'Not connected', CalendarDays],
-    ['Trust score', `${project.trustScore}/100`, BadgeCheck],
-    ['Last update date', project.lastUpdate, Clock3],
+    [s.holderCount, project.holders.toLocaleString(), WalletCards],
+    [s.topHolder, project.realData ? formatPercent(project.realData.topHolderPercent) : t('common.notConnected'), Shield],
+    [s.liquidity, project.realData ? formatCurrency(project.realData.totalLiquidityUsd ?? project.realData.liquidityUsd) : t('common.notConnected'), BarChart3],
+    [s.marketCap, project.realData ? formatCurrency(project.realData.marketCapUsd) : t('common.notConnected'), LineChart],
+    [s.tokenAge, project.realData ? formatAge(project.realData.tokenAgeDays) : t('common.notConnected'), CalendarDays],
+    [s.trustScore, `${project.trustScore}/100`, BadgeCheck],
+    [s.lastUpdateDate, project.lastUpdate, Clock3],
   ];
   return (
     <section className="detail-section sticky-panel">
-      <SectionTitle icon={Users} eyebrow="Proof" title="Community Proof" />
+      <SectionTitle icon={Users} eyebrow={t('profileSections.proofEyebrow')} title={t('profileSections.communityProofTitle')} />
       <div className="proof-list">
         {stats.map(([label, value, Icon]) => (
           <div className="proof-item" key={label}>
@@ -3344,28 +3347,30 @@ function CommunityProof({ project }) {
 }
 
 function RealDataSection({ project, data }) {
+  const { t } = useTranslation();
+  const r = t('profileSections.realDataRows');
   const rows = [
-    ['Holder Count', `${formatNumber(data.holderCount)} (${data.holderSource})`, Users],
-    ['Largest Holder %', formatPercent(data.topHolderPercent), WalletCards],
-    ['Top 10 Holders %', formatPercent(data.topTenHolderPercent), Shield],
-    ['Holder Risk Level', holderRiskLevel(data), AlertTriangle],
-    ['Concentration Status', holderConcentrationStatus(data), FileWarning],
-    ['Liquidity USD', formatCurrency(data.totalLiquidityUsd ?? data.liquidityUsd), BarChart3],
-    ['Market Cap USD', formatCurrency(data.marketCapUsd), LineChart],
-    ['Token Age', formatAge(data.tokenAgeDays), CalendarDays],
-    ['Trust Score', `${project.trustScore}/100`, BadgeCheck],
-    ['Website', socialPresenceState('website', project, data), Globe2],
-    ['X/Twitter', socialPresenceState('twitter', project, data), ExternalLink],
-    ['Telegram', socialPresenceState('telegram', project, data), MessageCircle],
-    ['Supply', data.supply ? formatNumber(data.supply) : 'Not available', WalletCards],
-    ['Holder Growth', data.holderGrowthPercent === null ? 'Needs a second lookup' : formatPercent(data.holderGrowthPercent), TrendingUp],
-    ['Pools Found', formatNumber(data.poolCount), Layers3],
-    ['Data source', data.source, BadgeCheck],
+    [r.holderCount, `${formatNumber(data.holderCount)} (${data.holderSource})`, Users],
+    [r.largestHolder, formatPercent(data.topHolderPercent), WalletCards],
+    [r.topTenHolders, formatPercent(data.topTenHolderPercent), Shield],
+    [r.holderRiskLevel, holderRiskLevel(data), AlertTriangle],
+    [r.concentrationStatus, holderConcentrationStatus(data), FileWarning],
+    [r.liquidityUsd, formatCurrency(data.totalLiquidityUsd ?? data.liquidityUsd), BarChart3],
+    [r.marketCapUsd, formatCurrency(data.marketCapUsd), LineChart],
+    [r.tokenAge, formatAge(data.tokenAgeDays), CalendarDays],
+    [r.trustScore, `${project.trustScore}/100`, BadgeCheck],
+    [r.website, socialPresenceState('website', project, data), Globe2],
+    [r.twitter, socialPresenceState('twitter', project, data), ExternalLink],
+    [r.telegram, socialPresenceState('telegram', project, data), MessageCircle],
+    [r.supply, data.supply ? formatNumber(data.supply) : t('common.notAvailable'), WalletCards],
+    [r.holderGrowth, data.holderGrowthPercent === null ? t('profileSections.holderGrowthNeedsLookup') : formatPercent(data.holderGrowthPercent), TrendingUp],
+    [r.poolsFound, formatNumber(data.poolCount), Layers3],
+    [r.dataSource, data.source, BadgeCheck],
   ];
 
   return (
     <section className="detail-section">
-      <SectionTitle icon={Activity} eyebrow="Live Data" title="Solana Token Data" />
+      <SectionTitle icon={Activity} eyebrow={t('profileSections.liveDataEyebrow')} title={t('profileSections.liveDataTitle')} />
       <div className="real-data-grid">
         {rows.map(([label, value, Icon]) => (
           <div className="real-data-item" key={label}>
@@ -3377,7 +3382,7 @@ function RealDataSection({ project, data }) {
       </div>
       {data.pairUrl && (
         <a className="data-link" href={data.pairUrl} target="_blank" rel="noreferrer">
-          View market pair <ExternalLink size={16} />
+          {t('profileSections.viewMarketPair')} <ExternalLink size={16} />
         </a>
       )}
     </section>
@@ -3385,25 +3390,31 @@ function RealDataSection({ project, data }) {
 }
 
 function RealDataPreview({ data }) {
+  const { t } = useTranslation();
   return (
     <div className="real-data-preview wide">
-      <strong>Live Solana data connected</strong>
-      <span>Liquidity: {formatCurrency(data.liquidityUsd)}</span>
-      <span>Market cap: {formatCurrency(data.marketCapUsd)}</span>
-      <span>Token age: {formatAge(data.tokenAgeDays)}</span>
-      <span>Holder signal: {formatNumber(data.holderCount)} via {data.holderSource}</span>
+      <strong>{t('liveDataPreview.title')}</strong>
+      <span>{t('liveDataPreview.liquidity', { value: formatCurrency(data.liquidityUsd) })}</span>
+      <span>{t('liveDataPreview.marketCap', { value: formatCurrency(data.marketCapUsd) })}</span>
+      <span>{t('liveDataPreview.tokenAge', { value: formatAge(data.tokenAgeDays) })}</span>
+      <span>{t('liveDataPreview.holderSignal', { count: formatNumber(data.holderCount), source: data.holderSource })}</span>
     </div>
   );
 }
 
+const ROADMAP_STATUS_KEY = { Completed: 'common.completed', 'In progress': 'common.inProgress', Planned: 'common.planned' };
+
 function Roadmap({ phases }) {
+  const { t } = useTranslation();
   return (
     <section className="detail-section">
-      <SectionTitle icon={Target} eyebrow="Roadmap" title="Roadmap Proof" />
+      <SectionTitle icon={Target} eyebrow={t('profileSections.roadmapEyebrow')} title={t('profileSections.roadmapTitle')} />
       <div className="roadmap-list">
         {phases.map((phase) => (
           <div className="roadmap-item" key={phase.phase}>
-            <span className={`roadmap-status ${phase.status.toLowerCase().replaceAll(' ', '-')}`}>{phase.status}</span>
+            <span className={`roadmap-status ${phase.status.toLowerCase().replaceAll(' ', '-')}`}>
+              {t(ROADMAP_STATUS_KEY[phase.status] || 'common.planned')}
+            </span>
             <strong>{phase.phase}</strong>
           </div>
         ))}
@@ -3429,6 +3440,7 @@ const launchpadInitialForm = {
 };
 
 function LaunchpadPage({ onCreateProfile, navigate }) {
+  const { t } = useTranslation();
   const [form, setForm] = useState(launchpadInitialForm);
   const [network, setNetwork] = useState('devnet');
   const [mainnetConfirmations, setMainnetConfirmations] = useState({
@@ -3456,9 +3468,9 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
   const walletConfigured = Boolean(CRYPTO_PAYMENT_WALLET);
   const verificationConfigured = isSolanaVerificationConfigured();
   const socialWarnings = [
-    !hasValue(form.website) ? 'Website is missing.' : '',
-    !hasValue(form.twitter) ? 'X/Twitter is missing.' : '',
-    !hasValue(form.telegram) ? 'Telegram is missing.' : '',
+    !hasValue(form.website) ? t('launchpad.form.websiteWarning') : '',
+    !hasValue(form.twitter) ? t('launchpad.form.twitterWarning') : '',
+    !hasValue(form.telegram) ? t('launchpad.form.telegramWarning') : '',
   ].filter(Boolean);
   const validationErrors = validateLaunchpadForm(form);
   const previewProject = useMemo(() => normalizeProject({
@@ -3508,7 +3520,7 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
     try {
       const address = await connectPhantomWallet();
       setWalletAddress(address);
-      setWalletMessage(`Phantom connected. KHAN Launchpad mode: ${selectedNetwork.label}.`);
+      setWalletMessage(t('launchpad.wallet.connectedToast', { network: selectedNetwork.label }));
     } catch (error) {
       setWalletMessage(launchpadErrorMessage(error));
     }
@@ -3533,7 +3545,7 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
     }
     if (!launchpadPaymentHash.trim()) {
       setLaunchpadPaymentStatus('idle');
-      setLaunchpadPaymentMessage('Paste the mainnet Launchpad payment transaction hash first.');
+      setLaunchpadPaymentMessage(t('launchpad.unlock.hashEmpty'));
       return;
     }
 
@@ -3546,7 +3558,7 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
       plan: LAUNCHPAD_PAYMENT_MODEL.mainnetPlan,
     });
     setLaunchpadPaymentStatus(result.status);
-    setLaunchpadPaymentMessage(result.message || VERIFY_STATUS_MESSAGE[result.status] || '');
+    setLaunchpadPaymentMessage(result.message || t(verifyStatusMessageKey(result.status)));
 
     if (result.status === 'verified') {
       trackCryptoVerifySuccess(LAUNCHPAD_PAYMENT_MODEL.mainnetPlan);
@@ -3562,19 +3574,19 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
       return;
     }
     if (!walletAddress) {
-      setStatus({ state: 'error', message: `Connect Phantom before creating a ${selectedNetwork.label.toLowerCase()} token.` });
+      setStatus({ state: 'error', message: t('launchpad.form.submitConnectWallet', { network: selectedNetwork.label.toLowerCase() }) });
       return;
     }
     if (isMainnet && !mainnetReady) {
-      setStatus({ state: 'error', message: 'Complete every mainnet confirmation before creating a real token.' });
+      setStatus({ state: 'error', message: t('launchpad.form.submitMainnetConfirmations') });
       return;
     }
     if (isMainnet && !launchpadPaymentVerified) {
-      setStatus({ state: 'error', message: `Verify the ${LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} Launchpad payment before creating a mainnet token.` });
+      setStatus({ state: 'error', message: t('launchpad.form.submitVerifyPayment', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel }) });
       return;
     }
 
-    setStatus({ state: 'loading', message: `Waiting for Phantom approval on ${selectedNetwork.label}. Review every field before signing.` });
+    setStatus({ state: 'loading', message: t('launchpad.form.submitWaitingApproval', { network: selectedNetwork.label }) });
     try {
       const result = await createLaunchpadSplToken({
         walletAddress,
@@ -3584,7 +3596,7 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
       });
       const profile = onCreateProfile(launchpadProfileFromForm(form, walletAddress, result, network));
       setCreated({ ...result, projectId: profile.id });
-      setStatus({ state: 'success', message: `${selectedNetwork.label} token created and KHAN Trust profile generated.` });
+      setStatus({ state: 'success', message: t('launchpad.form.submitSuccess', { network: selectedNetwork.label }) });
     } catch (error) {
       setStatus({ state: 'error', message: launchpadErrorMessage(error) });
     }
@@ -3592,79 +3604,78 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
 
   const copyValue = async (value, label) => {
     await navigator.clipboard.writeText(value);
-    setStatus({ state: 'success', message: `${label} copied.` });
+    setStatus({ state: 'success', message: t('launchpad.form.copiedSuffix', { label }) });
   };
 
   return (
     <section className="page-section launchpad-page">
-      <SectionTitle icon={Sparkles} eyebrow={isMainnet ? 'Mainnet guarded mode' : 'Devnet default mode'} title="KHAN Launchpad" />
-      <p className="section-subtitle">Create, verify, score, and share Solana token profiles through KHAN Trust.</p>
+      <SectionTitle icon={Sparkles} eyebrow={isMainnet ? t('launchpad.eyebrowMainnet') : t('launchpad.eyebrowDevnet')} title={t('launchpad.title')} />
+      <p className="section-subtitle">{t('launchpad.subtitle')}</p>
 
       <div className="launchpad-warning-grid">
-        <WarningBox text={isMainnet ? `Mainnet token creation requires a separate ${LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} Launchpad payment plus real SOL transaction fees.` : 'Devnet token creation is free and for testing only.'} tone={isMainnet ? 'danger' : 'warning'} />
-        <WarningBox text="KHAN Launchpad does not guarantee profit, listing, liquidity, or token success." />
-        <WarningBox text="Never share your seed phrase or private key." />
-        <WarningBox text="Token creation is irreversible. Verify all metadata before approving the Phantom transaction." />
-        <WarningBox text="Creating a token does not create liquidity." />
-        <WarningBox text="People cannot trade your token unless liquidity/listing is added later." />
-        <WarningBox text="KHAN Launchpad does not provide financial advice." />
-        <WarningBox text="On-chain metadata upload is coming soon. This version creates the SPL token and KHAN Trust profile." />
+        <WarningBox text={isMainnet ? t('launchpad.warnings.networkMainnet', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel }) : t('launchpad.warnings.networkDevnet')} tone={isMainnet ? 'danger' : 'warning'} />
+        <WarningBox text={t('launchpad.warnings.noGuarantee')} />
+        <WarningBox text={t('launchpad.warnings.seedPhrase')} />
+        <WarningBox text={t('launchpad.warnings.irreversible')} />
+        <WarningBox text={t('launchpad.warnings.noLiquidity')} />
+        <WarningBox text={t('launchpad.warnings.noTrading')} />
+        <WarningBox text={t('launchpad.warnings.noAdvice')} />
+        <WarningBox text={t('launchpad.warnings.metadataComingSoon')} />
       </div>
 
       <div className="launchpad-network-panel">
         <div>
-          <strong>Network</strong>
-          <p>{isMainnet ? `Mainnet creates a real Solana token. KHAN Launchpad charges ${LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} per mainnet token creation, separate from KHAN Trust Premium.` : 'Devnet remains the default free testing mode.'}</p>
+          <strong>{t('launchpad.network.label')}</strong>
+          <p>{isMainnet ? t('launchpad.network.mainnetDescription', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel }) : t('launchpad.network.devnetDescription')}</p>
         </div>
-        <div className="network-selector" role="group" aria-label="Launchpad network">
-          <button className={network === 'devnet' ? 'active' : ''} type="button" onClick={() => updateNetwork('devnet')}>Devnet</button>
-          <button className={isMainnet ? 'active mainnet' : 'mainnet'} type="button" onClick={() => updateNetwork('mainnet-beta')}>Mainnet</button>
+        <div className="network-selector" role="group" aria-label={t('launchpad.network.ariaLabel')}>
+          <button className={network === 'devnet' ? 'active' : ''} type="button" onClick={() => updateNetwork('devnet')}>{t('launchpad.network.devnet')}</button>
+          <button className={isMainnet ? 'active mainnet' : 'mainnet'} type="button" onClick={() => updateNetwork('mainnet-beta')}>{t('launchpad.network.mainnet')}</button>
         </div>
         <div className="launchpad-network-row">
           <span className={`network-badge ${isMainnet ? 'danger' : 'active'}`}>{selectedNetwork.label}</span>
-          <span className="network-badge">{isMainnet ? `${LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} Launchpad payment` : `${LAUNCHPAD_PAYMENT_MODEL.devnetPrice} Launchpad payment`}</span>
-          <span className="network-badge disabled">Phantom approval required</span>
+          <span className="network-badge">{t('launchpad.network.launchpadPayment', { price: isMainnet ? LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel : LAUNCHPAD_PAYMENT_MODEL.devnetPrice })}</span>
+          <span className="network-badge disabled">{t('launchpad.network.phantomRequired')}</span>
         </div>
       </div>
 
       <section className="launchpad-payment-panel">
-        <SectionTitle icon={WalletCards} eyebrow="Payment Model" title="Launchpad payments are separate" />
+        <SectionTitle icon={WalletCards} eyebrow={t('launchpad.payment.eyebrow')} title={t('launchpad.payment.title')} />
         <div className="launchpad-payment-grid">
           <div>
-            <span>Devnet token creation</span>
+            <span>{t('launchpad.payment.devnetLabel')}</span>
             <strong>{LAUNCHPAD_PAYMENT_MODEL.devnetPrice}</strong>
-            <p>Use devnet to test token metadata, wallet signing, and KHAN Trust profile generation.</p>
+            <p>{t('launchpad.payment.devnetText')}</p>
           </div>
           <div>
-            <span>Mainnet token creation</span>
+            <span>{t('launchpad.payment.mainnetLabel')}</span>
             <strong>{LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel}</strong>
-            <p>Mainnet creation requires Launchpad payment and real SOL network fees. Premium plans do not include this charge.</p>
+            <p>{t('launchpad.payment.mainnetText')}</p>
           </div>
         </div>
-        <p className="inline-note">{LAUNCHPAD_PAYMENT_MODEL.note} Payment checkout can be connected later without changing the devnet flow.</p>
+        <p className="inline-note">{t('launchpad.payment.note', { note: LAUNCHPAD_PAYMENT_MODEL.note })}</p>
       </section>
 
       {isMainnet && (
         <section className="launchpad-payment-panel">
-          <SectionTitle icon={Lock} eyebrow="Mainnet Unlock" title="Verify Launchpad payment" />
+          <SectionTitle icon={Lock} eyebrow={t('launchpad.unlock.eyebrow')} title={t('launchpad.unlock.title')} />
           <p className="launchpad-message">
-            Pay {LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} to the configured KHAN payment wallet, submit the transaction hash,
-            and unlock mainnet token creation after verification.
+            {t('launchpad.unlock.message', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel })}
           </p>
           {walletConfigured ? (
             <div className="wallet-copy-box">
-              <span>KHAN payment wallet</span>
+              <span>{t('launchpad.unlock.walletLabel')}</span>
               <strong>{CRYPTO_PAYMENT_WALLET}</strong>
               <button className="secondary-button" type="button" onClick={copyLaunchpadPaymentWallet}>
-                <Copy size={17} /> {launchpadPaymentCopied ? 'Copied' : 'Copy wallet address'}
+                <Copy size={17} /> {launchpadPaymentCopied ? t('common.copied') : t('pricing.payment.copyWallet')}
               </button>
             </div>
           ) : (
-            <p className="inline-note">Crypto payments are not configured yet.</p>
+            <p className="inline-note">{t('launchpad.unlock.notConfigured')}</p>
           )}
           {!verificationConfigured && <p className="inline-note">{solanaUnavailableMessage()}</p>}
           <label className="form-field transaction-field">
-            <span>Launchpad payment transaction hash</span>
+            <span>{t('launchpad.unlock.hashLabel')}</span>
             <input
               value={launchpadPaymentHash}
               onChange={(event) => {
@@ -3672,7 +3683,7 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
                 setLaunchpadPaymentStatus('idle');
                 setLaunchpadPaymentMessage('');
               }}
-              placeholder="Paste the $9 mainnet payment transaction hash"
+              placeholder={t('launchpad.unlock.hashPlaceholder', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel })}
               disabled={!walletConfigured || launchpadPaymentStatus === 'verifying'}
             />
           </label>
@@ -3683,15 +3694,15 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
               onClick={verifyLaunchpadPayment}
               disabled={!walletConfigured || launchpadPaymentStatus === 'verifying'}
             >
-              {launchpadPaymentStatus === 'verifying' ? 'Verifying...' : 'Verify Launchpad Payment'}
+              {launchpadPaymentStatus === 'verifying' ? t('launchpad.unlock.verifying') : t('launchpad.unlock.verifyButton')}
             </button>
             <span className={launchpadPaymentVerified ? 'network-badge active' : 'network-badge danger'}>
-              {launchpadPaymentVerified ? 'Mainnet unlocked' : 'Mainnet locked'}
+              {launchpadPaymentVerified ? t('launchpad.unlock.unlocked') : t('launchpad.unlock.locked')}
             </span>
           </div>
           {(launchpadPaymentMessage || launchpadPaymentStatus !== 'idle') && (
             <p className={launchpadPaymentVerified ? 'inline-note verify-success' : 'inline-note'}>
-              {launchpadPaymentMessage || VERIFY_STATUS_MESSAGE[launchpadPaymentStatus] || VERIFY_STATUS_MESSAGE.idle}
+              {launchpadPaymentMessage || t(verifyStatusMessageKey(launchpadPaymentStatus))}
             </p>
           )}
         </section>
@@ -3699,41 +3710,41 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
 
       <div className="launchpad-wallet-card">
         <div>
-          <strong>Phantom Wallet</strong>
-          <p>{walletAddress ? `Connected: ${walletAddress}` : `Connect Phantom to sign the ${selectedNetwork.label.toLowerCase()} mint transaction. KHAN Trust never asks for private keys.`}</p>
-          <p>Detected mode: {selectedNetwork.label}</p>
+          <strong>{t('launchpad.wallet.title')}</strong>
+          <p>{walletAddress ? t('launchpad.wallet.connected', { address: walletAddress }) : t('launchpad.wallet.connectPrompt', { network: selectedNetwork.label.toLowerCase() })}</p>
+          <p>{t('launchpad.wallet.detectedMode', { network: selectedNetwork.label })}</p>
           {!phantomProvider() && (
-            <a href="https://phantom.app/" target="_blank" rel="noreferrer">Install Phantom Wallet</a>
+            <a href="https://phantom.app/" target="_blank" rel="noreferrer">{t('launchpad.wallet.install')}</a>
           )}
           {walletMessage && <p className="launchpad-message">{walletMessage}</p>}
         </div>
         <button className="primary-button" type="button" onClick={connectWallet}>
-          <WalletCards size={18} /> {walletAddress ? formatWalletAddress(walletAddress) : 'Connect Phantom'}
+          <WalletCards size={18} /> {walletAddress ? formatWalletAddress(walletAddress) : t('launchpad.wallet.connect')}
         </button>
       </div>
 
       <div className="launchpad-layout">
         <form className="launchpad-form add-form" onSubmit={createToken}>
-          <FormField label="Token Name" value={form.name} onChange={(value) => update('name', value)} required />
-          <FormField label="Symbol" value={form.symbol} onChange={(value) => update('symbol', value)} required placeholder="Max 10 characters" />
-          <FormField type="number" label="Total Supply" value={form.totalSupply} onChange={(value) => update('totalSupply', value)} required />
-          <FormField type="number" label="Decimals" value={form.decimals} onChange={(value) => update('decimals', value)} required />
-          <FormField label="Logo URL" value={form.logoUrl} onChange={(value) => update('logoUrl', value)} />
-          <FormField label="Website" value={form.website} onChange={(value) => update('website', value)} />
-          <FormField label="X/Twitter" value={form.twitter} onChange={(value) => update('twitter', value)} />
-          <FormField label="Telegram" value={form.telegram} onChange={(value) => update('telegram', value)} />
-          <FormField label="Founder Status" value={form.founderStatus} onChange={(value) => update('founderStatus', value)} placeholder="Public founder, known team, anonymous..." />
-          <FormField type="number" label="Community Size" value={form.communitySize} onChange={(value) => update('communitySize', value)} />
+          <FormField label={t('launchpad.form.name')} value={form.name} onChange={(value) => update('name', value)} required />
+          <FormField label={t('launchpad.form.symbol')} value={form.symbol} onChange={(value) => update('symbol', value)} required placeholder={t('launchpad.form.symbolPlaceholder')} />
+          <FormField type="number" label={t('launchpad.form.totalSupply')} value={form.totalSupply} onChange={(value) => update('totalSupply', value)} required />
+          <FormField type="number" label={t('launchpad.form.decimals')} value={form.decimals} onChange={(value) => update('decimals', value)} required />
+          <FormField label={t('launchpad.form.logoUrl')} value={form.logoUrl} onChange={(value) => update('logoUrl', value)} />
+          <FormField label={t('launchpad.form.website')} value={form.website} onChange={(value) => update('website', value)} />
+          <FormField label={t('launchpad.form.twitter')} value={form.twitter} onChange={(value) => update('twitter', value)} />
+          <FormField label={t('launchpad.form.telegram')} value={form.telegram} onChange={(value) => update('telegram', value)} />
+          <FormField label={t('launchpad.form.founderStatus')} value={form.founderStatus} onChange={(value) => update('founderStatus', value)} placeholder={t('launchpad.form.founderStatusPlaceholder')} />
+          <FormField type="number" label={t('launchpad.form.communitySize')} value={form.communitySize} onChange={(value) => update('communitySize', value)} />
           <label className="form-field wide">
-            <span>Description</span>
+            <span>{t('launchpad.form.description')}</span>
             <textarea value={form.description} onChange={(event) => update('description', event.target.value)} />
           </label>
           <label className="form-field wide">
-            <span>Roadmap</span>
-            <textarea value={form.roadmapText} onChange={(event) => update('roadmapText', event.target.value)} placeholder="One milestone per line" />
+            <span>{t('launchpad.form.roadmap')}</span>
+            <textarea value={form.roadmapText} onChange={(event) => update('roadmapText', event.target.value)} placeholder={t('launchpad.form.roadmapPlaceholder')} />
           </label>
           <label className="form-field wide">
-            <span>Risk Notes</span>
+            <span>{t('launchpad.form.riskNotes')}</span>
             <textarea value={form.riskNotes} onChange={(event) => update('riskNotes', event.target.value)} />
           </label>
 
@@ -3745,18 +3756,18 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
           )}
           <div className="launchpad-inline-warning wide">
             <AlertTriangle size={18} />
-            <span>{isMainnet ? `${LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} Launchpad payment is required for mainnet token creation. It still does not create liquidity, trading, or listings.` : 'Devnet token creation is free. Devnet tokens have no real value and do not create liquidity or listings.'}</span>
+            <span>{isMainnet ? t('launchpad.form.mainnetCostWarning', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel }) : t('launchpad.form.devnetFreeWarning')}</span>
           </div>
 
           {isMainnet && (
             <div className="mainnet-confirmations wide">
-              <strong>Mainnet confirmations</strong>
-              <ConfirmationBox checked={mainnetConfirmations.realToken} onChange={(checked) => updateConfirmation('realToken', checked)} text="I understand this creates a real blockchain token." />
-              <ConfirmationBox checked={mainnetConfirmations.launchpadPayment} onChange={(checked) => updateConfirmation('launchpadPayment', checked)} text={`I understand mainnet token creation requires a separate ${LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel} KHAN Launchpad payment.`} />
-              <ConfirmationBox checked={mainnetConfirmations.realFees} onChange={(checked) => updateConfirmation('realFees', checked)} text="I understand real SOL fees may be charged." />
-              <ConfirmationBox checked={mainnetConfirmations.verifiedMetadata} onChange={(checked) => updateConfirmation('verifiedMetadata', checked)} text="I verified token name, symbol, decimals, and supply." />
-              <ConfirmationBox checked={mainnetConfirmations.noGuarantee} onChange={(checked) => updateConfirmation('noGuarantee', checked)} text="I understand KHAN Launchpad does not guarantee profit, liquidity, listing, or success." />
-              <ConfirmationBox checked={mainnetConfirmations.seedPhrase} onChange={(checked) => updateConfirmation('seedPhrase', checked)} text="I will never share my seed phrase or private key." />
+              <strong>{t('launchpad.form.confirmationsTitle')}</strong>
+              <ConfirmationBox checked={mainnetConfirmations.realToken} onChange={(checked) => updateConfirmation('realToken', checked)} text={t('launchpad.form.confirmRealToken')} />
+              <ConfirmationBox checked={mainnetConfirmations.launchpadPayment} onChange={(checked) => updateConfirmation('launchpadPayment', checked)} text={t('launchpad.form.confirmLaunchpadPayment', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel })} />
+              <ConfirmationBox checked={mainnetConfirmations.realFees} onChange={(checked) => updateConfirmation('realFees', checked)} text={t('launchpad.form.confirmRealFees')} />
+              <ConfirmationBox checked={mainnetConfirmations.verifiedMetadata} onChange={(checked) => updateConfirmation('verifiedMetadata', checked)} text={t('launchpad.form.confirmVerifiedMetadata')} />
+              <ConfirmationBox checked={mainnetConfirmations.noGuarantee} onChange={(checked) => updateConfirmation('noGuarantee', checked)} text={t('launchpad.form.confirmNoGuarantee')} />
+              <ConfirmationBox checked={mainnetConfirmations.seedPhrase} onChange={(checked) => updateConfirmation('seedPhrase', checked)} text={t('launchpad.form.confirmSeedPhrase')} />
             </div>
           )}
 
@@ -3765,7 +3776,7 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
           )}
 
           <button className="primary-button wide-button" type="submit" disabled={!walletAddress || status.state === 'loading' || (isMainnet && (!mainnetReady || !mainnetUnlocked))}>
-            {status.state === 'loading' ? 'Awaiting Approval...' : isMainnet ? 'Create Real Mainnet Token' : 'Create Devnet Token'}
+            {status.state === 'loading' ? t('launchpad.form.submitWaiting') : isMainnet ? t('launchpad.form.submitMainnet') : t('launchpad.form.submitDevnet')}
           </button>
         </form>
 
@@ -3774,26 +3785,26 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
 
       {created && (
         <section className="launchpad-success-card">
-          <SectionTitle icon={BadgeCheck} eyebrow="Created" title={`${launchpadNetworkConfig(created.network).label} Token Created`} />
+          <SectionTitle icon={BadgeCheck} eyebrow={t('launchpad.success.eyebrowCreated')} title={t('launchpad.success.titleTokenCreated', { network: launchpadNetworkConfig(created.network).label })} />
           <div className="success-grid">
-            <InfoItem label="Mint Address" value={created.mintAddress} />
-            <InfoItem label="Transaction Signature" value={created.signature} />
+            <InfoItem label={t('launchpad.success.mintAddress')} value={created.mintAddress} />
+            <InfoItem label={t('launchpad.success.transactionSignature')} value={created.signature} />
           </div>
           <div className="hero-actions">
             <button className="primary-button" type="button" onClick={() => navigate(`project/${created.projectId}`)}>
-              Open Trust Profile <ArrowRight size={18} />
+              {t('launchpad.success.openTrustProfile')} <ArrowRight size={18} />
             </button>
-            <button className="secondary-button" type="button" onClick={() => copyValue(created.mintAddress, 'Mint address')}>
-              <Copy size={18} /> Copy Mint Address
+            <button className="secondary-button" type="button" onClick={() => copyValue(created.mintAddress, t('launchpad.success.mintAddress'))}>
+              <Copy size={18} /> {t('launchpad.success.copyMintAddress')}
             </button>
-            <button className="secondary-button" type="button" onClick={() => copyValue(created.signature, 'Transaction signature')}>
-              <Copy size={18} /> Copy Transaction Signature
+            <button className="secondary-button" type="button" onClick={() => copyValue(created.signature, t('launchpad.success.transactionSignature'))}>
+              <Copy size={18} /> {t('launchpad.success.copyTransactionSignature')}
             </button>
             <a className="secondary-button" href={solanaExplorerUrl('address', created.mintAddress, created.network)} target="_blank" rel="noreferrer">
-              <ExternalLink size={18} /> Open Mint on Solana Explorer
+              <ExternalLink size={18} /> {t('launchpad.success.openMintExplorer')}
             </a>
             <a className="secondary-button" href={solanaExplorerUrl('tx', created.signature, created.network)} target="_blank" rel="noreferrer">
-              <ExternalLink size={18} /> Open Transaction on Solana Explorer
+              <ExternalLink size={18} /> {t('launchpad.success.openTxExplorer')}
             </a>
           </div>
         </section>
@@ -3804,23 +3815,23 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
 
 function validateLaunchpadForm(form) {
   const errors = [];
-  if (!form.name.trim()) errors.push('Token name is required.');
-  if (!form.symbol.trim()) errors.push('Symbol is required.');
-  if (form.symbol.trim().length > 10) errors.push('Symbol must be 10 characters or fewer.');
-  if (Number(form.totalSupply) <= 0) errors.push('Total supply must be positive.');
+  if (!form.name.trim()) errors.push(translate('launchpad.form.errorNameRequired'));
+  if (!form.symbol.trim()) errors.push(translate('launchpad.form.errorSymbolRequired'));
+  if (form.symbol.trim().length > 10) errors.push(translate('launchpad.form.errorSymbolLength'));
+  if (Number(form.totalSupply) <= 0) errors.push(translate('launchpad.form.errorSupplyPositive'));
   const decimals = Number(form.decimals);
-  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 9) errors.push('Decimals must be between 0 and 9.');
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 9) errors.push(translate('launchpad.form.errorDecimalsRange'));
   return errors;
 }
 
 function launchpadErrorMessage(error = {}) {
   const message = error.message || String(error);
   const lower = message.toLowerCase();
-  if (lower.includes('not installed')) return 'Phantom is not installed. Use the Install Phantom Wallet link to add it.';
-  if (lower.includes('reject') || lower.includes('denied') || lower.includes('cancel')) return 'Transaction rejected in Phantom. Nothing was created.';
-  if (lower.includes('insufficient') || lower.includes('0x1')) return 'Insufficient SOL for this network. Add SOL to your Phantom wallet and try again.';
-  if (lower.includes('blockhash') || lower.includes('network') || lower.includes('fetch') || lower.includes('rpc')) return 'Solana RPC failed. Wait a moment and try again.';
-  return message || 'Token creation failed. Review the form and try again.';
+  if (lower.includes('not installed')) return translate('launchpad.errors.notInstalled');
+  if (lower.includes('reject') || lower.includes('denied') || lower.includes('cancel')) return translate('launchpad.errors.rejected');
+  if (lower.includes('insufficient') || lower.includes('0x1')) return translate('launchpad.errors.insufficientFunds');
+  if (lower.includes('blockhash') || lower.includes('network') || lower.includes('fetch') || lower.includes('rpc')) return translate('launchpad.errors.rpcFailed');
+  return message || translate('launchpad.errors.generic');
 }
 
 function WarningBox({ text, tone = 'warning' }) {
@@ -3852,33 +3863,34 @@ function InfoItem({ label, value }) {
 }
 
 function LaunchpadPreview({ project, form, network }) {
+  const { t } = useTranslation();
   const config = launchpadNetworkConfig(network);
   const roadmapLines = form.roadmapText.split('\n').map((line) => line.trim()).filter(Boolean);
   return (
     <aside className="launchpad-preview">
-      <SectionTitle icon={Eye} eyebrow="Preview" title="Trust Profile Preview" />
+      <SectionTitle icon={Eye} eyebrow={t('launchpad.preview.eyebrow')} title={t('launchpad.preview.title')} />
       <div className="preview-token-top">
-        {form.logoUrl ? <img src={form.logoUrl} alt={`${form.name || 'Token'} logo preview`} /> : <div className="preview-logo-placeholder">Logo</div>}
+        {form.logoUrl ? <img src={form.logoUrl} alt={t('launchpad.preview.logoAlt', { name: form.name || t('launchpad.preview.defaultName') })} /> : <div className="preview-logo-placeholder">{t('launchpad.preview.logoPlaceholder')}</div>}
         <div>
-          <h3>{form.name || 'Token name'}</h3>
-          <span>{form.symbol || 'SYMBOL'}</span>
+          <h3>{form.name || t('launchpad.preview.defaultName')}</h3>
+          <span>{form.symbol || t('launchpad.preview.defaultSymbol')}</span>
         </div>
       </div>
       <div className="preview-score-row">
         <ScoreCircle score={project.trustScore} />
         <div>
-          <strong>Estimated KHAN Trust Score</strong>
-          <p>{project.trustScore}/100 before {config.label.toLowerCase()} mint creation</p>
+          <strong>{t('launchpad.preview.estimatedScore')}</strong>
+          <p>{t('launchpad.preview.beforeMint', { score: project.trustScore, network: config.label.toLowerCase() })}</p>
         </div>
       </div>
       <div className="preview-list">
-        <PreviewRow label="Supply" value={form.totalSupply || 'Not set'} />
-        <PreviewRow label="Decimals" value={form.decimals || '9'} />
-        <PreviewRow label="Website" value={displayValue(form.website)} />
-        <PreviewRow label="X/Twitter" value={displayValue(form.twitter)} />
-        <PreviewRow label="Telegram" value={displayValue(form.telegram)} />
-        <PreviewRow label="Founder status" value={displayValue(form.founderStatus)} />
-        <PreviewRow label="Roadmap" value={roadmapLines.length ? roadmapLines.join(', ') : 'Not available'} />
+        <PreviewRow label={t('launchpad.preview.supply')} value={form.totalSupply || t('common.notSet')} />
+        <PreviewRow label={t('launchpad.preview.decimals')} value={form.decimals || '9'} />
+        <PreviewRow label={t('launchpad.form.website')} value={displayValue(form.website)} />
+        <PreviewRow label={t('launchpad.form.twitter')} value={displayValue(form.twitter)} />
+        <PreviewRow label={t('launchpad.form.telegram')} value={displayValue(form.telegram)} />
+        <PreviewRow label={t('launchpad.preview.founderStatus')} value={displayValue(form.founderStatus)} />
+        <PreviewRow label={t('launchpad.preview.roadmap')} value={roadmapLines.length ? roadmapLines.join(', ') : t('common.notAvailable')} />
       </div>
     </aside>
   );
@@ -3894,6 +3906,7 @@ function PreviewRow({ label, value }) {
 }
 
 function AddProjectPage({ onAdd, navigate }) {
+  const { t } = useTranslation();
   const [form, setForm] = useState({
     name: '',
     ticker: '',
@@ -3916,7 +3929,7 @@ function AddProjectPage({ onAdd, navigate }) {
 
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
   const lookupToken = async () => {
-    setLookupState({ status: 'loading', message: 'Looking up Solana token data...' });
+    setLookupState({ status: 'loading', message: t('addProject.lookup.checking') });
     try {
       const data = await lookupSolanaToken(form.contract);
       setForm((current) => ({
@@ -3926,15 +3939,15 @@ function AddProjectPage({ onAdd, navigate }) {
         ticker: data.ticker || current.ticker,
         description: current.description || data.description,
       }));
-      setLookupState({ status: 'success', message: 'Live Solana data added to this profile.' });
+      setLookupState({ status: 'success', message: t('addProject.lookup.success') });
     } catch (error) {
-      setLookupState({ status: 'error', message: error.message || 'Token lookup failed.' });
+      setLookupState({ status: 'error', message: error.message || t('addProject.lookup.failed') });
     }
   };
   const submit = (event) => {
     event.preventDefault();
     if (!form.realData) {
-      setLookupState({ status: 'error', message: 'Run Solana token lookup before saving. KHAN Trust only saves real live-token profiles.' });
+      setLookupState({ status: 'error', message: t('addProject.submitErrorNoData') });
       return;
     }
     onAdd(form);
@@ -3942,19 +3955,17 @@ function AddProjectPage({ onAdd, navigate }) {
 
   return (
     <section className="page-section">
-      <SectionTitle icon={Plus} eyebrow="Submit" title="Add Project to KHAN Trust" />
-      <p className="section-subtitle">
-        Add an existing crypto token or project to generate a KHAN Trust risk profile.
-      </p>
+      <SectionTitle icon={Plus} eyebrow={t('addProject.eyebrow')} title={t('addProject.title')} />
+      <p className="section-subtitle">{t('addProject.subtitle')}</p>
       <div className="profile-only-notice" role="note">
         <Info size={18} />
-        <p>This page does not create a blockchain token. It only adds a project profile to KHAN Trust for scoring, review, and sharing.</p>
+        <p>{t('addProject.notice')}</p>
       </div>
       <form className="add-form" onSubmit={submit}>
-        <FormField label="Project name" value={form.name} onChange={(value) => update('name', value)} required />
-        <FormField label="Ticker" value={form.ticker} onChange={(value) => update('ticker', value)} required />
+        <FormField label={t('addProject.fields.name')} value={form.name} onChange={(value) => update('name', value)} required />
+        <FormField label={t('addProject.fields.ticker')} value={form.ticker} onChange={(value) => update('ticker', value)} required />
         <label className="form-field">
-          <span>Chain</span>
+          <span>{t('addProject.fields.chain')}</span>
           <select value={form.chain} onChange={(event) => update('chain', event.target.value)}>
             <option>Solana</option>
             <option>Ethereum</option>
@@ -3963,48 +3974,48 @@ function AddProjectPage({ onAdd, navigate }) {
             <option>Other</option>
           </select>
         </label>
-        <FormField label="Contract address" value={form.contract} onChange={(value) => update('contract', value)} />
+        <FormField label={t('addProject.fields.contract')} value={form.contract} onChange={(value) => update('contract', value)} />
         <div className="lookup-panel">
           <button className="secondary-button" type="button" onClick={lookupToken} disabled={lookupState.status === 'loading'}>
-            <Search size={18} /> {lookupState.status === 'loading' ? 'Looking up...' : 'Lookup Solana Token'}
+            <Search size={18} /> {lookupState.status === 'loading' ? t('addProject.lookup.looking') : t('addProject.lookup.button')}
           </button>
           <p className={lookupState.status === 'error' ? 'lookup-message error' : 'lookup-message'}>
-            {lookupState.message || 'Paste an existing token contract address. KHAN Trust will load available live data and merge it with your added metadata.'}
+            {lookupState.message || t('addProject.lookup.hint')}
           </p>
         </div>
-        <FormField label="Website" value={form.website} onChange={(value) => update('website', value)} />
-        <FormField label="X/Twitter" value={form.twitter} onChange={(value) => update('twitter', value)} />
-        <FormField label="Telegram" value={form.telegram} onChange={(value) => update('telegram', value)} />
-        <FormField label="GitHub" value={form.github} onChange={(value) => update('github', value)} />
-        <FormField type="date" label="Launch date" value={form.launchDate} onChange={(value) => update('launchDate', value)} />
-        <FormField label="Founder status" value={form.founderStatus} onChange={(value) => update('founderStatus', value)} placeholder="Public founder, anonymous team, doxxed team..." />
-        <FormField type="number" label="Community size" value={form.communitySize} onChange={(value) => update('communitySize', value)} />
-        <FormField type="number" label="Holder count" value={form.holderCount} onChange={(value) => update('holderCount', value)} />
+        <FormField label={t('addProject.fields.website')} value={form.website} onChange={(value) => update('website', value)} />
+        <FormField label={t('addProject.fields.twitter')} value={form.twitter} onChange={(value) => update('twitter', value)} />
+        <FormField label={t('addProject.fields.telegram')} value={form.telegram} onChange={(value) => update('telegram', value)} />
+        <FormField label={t('addProject.fields.github')} value={form.github} onChange={(value) => update('github', value)} />
+        <FormField type="date" label={t('addProject.fields.launchDate')} value={form.launchDate} onChange={(value) => update('launchDate', value)} />
+        <FormField label={t('addProject.fields.founderStatus')} value={form.founderStatus} onChange={(value) => update('founderStatus', value)} placeholder={t('addProject.fields.founderStatusPlaceholder')} />
+        <FormField type="number" label={t('addProject.fields.communitySize')} value={form.communitySize} onChange={(value) => update('communitySize', value)} />
+        <FormField type="number" label={t('addProject.fields.holderCount')} value={form.holderCount} onChange={(value) => update('holderCount', value)} />
         {form.realData && <RealDataPreview data={form.realData} />}
         <label className="form-field wide">
-          <span>Description</span>
+          <span>{t('addProject.fields.description')}</span>
           <textarea value={form.description} onChange={(event) => update('description', event.target.value)} required />
         </label>
         <label className="form-field wide">
-          <span>Roadmap text</span>
-          <textarea value={form.roadmapText} onChange={(event) => update('roadmapText', event.target.value)} placeholder="One phase per line" />
+          <span>{t('addProject.fields.roadmapText')}</span>
+          <textarea value={form.roadmapText} onChange={(event) => update('roadmapText', event.target.value)} placeholder={t('addProject.fields.roadmapPlaceholder')} />
         </label>
         <label className="form-field wide">
-          <span>Risk notes</span>
+          <span>{t('addProject.fields.riskNotes')}</span>
           <textarea value={form.riskNotes} onChange={(event) => update('riskNotes', event.target.value)} />
         </label>
         <button className="primary-button wide-button" type="submit">
-          Generate Trust Profile <ArrowRight size={18} />
+          {t('addProject.submit')} <ArrowRight size={18} />
         </button>
       </form>
       <section className="launchpad-card" aria-label="KHAN Launchpad devnet MVP">
         <div>
-          <span className="launchpad-kicker">Devnet tool</span>
-          <h3>KHAN Launchpad — Devnet MVP</h3>
-          <p>Create Solana devnet test tokens with Phantom approval, verify metadata, and instantly generate a KHAN Trust profile.</p>
+          <span className="launchpad-kicker">{t('addProject.devnetTool')}</span>
+          <h3>{t('addProject.devnetTitle')}</h3>
+          <p>{t('addProject.devnetText')}</p>
         </div>
         <button className="secondary-button launchpad-button" type="button" onClick={() => navigate('launchpad')}>
-          Open Launchpad
+          {t('addProject.openLaunchpad')}
         </button>
       </section>
     </section>
@@ -4042,32 +4053,33 @@ function EditProjectModal({ project, onSave, onClose }) {
     });
   };
 
+  const { t } = useTranslation();
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Edit Project">
       <form className="modal-panel edit-modal" onSubmit={submit}>
         <button className="close-button" type="button" onClick={onClose} aria-label="Close edit project"><X size={20} /></button>
-        <SectionTitle icon={Plus} eyebrow="Edit" title={`Update ${project.name}`} />
+        <SectionTitle icon={Plus} eyebrow={t('editModal.eyebrow')} title={t('editModal.title', { name: project.name })} />
         <div className="add-form">
-          <FormField label="Website" value={form.website} onChange={(value) => update('website', value)} />
-          <FormField label="X/Twitter" value={form.twitter} onChange={(value) => update('twitter', value)} />
-          <FormField label="Telegram" value={form.telegram} onChange={(value) => update('telegram', value)} />
-          <FormField label="GitHub" value={form.github} onChange={(value) => update('github', value)} />
-          <FormField label="Founder status" value={form.founderStatus} onChange={(value) => update('founderStatus', value)} placeholder="Public founder, anonymous founder, known team..." />
-          <FormField type="number" label="Community size" value={form.communitySize} onChange={(value) => update('communitySize', value)} />
+          <FormField label={t('verificationModal.fields.website')} value={form.website} onChange={(value) => update('website', value)} />
+          <FormField label={t('addProject.fields.twitter')} value={form.twitter} onChange={(value) => update('twitter', value)} />
+          <FormField label={t('addProject.fields.telegram')} value={form.telegram} onChange={(value) => update('telegram', value)} />
+          <FormField label={t('addProject.fields.github')} value={form.github} onChange={(value) => update('github', value)} />
+          <FormField label={t('addProject.fields.founderStatus')} value={form.founderStatus} onChange={(value) => update('founderStatus', value)} placeholder={t('addProject.fields.founderStatusPlaceholder')} />
+          <FormField type="number" label={t('addProject.fields.communitySize')} value={form.communitySize} onChange={(value) => update('communitySize', value)} />
           <label className="form-field wide">
-            <span>Description</span>
+            <span>{t('addProject.fields.description')}</span>
             <textarea value={form.description} onChange={(event) => update('description', event.target.value)} />
           </label>
           <label className="form-field wide">
-            <span>Roadmap</span>
-            <textarea value={form.roadmapText} onChange={(event) => update('roadmapText', event.target.value)} placeholder="One phase per line" />
+            <span>{t('launchpad.form.roadmap')}</span>
+            <textarea value={form.roadmapText} onChange={(event) => update('roadmapText', event.target.value)} placeholder={t('addProject.fields.roadmapPlaceholder')} />
           </label>
           <label className="form-field wide">
-            <span>Risk notes</span>
+            <span>{t('addProject.fields.riskNotes')}</span>
             <textarea value={form.riskNotes} onChange={(event) => update('riskNotes', event.target.value)} />
           </label>
           <button className="primary-button wide-button" type="submit">
-            Save Updates <ArrowRight size={18} />
+            {t('editModal.save')} <ArrowRight size={18} />
           </button>
         </div>
       </form>
@@ -4076,6 +4088,7 @@ function EditProjectModal({ project, onSave, onClose }) {
 }
 
 function VerificationRequestModal({ project, onClose, onSubmitted }) {
+  const { t } = useTranslation();
   const [form, setForm] = useState({
     projectName: project.name || '',
     contract: project.contract || '',
@@ -4093,24 +4106,24 @@ function VerificationRequestModal({ project, onClose, onSubmitted }) {
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
   const connectWallet = async () => {
-    setState({ status: 'loading', message: 'Connecting Phantom wallet...' });
+    setState({ status: 'loading', message: t('verificationModal.statusConnecting') });
     try {
       const address = await connectPhantomForVerification();
       setWallet(address);
       update('ownerWallet', address);
-      setState({ status: 'idle', message: 'Phantom wallet connected.' });
+      setState({ status: 'idle', message: t('verificationModal.statusConnected') });
     } catch (error) {
-      setState({ status: 'error', message: error.message || 'Could not connect Phantom wallet.' });
+      setState({ status: 'error', message: error.message || t('verificationModal.statusConnectFailed') });
     }
   };
 
   const signMessage = async () => {
     if (!wallet) {
-      setState({ status: 'error', message: 'Connect Phantom before signing.' });
+      setState({ status: 'error', message: t('verificationModal.statusConnectFirst') });
       return;
     }
     if (!form.contract.trim()) {
-      setState({ status: 'error', message: 'Enter the contract address before signing.' });
+      setState({ status: 'error', message: t('verificationModal.statusContractRequired') });
       return;
     }
     const ts = new Date().toISOString();
@@ -4120,28 +4133,28 @@ function VerificationRequestModal({ project, onClose, onSubmitted }) {
       walletAddress: wallet,
       timestamp: ts,
     });
-    setState({ status: 'loading', message: 'Waiting for Phantom signature...' });
+    setState({ status: 'loading', message: t('verificationModal.statusWaitingSignature') });
     try {
       const sig = await signVerificationMessage(message);
       setSignature(sig);
       setTimestamp(ts);
-      setState({ status: 'idle', message: 'Message signed. Ready to submit.' });
+      setState({ status: 'idle', message: t('verificationModal.statusSigned') });
     } catch (error) {
-      setState({ status: 'error', message: error.message || 'Signing failed or was rejected.' });
+      setState({ status: 'error', message: error.message || t('verificationModal.statusSignFailed') });
     }
   };
 
   const submit = async (event) => {
     event.preventDefault();
     if (!wallet || !signature || !timestamp) {
-      setState({ status: 'error', message: 'Connect Phantom and sign the verification message before submitting.' });
+      setState({ status: 'error', message: t('verificationModal.statusSubmitFirst') });
       return;
     }
     if (form.ownerWallet.trim() !== wallet) {
-      setState({ status: 'error', message: 'Owner wallet address must match the connected Phantom wallet.' });
+      setState({ status: 'error', message: t('verificationModal.statusWalletMismatch') });
       return;
     }
-    setState({ status: 'loading', message: 'Submitting verification request...' });
+    setState({ status: 'loading', message: t('verificationModal.statusSubmitting') });
     try {
       await submitVerificationRequest({
         projectId: project.id,
@@ -4156,10 +4169,10 @@ function VerificationRequestModal({ project, onClose, onSubmitted }) {
         timestamp,
         proofNote: form.proofNote,
       });
-      setState({ status: 'success', message: 'Verification request submitted. Status is now pending review.' });
+      setState({ status: 'success', message: t('verificationModal.statusSubmitted') });
       await onSubmitted();
     } catch (error) {
-      setState({ status: 'error', message: error.message || 'Could not submit verification request.' });
+      setState({ status: 'error', message: error.message || t('verificationModal.statusSubmitFailed') });
     }
   };
 
@@ -4167,29 +4180,27 @@ function VerificationRequestModal({ project, onClose, onSubmitted }) {
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Request Verification">
       <form className="modal-panel edit-modal" onSubmit={submit}>
         <button className="close-button" type="button" onClick={onClose} aria-label="Close verification request"><X size={20} /></button>
-        <SectionTitle icon={BadgeCheck} eyebrow="Verification" title={`Request verification for ${project.name}`} />
-        <p className="section-subtitle">
-          Prove ownership by connecting and signing with the project's wallet. KHAN Trust admins review every request manually.
-        </p>
+        <SectionTitle icon={BadgeCheck} eyebrow={t('verificationModal.eyebrow')} title={t('verificationModal.title', { name: project.name })} />
+        <p className="section-subtitle">{t('verificationModal.subtitle')}</p>
         <div className="add-form">
-          <FormField label="Project name" value={form.projectName} onChange={(value) => update('projectName', value)} required />
-          <FormField label="Contract address" value={form.contract} onChange={(value) => update('contract', value)} required />
-          <FormField label="Official website" value={form.website} onChange={(value) => update('website', value)} />
-          <FormField label="Official X/Twitter" value={form.twitter} onChange={(value) => update('twitter', value)} />
-          <FormField label="Official Telegram" value={form.telegram} onChange={(value) => update('telegram', value)} />
-          <FormField label="Owner wallet address" value={form.ownerWallet} onChange={(value) => update('ownerWallet', value)} required placeholder="Must match the connected Phantom wallet" />
+          <FormField label={t('verificationModal.fields.projectName')} value={form.projectName} onChange={(value) => update('projectName', value)} required />
+          <FormField label={t('verificationModal.fields.contract')} value={form.contract} onChange={(value) => update('contract', value)} required />
+          <FormField label={t('verificationModal.fields.website')} value={form.website} onChange={(value) => update('website', value)} />
+          <FormField label={t('verificationModal.fields.twitter')} value={form.twitter} onChange={(value) => update('twitter', value)} />
+          <FormField label={t('verificationModal.fields.telegram')} value={form.telegram} onChange={(value) => update('telegram', value)} />
+          <FormField label={t('verificationModal.fields.ownerWallet')} value={form.ownerWallet} onChange={(value) => update('ownerWallet', value)} required placeholder={t('verificationModal.fields.ownerWalletPlaceholder')} />
           <label className="form-field wide">
-            <span>Proof note / message</span>
-            <textarea value={form.proofNote} onChange={(event) => update('proofNote', event.target.value)} placeholder="Anything that helps KHAN Trust confirm ownership (team links, announcement, etc.)" />
+            <span>{t('verificationModal.fields.proofNote')}</span>
+            <textarea value={form.proofNote} onChange={(event) => update('proofNote', event.target.value)} placeholder={t('verificationModal.fields.proofNotePlaceholder')} />
           </label>
 
           <div className="verification-wallet-panel">
             <button className="secondary-button" type="button" onClick={connectWallet}>
-              <WalletCards size={18} /> {wallet ? 'Phantom Connected' : 'Connect Phantom Wallet'}
+              <WalletCards size={18} /> {wallet ? t('verificationModal.phantomConnected') : t('verificationModal.connectPhantom')}
             </button>
             {wallet && <span className="verification-wallet-address">{wallet}</span>}
             <button className="secondary-button" type="button" onClick={signMessage} disabled={!wallet}>
-              <BadgeCheck size={18} /> {signature ? 'Message Signed' : 'Sign Verification Message'}
+              <BadgeCheck size={18} /> {signature ? t('verificationModal.messageSigned') : t('verificationModal.signMessage')}
             </button>
           </div>
 
@@ -4198,7 +4209,7 @@ function VerificationRequestModal({ project, onClose, onSubmitted }) {
           )}
 
           <button className="primary-button wide-button" type="submit" disabled={state.status === 'loading' || state.status === 'success'}>
-            Submit Verification Request <ArrowRight size={18} />
+            {t('verificationModal.submit')} <ArrowRight size={18} />
           </button>
         </div>
       </form>
@@ -4207,6 +4218,7 @@ function VerificationRequestModal({ project, onClose, onSubmitted }) {
 }
 
 function AdminVerificationPage({ onReviewed }) {
+  const { t } = useTranslation();
   const [token, setToken] = useState(() => getStoredAdminToken());
   const [passcode, setPasscode] = useState('');
   const [authState, setAuthState] = useState({ status: 'idle', message: '' });
@@ -4215,13 +4227,13 @@ function AdminVerificationPage({ onReviewed }) {
   const [listState, setListState] = useState({ status: 'idle', message: '' });
 
   const loadRequests = async (activeToken) => {
-    setListState({ status: 'loading', message: 'Loading verification requests...' });
+    setListState({ status: 'loading', message: t('adminVerify.loadingRequests') });
     try {
       const items = await fetchAllRequests(activeToken);
       setRequests(items);
       setListState({ status: 'idle', message: '' });
     } catch (error) {
-      setListState({ status: 'error', message: error.message || 'Could not load verification requests.' });
+      setListState({ status: 'error', message: error.message || t('adminVerify.loadFailed') });
     }
   };
 
@@ -4231,13 +4243,13 @@ function AdminVerificationPage({ onReviewed }) {
 
   const login = async (event) => {
     event.preventDefault();
-    setAuthState({ status: 'loading', message: 'Checking passcode...' });
+    setAuthState({ status: 'loading', message: t('adminVerify.checkingPasscode') });
     try {
       const newToken = await adminLogin(passcode);
       setToken(newToken);
       setAuthState({ status: 'idle', message: '' });
     } catch (error) {
-      setAuthState({ status: 'error', message: error.message || 'Login failed.' });
+      setAuthState({ status: 'error', message: error.message || t('adminVerify.loginFailed') });
     }
   };
 
@@ -4253,18 +4265,18 @@ function AdminVerificationPage({ onReviewed }) {
       await loadRequests(token);
       await onReviewed?.();
     } catch (error) {
-      setListState({ status: 'error', message: error.message || 'Could not submit review.' });
+      setListState({ status: 'error', message: error.message || t('adminVerify.reviewFailed') });
     }
   };
 
   if (!token) {
     return (
       <section className="page-section">
-        <SectionTitle icon={Lock} eyebrow="Admin" title="KHAN Trust Verification Review" />
+        <SectionTitle icon={Lock} eyebrow={t('adminVerify.eyebrow')} title={t('adminVerify.title')} />
         <form className="add-form admin-login-form" onSubmit={login}>
-          <FormField label="Admin passcode" type="password" value={passcode} onChange={setPasscode} required />
+          <FormField label={t('adminVerify.passcodeLabel')} type="password" value={passcode} onChange={setPasscode} required />
           <button className="primary-button wide-button" type="submit" disabled={authState.status === 'loading'}>
-            Sign In <ArrowRight size={18} />
+            {t('common.signIn')} <ArrowRight size={18} />
           </button>
           {authState.message && <p className="lookup-message error">{authState.message}</p>}
         </form>
@@ -4277,12 +4289,12 @@ function AdminVerificationPage({ onReviewed }) {
 
   return (
     <section className="page-section">
-      <SectionTitle icon={Shield} eyebrow="Admin" title="KHAN Trust Verification Review" />
-      <button className="secondary-button" type="button" onClick={logout}>Sign Out</button>
+      <SectionTitle icon={Shield} eyebrow={t('adminVerify.eyebrow')} title={t('adminVerify.title')} />
+      <button className="secondary-button" type="button" onClick={logout}>{t('common.signOut')}</button>
       {listState.message && <p className={listState.status === 'error' ? 'lookup-message error' : 'lookup-message'}>{listState.message}</p>}
 
-      <h3 className="admin-section-heading">Pending requests ({pending.length})</h3>
-      {!pending.length && <EmptyState title="No pending requests" text="New verification requests will appear here." />}
+      <h3 className="admin-section-heading">{t('adminVerify.pendingTitle', { count: pending.length })}</h3>
+      {!pending.length && <EmptyState title={t('adminVerify.emptyPendingTitle')} text={t('adminVerify.emptyPendingText')} />}
       <div className="admin-request-list">
         {pending.map((request) => (
           <article className="admin-request-card" key={request.id}>
@@ -4290,50 +4302,50 @@ function AdminVerificationPage({ onReviewed }) {
               <strong>{request.projectName}</strong>
               <span className="status-badge">{request.contract}</span>
             </header>
-            <p>Owner wallet: {request.ownerWallet}</p>
-            <p>Signed wallet: {request.walletAddress}</p>
-            <p>Signature: <code>{request.signature}</code></p>
-            <p>Timestamp: {request.timestamp}</p>
-            {request.website && <p>Website: {request.website}</p>}
-            {request.twitter && <p>X/Twitter: {request.twitter}</p>}
-            {request.telegram && <p>Telegram: {request.telegram}</p>}
-            {request.proofNote && <p>Proof note: {request.proofNote}</p>}
+            <p>{t('adminVerify.ownerWallet', { value: request.ownerWallet })}</p>
+            <p>{t('adminVerify.signedWallet', { value: request.walletAddress })}</p>
+            <p>{t('adminVerify.signature')} <code>{request.signature}</code></p>
+            <p>{t('adminVerify.timestamp', { value: request.timestamp })}</p>
+            {request.website && <p>{t('adminVerify.website', { value: request.website })}</p>}
+            {request.twitter && <p>{t('adminVerify.twitter', { value: request.twitter })}</p>}
+            {request.telegram && <p>{t('adminVerify.telegram', { value: request.telegram })}</p>}
+            {request.proofNote && <p>{t('adminVerify.proofNote', { value: request.proofNote })}</p>}
             <label className="form-field wide">
-              <span>Admin note</span>
+              <span>{t('adminVerify.adminNoteLabel')}</span>
               <textarea
                 value={notes[request.id] || ''}
                 onChange={(event) => setNotes((current) => ({ ...current, [request.id]: event.target.value }))}
-                placeholder="Optional note shown if rejected"
+                placeholder={t('adminVerify.adminNotePlaceholder')}
               />
             </label>
             <div className="admin-request-actions">
               <button className="primary-button" type="button" onClick={() => review(request, 'verified')}>
-                <CheckCircle2 size={18} /> Approve
+                <CheckCircle2 size={18} /> {t('adminVerify.approve')}
               </button>
               <button className="secondary-button" type="button" onClick={() => review(request, 'rejected')}>
-                <X size={18} /> Reject
+                <X size={18} /> {t('adminVerify.reject')}
               </button>
             </div>
           </article>
         ))}
       </div>
 
-      <h3 className="admin-section-heading">Reviewed history ({reviewed.length})</h3>
+      <h3 className="admin-section-heading">{t('adminVerify.reviewedTitle', { count: reviewed.length })}</h3>
       <div className="admin-request-list">
         {reviewed.map((request) => (
           <article className="admin-request-card reviewed" key={request.id}>
             <header>
               <strong>{request.projectName}</strong>
-              <span className={request.status === 'verified' ? 'status-badge verified' : 'status-badge rejected'}>{verificationStatusLabel(request.status)}</span>
+              <span className={request.status === 'verified' ? 'status-badge verified' : 'status-badge rejected'}>{translatedVerificationStatusLabel(request.status)}</span>
             </header>
-            <p>Reviewed: {request.reviewedAt || 'Not available'}</p>
-            {request.adminNote && <p>Admin note: {request.adminNote}</p>}
+            <p>{t('adminVerify.reviewed', { value: request.reviewedAt || t('common.notAvailable') })}</p>
+            {request.adminNote && <p>{t('adminVerify.adminNote', { value: request.adminNote })}</p>}
           </article>
         ))}
       </div>
 
       <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-analytics'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
-        <BarChart3 size={18} /> Open Analytics Dashboard
+        <BarChart3 size={18} /> {t('adminVerify.openAnalytics')}
       </button>
     </section>
   );
@@ -4381,7 +4393,7 @@ function MiniBarChart({ data, color = 'var(--gold)' }) {
 
 function DonutChart({ data, size = 140 }) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
-  if (!total) return <EmptyState title="No data yet" text="Distribution will appear once activity is tracked." />;
+  if (!total) return <EmptyState title={translate('adminAnalytics.noDataTitle')} text={translate('adminAnalytics.distributionNoData')} />;
   const radius = size / 2;
   const circumference = 2 * Math.PI * (radius - 10);
   let offset = 0;
@@ -4438,7 +4450,7 @@ function RankTable({ title, columns, rows, emptyText }) {
     <div className="analytics-table-card">
       <h4>{title}</h4>
       {!rows.length ? (
-        <EmptyState title="No data yet" text={emptyText || 'Data will appear once activity is tracked.'} />
+        <EmptyState title={translate('adminAnalytics.noDataTitle')} text={emptyText || translate('adminAnalytics.noDataDefault')} />
       ) : (
         <table className="analytics-table">
           <thead>
@@ -4464,6 +4476,7 @@ function RankTable({ title, columns, rows, emptyText }) {
 }
 
 function AdminAnalyticsPage() {
+  const { t } = useTranslation();
   const [token, setToken] = useState(() => getStoredAdminToken());
   const [passcode, setPasscode] = useState('');
   const [authState, setAuthState] = useState({ status: 'idle', message: '' });
@@ -4472,13 +4485,13 @@ function AdminAnalyticsPage() {
   const [range, setRange] = useState(30);
 
   const loadSummary = async (activeToken) => {
-    setLoadState({ status: 'loading', message: 'Loading analytics...' });
+    setLoadState({ status: 'loading', message: t('adminAnalytics.loadingAnalytics') });
     try {
       const data = await fetchAnalyticsSummary(activeToken);
       setSummary(data);
       setLoadState({ status: 'idle', message: '' });
     } catch (error) {
-      setLoadState({ status: 'error', message: error.message || 'Could not load analytics.' });
+      setLoadState({ status: 'error', message: error.message || t('adminAnalytics.loadFailed') });
     }
   };
 
@@ -4488,13 +4501,13 @@ function AdminAnalyticsPage() {
 
   const login = async (event) => {
     event.preventDefault();
-    setAuthState({ status: 'loading', message: 'Checking passcode...' });
+    setAuthState({ status: 'loading', message: t('adminVerify.checkingPasscode') });
     try {
       const newToken = await adminLogin(passcode);
       setToken(newToken);
       setAuthState({ status: 'idle', message: '' });
     } catch (error) {
-      setAuthState({ status: 'error', message: error.message || 'Login failed.' });
+      setAuthState({ status: 'error', message: error.message || t('adminVerify.loginFailed') });
     }
   };
 
@@ -4517,11 +4530,11 @@ function AdminAnalyticsPage() {
   if (!token) {
     return (
       <section className="page-section">
-        <SectionTitle icon={Lock} eyebrow="Admin" title="KHAN Trust Analytics Dashboard" />
+        <SectionTitle icon={Lock} eyebrow={t('adminVerify.eyebrow')} title={t('adminAnalytics.title')} />
         <form className="add-form admin-login-form" onSubmit={login}>
-          <FormField label="Admin passcode" type="password" value={passcode} onChange={setPasscode} required />
+          <FormField label={t('adminVerify.passcodeLabel')} type="password" value={passcode} onChange={setPasscode} required />
           <button className="primary-button wide-button" type="submit" disabled={authState.status === 'loading'}>
-            Sign In <ArrowRight size={18} />
+            {t('common.signIn')} <ArrowRight size={18} />
           </button>
           {authState.message && <p className="lookup-message error">{authState.message}</p>}
         </form>
@@ -4532,8 +4545,8 @@ function AdminAnalyticsPage() {
   if (loadState.status === 'loading' && !summary) {
     return (
       <section className="page-section">
-        <SectionTitle icon={BarChart3} eyebrow="Admin" title="KHAN Trust Analytics Dashboard" />
-        <p className="lookup-message">Loading analytics...</p>
+        <SectionTitle icon={BarChart3} eyebrow={t('adminVerify.eyebrow')} title={t('adminAnalytics.title')} />
+        <p className="lookup-message">{t('adminAnalytics.loadingAnalytics')}</p>
       </section>
     );
   }
@@ -4541,9 +4554,9 @@ function AdminAnalyticsPage() {
   if (!summary) {
     return (
       <section className="page-section">
-        <SectionTitle icon={BarChart3} eyebrow="Admin" title="KHAN Trust Analytics Dashboard" />
-        <p className="lookup-message error">{loadState.message || 'Analytics unavailable.'}</p>
-        <button className="secondary-button" type="button" onClick={() => loadSummary(token)}>Retry</button>
+        <SectionTitle icon={BarChart3} eyebrow={t('adminVerify.eyebrow')} title={t('adminAnalytics.title')} />
+        <p className="lookup-message error">{loadState.message || t('adminAnalytics.loadFailed')}</p>
+        <button className="secondary-button" type="button" onClick={() => loadSummary(token)}>{t('common.retry')}</button>
       </section>
     );
   }
@@ -4552,57 +4565,58 @@ function AdminAnalyticsPage() {
   const trustColors = { '0-20': 'var(--danger)', '21-40': '#f08a4b', '41-60': 'var(--warning)', '61-80': '#9bd97a', '81-100': 'var(--success)' };
   const distributionData = Object.entries(summary.trustScoreAnalytics.distribution).map(([label, value]) => ({ label, value, color: trustColors[label] }));
   const deviceData = [
-    { label: 'Desktop', value: summary.visitorAnalytics.desktop, color: 'var(--gold)' },
-    { label: 'Mobile', value: summary.visitorAnalytics.mobile, color: 'var(--gold-bright)' },
+    { label: t('adminAnalytics.deviceDesktop'), value: summary.visitorAnalytics.desktop, color: 'var(--gold)' },
+    { label: t('adminAnalytics.deviceMobile'), value: summary.visitorAnalytics.mobile, color: 'var(--gold-bright)' },
   ];
   const trafficData = Object.entries(summary.visitorAnalytics.trafficSources).map(([label, value]) => ({
     label: label === 'x' ? 'X (Twitter)' : label.charAt(0).toUpperCase() + label.slice(1),
     value,
   }));
+  const c = t('adminAnalytics.columns');
 
   return (
     <section className="page-section analytics-dashboard">
-      <SectionTitle icon={BarChart3} eyebrow="Admin" title="KHAN Trust Analytics Dashboard" />
+      <SectionTitle icon={BarChart3} eyebrow={t('adminVerify.eyebrow')} title={t('adminAnalytics.title')} />
       <div className="analytics-toolbar">
-        <button className="secondary-button" type="button" onClick={() => loadSummary(token)}>Refresh</button>
-        <button className="secondary-button" type="button" onClick={exportCsv}><Download size={16} /> Export CSV</button>
-        <button className="secondary-button" type="button" onClick={exportJson}><Download size={16} /> Export JSON</button>
+        <button className="secondary-button" type="button" onClick={() => loadSummary(token)}>{t('common.refresh')}</button>
+        <button className="secondary-button" type="button" onClick={exportCsv}><Download size={16} /> {t('adminAnalytics.exportCsv')}</button>
+        <button className="secondary-button" type="button" onClick={exportJson}><Download size={16} /> {t('adminAnalytics.exportJson')}</button>
         <button className="secondary-button" type="button" onClick={() => { window.location.hash = '/admin-verify'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
-          <Shield size={16} /> Verification Review
+          <Shield size={16} /> {t('adminAnalytics.verificationReview')}
         </button>
-        <button className="ghost-button" type="button" onClick={logout}>Sign Out</button>
+        <button className="ghost-button" type="button" onClick={logout}>{t('common.signOut')}</button>
       </div>
-      <p className="analytics-meta">Generated {new Date(summary.generatedAt).toLocaleString()} - {summary.eventCount} events tracked</p>
+      <p className="analytics-meta">{t('adminAnalytics.generated', { date: new Date(summary.generatedAt).toLocaleString(), count: summary.eventCount })}</p>
 
       <div className="analytics-stat-grid">
-        <StatCard icon={Activity} label="Total Scans" value={formatNumber(summary.overview.totalScans)} />
-        <StatCard icon={Users} label="Total Users" value={formatNumber(summary.overview.totalUsers)} sublabel="unique visitors" />
-        <StatCard icon={Layers3} label="Total Projects" value={formatNumber(summary.overview.totalProjects)} />
-        <StatCard icon={BadgeCheck} label="Verified Projects" value={formatNumber(summary.overview.verifiedProjects)} />
-        <StatCard icon={Clock3} label="Pending Verification" value={formatNumber(summary.overview.pendingVerification)} />
-        <StatCard icon={X} label="Rejected Verification" value={formatNumber(summary.overview.rejectedVerification)} />
+        <StatCard icon={Activity} label={t('adminAnalytics.totalScans')} value={formatNumber(summary.overview.totalScans)} />
+        <StatCard icon={Users} label={t('adminAnalytics.totalUsers')} value={formatNumber(summary.overview.totalUsers)} sublabel={t('adminAnalytics.uniqueVisitors')} />
+        <StatCard icon={Layers3} label={t('adminAnalytics.totalProjects')} value={formatNumber(summary.overview.totalProjects)} />
+        <StatCard icon={BadgeCheck} label={t('adminAnalytics.verifiedProjects')} value={formatNumber(summary.overview.verifiedProjects)} />
+        <StatCard icon={Clock3} label={t('adminAnalytics.pendingVerification')} value={formatNumber(summary.overview.pendingVerification)} />
+        <StatCard icon={X} label={t('adminAnalytics.rejectedVerification')} value={formatNumber(summary.overview.rejectedVerification)} />
       </div>
 
       <div className="detail-section analytics-section">
-        <SectionTitle icon={LineChart} eyebrow="Scans" title="Scan Activity" />
+        <SectionTitle icon={LineChart} eyebrow={t('adminAnalytics.scansEyebrow')} title={t('adminAnalytics.scanActivity')} />
         <div className="analytics-range-row">
           {[7, 30, 90].map((days) => (
-            <button key={days} className={range === days ? 'active' : ''} onClick={() => setRange(days)}>Last {days} days</button>
+            <button key={days} className={range === days ? 'active' : ''} onClick={() => setRange(days)}>{t('adminAnalytics.lastDays', { days })}</button>
           ))}
         </div>
         <Sparkline data={scanSeries} height={80} />
         <div className="analytics-mini-stats">
-          <span>This week: <strong>{summary.scanAnalytics.totalThisWeek}</strong></span>
-          <span>This month: <strong>{summary.scanAnalytics.totalThisMonth}</strong></span>
-          <span>7d growth: <strong className={summary.scanAnalytics.growth7d >= 0 ? 'trend-up' : 'trend-down'}>{summary.scanAnalytics.growth7d}%</strong></span>
-          <span>30d growth: <strong className={summary.scanAnalytics.growth30d >= 0 ? 'trend-up' : 'trend-down'}>{summary.scanAnalytics.growth30d}%</strong></span>
+          <span>{t('adminAnalytics.thisWeek')} <strong>{summary.scanAnalytics.totalThisWeek}</strong></span>
+          <span>{t('adminAnalytics.thisMonth')} <strong>{summary.scanAnalytics.totalThisMonth}</strong></span>
+          <span>{t('adminAnalytics.growth7d')} <strong className={summary.scanAnalytics.growth7d >= 0 ? 'trend-up' : 'trend-down'}>{summary.scanAnalytics.growth7d}%</strong></span>
+          <span>{t('adminAnalytics.growth30d')} <strong className={summary.scanAnalytics.growth30d >= 0 ? 'trend-up' : 'trend-down'}>{summary.scanAnalytics.growth30d}%</strong></span>
         </div>
       </div>
 
       <div className="detail-section analytics-section">
         <RankTable
-          title="Most Scanned Tokens"
-          columns={['Name', 'Ticker', 'Contract', 'Scans', 'Avg Trust Score']}
+          title={t('adminAnalytics.mostScannedTokens')}
+          columns={[c.name, c.ticker, c.contract, c.scans, c.avgTrustScore]}
           rows={summary.mostScannedTokens.map((token) => [
             token.name,
             token.ticker,
@@ -4615,74 +4629,74 @@ function AdminAnalyticsPage() {
 
       <div className="detail-section analytics-section analytics-grid-2">
         <RankTable
-          title="Most Viewed Projects"
-          columns={['Name', 'Ticker', 'Views']}
+          title={t('adminAnalytics.mostViewedProjects')}
+          columns={[c.name, c.ticker, c.views]}
           rows={summary.projectAnalytics.mostViewed.map((item) => [item.name, item.ticker, item.count])}
         />
         <RankTable
-          title="Most Trusted Projects"
-          columns={['Name', 'Ticker', 'Trust Score']}
+          title={t('adminAnalytics.mostTrustedProjects')}
+          columns={[c.name, c.ticker, c.trustScore]}
           rows={summary.projectAnalytics.mostTrusted.map((item) => [item.name, item.ticker, item.trustScore])}
         />
         <RankTable
-          title="Lowest Trust Score Projects"
-          columns={['Name', 'Ticker', 'Trust Score']}
+          title={t('adminAnalytics.lowestTrustProjects')}
+          columns={[c.name, c.ticker, c.trustScore]}
           rows={summary.projectAnalytics.lowestTrust.map((item) => [item.name, item.ticker, item.trustScore])}
         />
         <RankTable
-          title="Top 20 Popular Searches"
-          columns={['Query', 'Count']}
+          title={t('adminAnalytics.topSearches')}
+          columns={[c.query, c.count]}
           rows={summary.popularSearches.map((item) => [item.query, item.count])}
         />
       </div>
 
       <div className="detail-section analytics-section analytics-grid-2">
         <div>
-          <h4>Trust Score Distribution</h4>
-          <p className="analytics-meta">Average platform Trust Score: <strong>{summary.trustScoreAnalytics.average ?? 'N/A'}</strong> ({summary.trustScoreAnalytics.sampleSize} scored projects)</p>
+          <h4>{t('adminAnalytics.distributionTitle')}</h4>
+          <p className="analytics-meta">{t('adminAnalytics.averageTrustScore')} <strong>{summary.trustScoreAnalytics.average ?? 'N/A'}</strong> {t('adminAnalytics.scoredProjects', { count: summary.trustScoreAnalytics.sampleSize })}</p>
           <DonutChart data={distributionData} />
         </div>
         <div>
-          <h4>Trust Score Trend (30 days)</h4>
+          <h4>{t('adminAnalytics.trendTitle')}</h4>
           <Sparkline data={summary.trustScoreAnalytics.trend.map((point) => ({ count: point.average }))} color="var(--success)" height={80} />
         </div>
       </div>
 
       <div className="detail-section analytics-section analytics-grid-2">
         <div>
-          <h4>Visitor Analytics</h4>
+          <h4>{t('adminAnalytics.visitorAnalytics')}</h4>
           <div className="analytics-mini-stats">
-            <span>Total visitors: <strong>{summary.visitorAnalytics.totalVisitors}</strong></span>
-            <span>Unique visitors: <strong>{summary.visitorAnalytics.uniqueVisitors}</strong></span>
-            <span>New: <strong>{summary.visitorAnalytics.newVisitors}</strong></span>
-            <span>Returning: <strong>{summary.visitorAnalytics.returningVisitors}</strong></span>
+            <span>{t('adminAnalytics.totalVisitors')} <strong>{summary.visitorAnalytics.totalVisitors}</strong></span>
+            <span><strong>{summary.visitorAnalytics.uniqueVisitors}</strong> {t('adminAnalytics.uniqueVisitors')}</span>
+            <span>{t('adminAnalytics.newVisitors')} <strong>{summary.visitorAnalytics.newVisitors}</strong></span>
+            <span>{t('adminAnalytics.returningVisitors')} <strong>{summary.visitorAnalytics.returningVisitors}</strong></span>
           </div>
           <MiniBarChart data={deviceData} />
         </div>
         <div>
-          <h4>Traffic Sources</h4>
+          <h4>{t('adminAnalytics.trafficSources')}</h4>
           <MiniBarChart data={trafficData} color="var(--gold-bright)" />
         </div>
       </div>
 
       <div className="detail-section analytics-section analytics-grid-2">
         <div>
-          <h4>Verification Activity</h4>
+          <h4>{t('adminAnalytics.verificationActivity')}</h4>
           <div className="analytics-mini-stats">
-            <span>Total requests: <strong>{summary.verificationAnalytics.totalRequests}</strong></span>
-            <span>Pending: <strong>{summary.verificationAnalytics.pending}</strong></span>
-            <span>Approved: <strong>{summary.verificationAnalytics.approved}</strong></span>
-            <span>Rejected: <strong>{summary.verificationAnalytics.rejected}</strong></span>
-            <span>Approval rate: <strong className="trend-up">{summary.verificationAnalytics.approvalRate}%</strong></span>
-            <span>Rejection rate: <strong className="trend-down">{summary.verificationAnalytics.rejectionRate}%</strong></span>
+            <span>{t('adminAnalytics.totalRequests')} <strong>{summary.verificationAnalytics.totalRequests}</strong></span>
+            <span>{t('adminAnalytics.pending')} <strong>{summary.verificationAnalytics.pending}</strong></span>
+            <span>{t('adminAnalytics.approved')} <strong>{summary.verificationAnalytics.approved}</strong></span>
+            <span>{t('adminAnalytics.rejected')} <strong>{summary.verificationAnalytics.rejected}</strong></span>
+            <span>{t('adminAnalytics.approvalRate')} <strong className="trend-up">{summary.verificationAnalytics.approvalRate}%</strong></span>
+            <span>{t('adminAnalytics.rejectionRate')} <strong className="trend-down">{summary.verificationAnalytics.rejectionRate}%</strong></span>
           </div>
         </div>
         <div>
-          <h4>Top Platform Activity</h4>
+          <h4>{t('adminAnalytics.topActivity')}</h4>
           <div className="analytics-mini-stats">
-            <span>Most active day: <strong>{summary.topActivity.mostActiveDay.date || 'N/A'}</strong> ({summary.topActivity.mostActiveDay.count})</span>
-            <span>Most active week: <strong>{summary.topActivity.mostActiveWeek.weekStarting || 'N/A'}</strong> ({summary.topActivity.mostActiveWeek.count})</span>
-            <span>Most active month: <strong>{summary.topActivity.mostActiveMonth.month || 'N/A'}</strong> ({summary.topActivity.mostActiveMonth.count})</span>
+            <span>{t('adminAnalytics.mostActiveDay')} <strong>{summary.topActivity.mostActiveDay.date || 'N/A'}</strong> ({summary.topActivity.mostActiveDay.count})</span>
+            <span>{t('adminAnalytics.mostActiveWeek')} <strong>{summary.topActivity.mostActiveWeek.weekStarting || 'N/A'}</strong> ({summary.topActivity.mostActiveWeek.count})</span>
+            <span>{t('adminAnalytics.mostActiveMonth')} <strong>{summary.topActivity.mostActiveMonth.month || 'N/A'}</strong> ({summary.topActivity.mostActiveMonth.count})</span>
           </div>
         </div>
       </div>
@@ -4690,27 +4704,10 @@ function AdminAnalyticsPage() {
   );
 }
 
-const WHITEPAPER_TOPICS = [
-  { icon: BookOpen, title: 'Executive Summary', text: 'A concise overview of the KHAN ecosystem and what it sets out to fix.' },
-  { icon: AlertTriangle, title: 'The Problem Landscape', text: 'Why hype, anonymity, and weak transparency keep hurting crypto users.' },
-  { icon: Sparkles, title: 'The KHAN Solution', text: 'How public trust profiles and risk signals change the equation.' },
-  { icon: Shield, title: 'KHAN Trust Engine', text: 'The scoring methodology behind every project trust profile.' },
-  { icon: Layers3, title: 'Architecture', text: 'How KHAN Trust is built on Solana and structured for scale.' },
-  { icon: Star, title: 'Token Utility', text: 'The role $KHAN plays across the ecosystem.' },
-  { icon: TimerReset, title: 'Product Roadmap', text: 'What ships next, and the phases that follow.' },
-  { icon: TrendingUp, title: 'Future Vision', text: 'The long-term mission for KHAN Trust and its community.' },
-];
-
-const WHITEPAPER_REASONS = [
-  'The long-term vision',
-  'Platform utility',
-  'Trust Score philosophy',
-  'Ecosystem roadmap',
-  'Future products',
-  'Community mission',
-];
+const WHITEPAPER_ICONS = [BookOpen, AlertTriangle, Sparkles, Shield, Layers3, Star, TimerReset, TrendingUp];
 
 function WhitepaperPage() {
+  const { t } = useTranslation();
   useEffect(() => {
     const previousTitle = document.title;
     document.title = `${WHITEPAPER.title} | KHAN Trust`;
@@ -4722,17 +4719,13 @@ function WhitepaperPage() {
   return (
     <>
       <section className="hero-section whitepaper-hero">
-        <p className="eyebrow"><BookOpen size={16} /> Whitepaper</p>
+        <p className="eyebrow"><BookOpen size={16} /> {t('whitepaper.eyebrow')}</p>
         <h1>{WHITEPAPER.title}</h1>
         <p className="hero-subtitle">{WHITEPAPER.subtitle}</p>
-        <p className="hero-explainer">
-          This whitepaper outlines the vision, architecture, roadmap, and long-term mission of the
-          KHAN ecosystem — from how trust profiles are scored today to the products and community
-          milestones planned ahead.
-        </p>
+        <p className="hero-explainer">{t('whitepaper.hero')}</p>
         <div className="whitepaper-meta-row">
-          <span><strong>Version</strong> {WHITEPAPER.version}</span>
-          <span><strong>Release date</strong> {WHITEPAPER.releaseDate}</span>
+          <span><strong>{t('whitepaper.versionLabel')}</strong> {WHITEPAPER.version}</span>
+          <span><strong>{t('whitepaper.releaseDateLabel')}</strong> {WHITEPAPER.releaseDate}</span>
         </div>
       </section>
 
@@ -4741,36 +4734,40 @@ function WhitepaperPage() {
       </section>
 
       <section className="page-section">
-        <SectionTitle icon={Layers3} eyebrow="Inside the document" title="What you'll learn" />
+        <SectionTitle icon={Layers3} eyebrow={t('whitepaper.insideEyebrow')} title={t('whitepaper.learnTitle')} />
         <div className="whitepaper-topic-grid">
-          {WHITEPAPER_TOPICS.map(({ icon: Icon, title, text }) => (
-            <div key={title} className="whitepaper-topic-card">
-              <Icon size={20} className="gold-icon" />
-              <h3>{title}</h3>
-              <p>{text}</p>
-            </div>
-          ))}
+          {t('whitepaper.topics').map(([title, text], index) => {
+            const Icon = WHITEPAPER_ICONS[index];
+            return (
+              <div key={title} className="whitepaper-topic-card">
+                <Icon size={20} className="gold-icon" />
+                <h3>{title}</h3>
+                <p>{text}</p>
+              </div>
+            );
+          })}
         </div>
       </section>
 
       <section className="page-section">
-        <SectionTitle icon={Info} eyebrow="Why it matters" title="Why read the whitepaper?" />
+        <SectionTitle icon={Info} eyebrow={t('whitepaper.whyEyebrow')} title={t('whitepaper.whyTitle')} />
         <div className="about-panel whitepaper-reasons-panel">
-          <p>Reading the KHAN Ecosystem Whitepaper helps you understand:</p>
+          <p>{t('whitepaper.whyIntro')}</p>
           <ul className="whitepaper-reasons-list">
-            {WHITEPAPER_REASONS.map((reason) => (
+            {t('whitepaper.reasons').map((reason) => (
               <li key={reason}><CheckCircle2 size={16} /> {reason}</li>
             ))}
           </ul>
         </div>
       </section>
 
-      <Disclaimer text="This whitepaper is provided for informational purposes only and does not constitute financial, investment, or legal advice." />
+      <Disclaimer text={t('disclaimer.whitepaper')} />
     </>
   );
 }
 
 function WhitepaperPreviewCard() {
+  const { t } = useTranslation();
   const [previewFailed, setPreviewFailed] = useState(false);
 
   return (
@@ -4782,24 +4779,22 @@ function WhitepaperPreviewCard() {
         <h3>{WHITEPAPER.fileName}</h3>
         <dl className="whitepaper-preview-details">
           <div>
-            <dt>Version</dt>
+            <dt>{t('whitepaper.versionField')}</dt>
             <dd>{WHITEPAPER.version}</dd>
           </div>
           {WHITEPAPER.pageCount ? (
             <div>
-              <dt>Pages</dt>
+              <dt>{t('whitepaper.pagesField')}</dt>
               <dd>{WHITEPAPER.pageCount}</dd>
             </div>
           ) : null}
           <div>
-            <dt>Last updated</dt>
+            <dt>{t('whitepaper.lastUpdatedField')}</dt>
             <dd>{WHITEPAPER.lastUpdated}</dd>
           </div>
         </dl>
         {previewFailed && (
-          <p className="whitepaper-preview-fallback">
-            Preview isn't available right now — use the download button below instead.
-          </p>
+          <p className="whitepaper-preview-fallback">{t('whitepaper.previewFallback')}</p>
         )}
         <div className="whitepaper-preview-actions">
           <a
@@ -4815,10 +4810,10 @@ function WhitepaperPreviewCard() {
                 .catch(() => setPreviewFailed(true));
             }}
           >
-            View Whitepaper <ExternalLink size={18} />
+            {t('whitepaper.viewWhitepaper')} <ExternalLink size={18} />
           </a>
           <a className="secondary-button" href={WHITEPAPER.fileUrl} download={WHITEPAPER.fileName}>
-            Download PDF <Download size={18} />
+            {t('whitepaper.downloadPdf')} <Download size={18} />
           </a>
         </div>
       </div>
@@ -4827,27 +4822,27 @@ function WhitepaperPreviewCard() {
 }
 
 function AboutPage({ openMethodology, navigate }) {
+  const { t } = useTranslation();
   return (
     <section className="page-section about-page">
-      <SectionTitle icon={Shield} eyebrow="About" title="Why KHAN Trust exists" />
+      <SectionTitle icon={Shield} eyebrow={t('about.eyebrow')} title={t('about.title')} />
       <div className="about-grid">
         <div className="about-panel">
-          <h3>The problem</h3>
-          <p>Crypto is full of hype, fake promises, anonymous teams, abandoned projects, and weak transparency.</p>
+          <h3>{t('about.problemTitle')}</h3>
+          <p>{t('about.problemText')}</p>
         </div>
         <div className="about-panel">
-          <h3>The solution</h3>
-          <p>KHAN Trust gives every crypto project a public trust profile with activity, community proof, roadmap proof, and risk signals.</p>
+          <h3>{t('about.solutionTitle')}</h3>
+          <p>{t('about.solutionText')}</p>
         </div>
       </div>
       <div className="positioning">
-        <p><strong>CoinMarketCap</strong> shows prices.</p>
-        <p><strong>GitHub</strong> shows developer activity.</p>
-        <p><strong>Trustpilot</strong> shows reputation.</p>
-        <p><strong>KHAN Trust</strong> shows crypto project trust signals.</p>
+        {t('about.positioning').map(([name, text]) => (
+          <p key={name}><strong>{name}</strong> {text}</p>
+        ))}
       </div>
       <button className="primary-button" onClick={openMethodology}>
-        View Trust Score Methodology <Info size={18} />
+        {t('about.viewMethodology')} <Info size={18} />
       </button>
       <KhanEcosystemStrip navigate={navigate} />
       <FutureFoundationSection />
@@ -4857,23 +4852,19 @@ function AboutPage({ openMethodology, navigate }) {
 }
 
 function MethodologyModal({ onClose }) {
+  const { t } = useTranslation();
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Trust Score Methodology">
       <div className="modal-panel">
         <button className="close-button" onClick={onClose} aria-label="Close methodology"><X size={20} /></button>
-        <SectionTitle icon={Sparkles} eyebrow="Methodology" title="Trust Score Methodology" />
-        <p>
-          KHAN Trust scores are informational signals from 0 to 100. Submitted projects earn points for website,
-          X/Twitter, Telegram, GitHub, public founder status, roadmap proof, and community size. Risk notes reduce
-          the score when they mention anonymous teams, low liquidity, no roadmap, low holders, or a very new project.
-          The score is not a buy or sell signal.
-        </p>
+        <SectionTitle icon={Sparkles} eyebrow={t('methodology.eyebrow')} title={t('methodology.title')} />
+        <p>{t('methodology.body')}</p>
         <div className="method-grid">
-          {['Website +10', 'X/Twitter +10', 'Telegram +10', 'GitHub +15', 'Public founder +15', 'Roadmap +10', 'Community up to +15', 'Risk notes subtract'].map((item) => (
+          {t('methodology.items').map((item) => (
             <div key={item}>
               <CheckCircle2 size={18} />
               <strong>{item}</strong>
-              <span>Reviewed as a visible trust signal.</span>
+              <span>{t('methodology.itemNote')}</span>
             </div>
           ))}
         </div>
@@ -4883,15 +4874,16 @@ function MethodologyModal({ onClose }) {
 }
 
 function SearchBox({ value, onChange, onSubmit, loading = false }) {
+  const { t } = useTranslation();
   return (
     <form className="search-box" onSubmit={(event) => { event.preventDefault(); onSubmit?.(); }}>
       <Search size={20} />
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        placeholder="Search coin, token, project, chain, or contract address"
+        placeholder={t('search.placeholder')}
       />
-      <button type="submit" disabled={loading}>{loading ? 'Fetching...' : 'Search'}</button>
+      <button type="submit" disabled={loading}>{loading ? t('common.searching') : t('common.search')}</button>
     </form>
   );
 }
@@ -4902,17 +4894,19 @@ function SearchStatus({ state }) {
 }
 
 function ScoreCircle({ score, size = 'normal' }) {
+  const { t } = useTranslation();
   const style = { '--score': `${score * 3.6}deg` };
   return (
     <div className={`score-circle ${size}`} style={style}>
       <span>{score}</span>
-      <small>Trust</small>
+      <small>{t('common.trust')}</small>
     </div>
   );
 }
 
 function RiskPill({ level }) {
-  return <span className={`risk-pill ${level.toLowerCase()}`}>{level} Risk</span>;
+  const { t } = useTranslation();
+  return <span className={`risk-pill ${level.toLowerCase()}`}>{t('common.riskSuffix', { level: t(`common.${level.toLowerCase()}`) })}</span>;
 }
 
 function SectionTitle({ icon: Icon, eyebrow, title }) {
@@ -4944,12 +4938,21 @@ function Disclaimer({ compact = false, text }) {
 }
 
 function Footer() {
+  const { t } = useTranslation();
   return (
     <footer className="site-footer">
       <strong>KHAN Trust</strong>
-      <span>Trust before hype.</span>
+      <span>{t('footer.tagline')}</span>
     </footer>
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+function Root() {
+  return (
+    <I18nProvider>
+      <App />
+    </I18nProvider>
+  );
+}
+
+createRoot(document.getElementById('root')).render(<Root />);

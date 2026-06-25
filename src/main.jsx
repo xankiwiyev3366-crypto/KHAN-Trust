@@ -5068,9 +5068,9 @@ function ContactPage() {
   const { t } = useTranslation();
   usePageSeo(`${t('contact.title')} | KHAN Trust`, t('contact.seoDescription'));
   const channels = [
-    { icon: Mail, label: t('contact.emailLabel'), value: t('contact.emailValue'), href: `mailto:${t('contact.emailValue')}` },
-    { icon: MessageCircle, label: t('contact.telegramLabel'), value: t('contact.telegramValue'), href: `https://t.me/${t('contact.telegramValue').replace(/^@/, '')}` },
-    { icon: X, label: t('contact.xLabel'), value: t('contact.xValue'), href: `https://x.com/${t('contact.xValue').replace(/^@/, '')}` },
+    { icon: Mail, label: t('contact.emailLabel'), value: t('contact.emailValue'), href: 'mailto:Xankiwiyev3366@gmail.com' },
+    { icon: MessageCircle, label: t('contact.telegramLabel'), value: t('contact.telegramValue'), href: 'https://t.me/+RXCuwpSNwikzNTE0' },
+    { icon: X, label: t('contact.xLabel'), value: t('contact.xValue'), href: 'https://x.com/KXankiwiyev3366' },
     { icon: Github, label: t('contact.githubLabel'), value: t('contact.githubValue'), href: `https://${t('contact.githubValue').replace(/^https?:\/\//, '')}` },
   ];
   return (

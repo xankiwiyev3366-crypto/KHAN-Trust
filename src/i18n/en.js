@@ -69,6 +69,19 @@ export default {
   languageSwitcher: {
     label: 'Language',
   },
+  walletConnect: {
+    connect: 'Connect Wallet',
+    connecting: 'Connecting...',
+    connected: 'Connected',
+    disconnect: 'Disconnect',
+    copyAddress: 'Copy address',
+    viewOnExplorer: 'View on Solana Explorer',
+    notInstalled: '{{wallet}} not installed',
+    install: 'Install',
+    rejected: 'Connection request was rejected.',
+    failed: 'Could not connect wallet. Try again.',
+    chooseWallet: 'Choose a wallet',
+  },
   disclaimer: {
     default: 'KHAN Trust does not provide financial advice. Scores are for research and risk awareness only.',
     whitepaper: 'This whitepaper is provided for informational purposes only and does not constitute financial, investment, or legal advice.',

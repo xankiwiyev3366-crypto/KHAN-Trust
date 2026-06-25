@@ -64,6 +64,10 @@ import { WHITEPAPER } from './whitepaperConfig.js';
 import { I18nProvider, useTranslation } from './i18n/I18nContext.jsx';
 import { translate, getLanguage } from './i18n/index.js';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
+import WalletContextProvider from './wallet/WalletContextProvider.jsx';
+import ConnectWalletButton from './ConnectWalletButton.jsx';
+import { useKhanWallet } from './wallet/useKhanWallet.js';
+import { PhantomWalletName } from '@solana/wallet-adapter-phantom';
 import {
   initAnalytics,
   trackPageView,
@@ -89,7 +93,6 @@ import {
   normalizeVerificationStatus,
   verificationStatusLabel,
   buildVerificationMessage,
-  connectPhantomForVerification,
   signVerificationMessage,
   submitVerificationRequest,
   fetchVerificationStatuses,
@@ -1224,20 +1227,6 @@ function formatWalletAddress(address = '') {
   return address ? `${address.slice(0, 4)}...${address.slice(-4)}` : translate('common.notConnected');
 }
 
-function phantomProvider() {
-  if (typeof window === 'undefined') return null;
-  return window.solana?.isPhantom ? window.solana : null;
-}
-
-async function connectPhantomWallet() {
-  const provider = phantomProvider();
-  if (!provider) {
-    throw new Error('Phantom wallet is not installed.');
-  }
-  const response = await provider.connect();
-  return response.publicKey.toString();
-}
-
 function launchpadNetworkConfig(network = 'devnet') {
   if (network === 'mainnet-beta') {
     return {
@@ -1263,13 +1252,9 @@ function solanaExplorerUrl(type, value, network = 'devnet') {
   return `https://explorer.solana.com/${path}/${value}${config.explorerCluster}`;
 }
 
-async function createLaunchpadSplToken({ walletAddress, decimals, totalSupply, network }) {
-  const provider = phantomProvider();
-  if (!provider) {
-    throw new Error('Phantom wallet is not installed.');
-  }
-  if (!walletAddress || !provider.publicKey) {
-    throw new Error('Connect Phantom before creating a token.');
+async function createLaunchpadSplToken({ walletAddress, decimals, totalSupply, network, signTransaction }) {
+  if (!walletAddress || !signTransaction) {
+    throw new Error('Connect a wallet before creating a token.');
   }
 
   const config = launchpadNetworkConfig(network);
@@ -1297,7 +1282,7 @@ async function createLaunchpadSplToken({ walletAddress, decimals, totalSupply, n
   );
 
   transaction.partialSign(mintKeypair);
-  const signedTransaction = await provider.signTransaction(transaction);
+  const signedTransaction = await signTransaction(transaction);
   const signature = await connection.sendRawTransaction(signedTransaction.serialize());
   await connection.confirmTransaction({ signature, ...latestBlockhash }, 'confirmed');
 
@@ -2229,6 +2214,7 @@ function Header({ page, navigate }) {
             </button>
           ))}
         </nav>
+        <ConnectWalletButton variant="desktop" />
         <LanguageSwitcher variant="desktop" />
       </div>
     </header>
@@ -2248,6 +2234,7 @@ function MobileNav({ page, navigate }) {
           </button>
         );
       })}
+      <ConnectWalletButton variant="mobile" />
       <LanguageSwitcher variant="mobile" />
     </nav>
   );
@@ -3451,7 +3438,7 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
     noGuarantee: false,
     seedPhrase: false,
   });
-  const [walletAddress, setWalletAddress] = useState('');
+  const { address: walletAddress, connecting: walletConnecting, adapter: walletAdapter, selectAndConnect, connectError: walletConnectError } = useKhanWallet();
   const [walletMessage, setWalletMessage] = useState('');
   const [status, setStatus] = useState({ state: 'idle', message: '' });
   const [created, setCreated] = useState(null);
@@ -3483,19 +3470,6 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
     status: 'Launchpad preview',
   }), [form, walletAddress, network, selectedNetwork.label]);
 
-  useEffect(() => {
-    const provider = phantomProvider();
-    if (!provider) return;
-    const syncWallet = () => setWalletAddress(provider.publicKey?.toString() || '');
-    syncWallet();
-    provider.on?.('connect', syncWallet);
-    provider.on?.('disconnect', () => setWalletAddress(''));
-    return () => {
-      provider.off?.('connect', syncWallet);
-      provider.off?.('disconnect', () => setWalletAddress(''));
-    };
-  }, []);
-
   const update = (key, value) => {
     setForm((current) => ({ ...current, [key]: key === 'symbol' ? value.toUpperCase().slice(0, 10) : value }));
     setCreated(null);
@@ -3515,16 +3489,18 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
     setMainnetConfirmations((current) => ({ ...current, [key]: checked }));
   };
 
-  const connectWallet = async () => {
+  const connectWallet = () => {
     setWalletMessage('');
-    try {
-      const address = await connectPhantomWallet();
-      setWalletAddress(address);
-      setWalletMessage(t('launchpad.wallet.connectedToast', { network: selectedNetwork.label }));
-    } catch (error) {
-      setWalletMessage(launchpadErrorMessage(error));
-    }
+    selectAndConnect(walletAdapter?.name || PhantomWalletName);
   };
+
+  useEffect(() => {
+    if (walletAddress) setWalletMessage(t('launchpad.wallet.connectedToast', { network: selectedNetwork.label }));
+  }, [walletAddress]);
+
+  useEffect(() => {
+    if (walletConnectError) setWalletMessage(launchpadErrorMessage(walletConnectError));
+  }, [walletConnectError]);
 
   const copyLaunchpadPaymentWallet = async () => {
     if (!walletConfigured) return;
@@ -3593,6 +3569,7 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
         decimals,
         totalSupply: form.totalSupply,
         network,
+        signTransaction: (transaction) => walletAdapter.signTransaction(transaction),
       });
       const profile = onCreateProfile(launchpadProfileFromForm(form, walletAddress, result, network));
       setCreated({ ...result, projectId: profile.id });
@@ -3713,13 +3690,10 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
           <strong>{t('launchpad.wallet.title')}</strong>
           <p>{walletAddress ? t('launchpad.wallet.connected', { address: walletAddress }) : t('launchpad.wallet.connectPrompt', { network: selectedNetwork.label.toLowerCase() })}</p>
           <p>{t('launchpad.wallet.detectedMode', { network: selectedNetwork.label })}</p>
-          {!phantomProvider() && (
-            <a href="https://phantom.app/" target="_blank" rel="noreferrer">{t('launchpad.wallet.install')}</a>
-          )}
           {walletMessage && <p className="launchpad-message">{walletMessage}</p>}
         </div>
-        <button className="primary-button" type="button" onClick={connectWallet}>
-          <WalletCards size={18} /> {walletAddress ? formatWalletAddress(walletAddress) : t('launchpad.wallet.connect')}
+        <button className="primary-button" type="button" onClick={connectWallet} disabled={Boolean(walletAddress) || walletConnecting}>
+          <WalletCards size={18} /> {walletAddress ? formatWalletAddress(walletAddress) : walletConnecting ? t('walletConnect.connecting') : t('launchpad.wallet.connect')}
         </button>
       </div>
 
@@ -3825,13 +3799,14 @@ function validateLaunchpadForm(form) {
 }
 
 function launchpadErrorMessage(error = {}) {
+  if (error.name === 'WalletNotReadyError') return translate('launchpad.errors.notInstalled');
   const message = error.message || String(error);
   const lower = message.toLowerCase();
-  if (lower.includes('not installed')) return translate('launchpad.errors.notInstalled');
+  if (lower.includes('not installed') || lower.includes('not ready')) return translate('launchpad.errors.notInstalled');
   if (lower.includes('reject') || lower.includes('denied') || lower.includes('cancel')) return translate('launchpad.errors.rejected');
   if (lower.includes('insufficient') || lower.includes('0x1')) return translate('launchpad.errors.insufficientFunds');
   if (lower.includes('blockhash') || lower.includes('network') || lower.includes('fetch') || lower.includes('rpc')) return translate('launchpad.errors.rpcFailed');
-  return message || translate('launchpad.errors.generic');
+  return message && !/^\w*Error$/.test(message) ? message : translate('launchpad.errors.generic');
 }
 
 function WarningBox({ text, tone = 'warning' }) {
@@ -4098,23 +4073,27 @@ function VerificationRequestModal({ project, onClose, onSubmitted }) {
     ownerWallet: '',
     proofNote: '',
   });
-  const [wallet, setWallet] = useState('');
+  const { address: wallet, adapter: walletAdapter, selectAndConnect, connectError: walletConnectError } = useKhanWallet();
   const [signature, setSignature] = useState('');
   const [timestamp, setTimestamp] = useState('');
   const [state, setState] = useState({ status: 'idle', message: '' });
 
   const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
-  const connectWallet = async () => {
-    setState({ status: 'loading', message: t('verificationModal.statusConnecting') });
-    try {
-      const address = await connectPhantomForVerification();
-      setWallet(address);
-      update('ownerWallet', address);
+  useEffect(() => {
+    if (wallet) {
+      update('ownerWallet', wallet);
       setState({ status: 'idle', message: t('verificationModal.statusConnected') });
-    } catch (error) {
-      setState({ status: 'error', message: error.message || t('verificationModal.statusConnectFailed') });
     }
+  }, [wallet]);
+
+  useEffect(() => {
+    if (walletConnectError) setState({ status: 'error', message: walletConnectError.message || t('verificationModal.statusConnectFailed') });
+  }, [walletConnectError]);
+
+  const connectWallet = () => {
+    setState({ status: 'loading', message: t('verificationModal.statusConnecting') });
+    selectAndConnect(walletAdapter?.name || PhantomWalletName);
   };
 
   const signMessage = async () => {
@@ -4135,7 +4114,7 @@ function VerificationRequestModal({ project, onClose, onSubmitted }) {
     });
     setState({ status: 'loading', message: t('verificationModal.statusWaitingSignature') });
     try {
-      const sig = await signVerificationMessage(message);
+      const sig = await signVerificationMessage(walletAdapter, message);
       setSignature(sig);
       setTimestamp(ts);
       setState({ status: 'idle', message: t('verificationModal.statusSigned') });
@@ -4950,7 +4929,9 @@ function Footer() {
 function Root() {
   return (
     <I18nProvider>
-      <App />
+      <WalletContextProvider>
+        <App />
+      </WalletContextProvider>
     </I18nProvider>
   );
 }

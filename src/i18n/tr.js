@@ -69,6 +69,19 @@ export default {
   languageSwitcher: {
     label: 'Dil',
   },
+  walletConnect: {
+    connect: 'Cüzdanı Bağla',
+    connecting: 'Bağlanıyor...',
+    connected: 'Bağlandı',
+    disconnect: 'Bağlantıyı Kes',
+    copyAddress: 'Adresi kopyala',
+    viewOnExplorer: "Solana Explorer'da Görüntüle",
+    notInstalled: '{{wallet}} kurulu değil',
+    install: 'Kur',
+    rejected: 'Bağlantı isteği reddedildi.',
+    failed: 'Cüzdan bağlanamadı. Yeniden deneyin.',
+    chooseWallet: 'Bir cüzdan seçin',
+  },
   disclaimer: {
     default: 'KHAN Trust finansal tavsiye vermez. Skorlar yalnızca araştırma ve risk farkındalığı amaçlıdır.',
     whitepaper: 'Bu teknik doküman yalnızca bilgilendirme amaçlıdır ve finansal, yatırım veya hukuki tavsiye niteliği taşımaz.',

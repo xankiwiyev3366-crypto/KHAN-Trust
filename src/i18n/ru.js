@@ -69,6 +69,19 @@ export default {
   languageSwitcher: {
     label: 'Язык',
   },
+  walletConnect: {
+    connect: 'Подключить кошелёк',
+    connecting: 'Подключение...',
+    connected: 'Подключено',
+    disconnect: 'Отключить',
+    copyAddress: 'Скопировать адрес',
+    viewOnExplorer: 'Открыть в Solana Explorer',
+    notInstalled: '{{wallet}} не установлен',
+    install: 'Установить',
+    rejected: 'Запрос на подключение отклонён.',
+    failed: 'Не удалось подключить кошелёк. Попробуйте снова.',
+    chooseWallet: 'Выберите кошелёк',
+  },
   disclaimer: {
     default: 'KHAN Trust не предоставляет финансовых консультаций. Оценки служат только для исследования и оценки рисков.',
     whitepaper: 'Этот White Paper предоставляется исключительно в информационных целях и не является финансовой, инвестиционной или юридической консультацией.',

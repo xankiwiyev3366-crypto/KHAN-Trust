@@ -90,21 +90,10 @@ export function buildVerificationMessage({ projectName, contract, walletAddress,
   ].join('\n');
 }
 
-function phantomProvider() {
-  if (typeof window === 'undefined') return null;
-  return window.solana?.isPhantom ? window.solana : null;
-}
-
-export async function connectPhantomForVerification() {
-  const provider = phantomProvider();
-  if (!provider) {
-    throw new Error('Phantom wallet is not installed.');
-  }
-  const response = await provider.connect();
-  return response.publicKey.toString();
-}
-
-function bytesToBase58(bytes) {
+// Wallet connection itself goes through the shared @solana/wallet-adapter
+// context (see src/wallet/useKhanWallet.js) - this module only signs the
+// ownership message once a wallet is already connected.
+export function bytesToBase58(bytes) {
   const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
   let digits = [0];
   for (let i = 0; i < bytes.length; i += 1) {
@@ -124,15 +113,13 @@ function bytesToBase58(bytes) {
   return ALPHABET[0].repeat(leadingZeros) + digits.reverse().map((digit) => ALPHABET[digit]).join('');
 }
 
-export async function signVerificationMessage(message) {
-  const provider = phantomProvider();
-  if (!provider) {
-    throw new Error('Phantom wallet is not installed.');
+export async function signVerificationMessage(adapter, message) {
+  if (!adapter?.signMessage) {
+    throw new Error('Connected wallet does not support message signing.');
   }
   const encoded = new TextEncoder().encode(message);
-  const result = await provider.signMessage(encoded, 'utf8');
-  const signatureBytes = result.signature instanceof Uint8Array ? result.signature : new Uint8Array(result.signature);
-  return bytesToBase58(signatureBytes);
+  const signatureBytes = await adapter.signMessage(encoded);
+  return bytesToBase58(signatureBytes instanceof Uint8Array ? signatureBytes : new Uint8Array(signatureBytes));
 }
 
 export async function submitVerificationRequest(payload) {

@@ -24,6 +24,7 @@ import {
   BadgeCheck,
   BarChart3,
   Bell,
+  BookOpen,
   CalendarDays,
   CheckCircle2,
   CircleDot,
@@ -32,6 +33,7 @@ import {
   Download,
   ExternalLink,
   Eye,
+  FileText,
   FileWarning,
   Flag,
   Github,
@@ -58,6 +60,7 @@ import {
   X,
 } from 'lucide-react';
 import './styles.css';
+import { WHITEPAPER } from './whitepaperConfig.js';
 import {
   initAnalytics,
   trackPageView,
@@ -331,6 +334,7 @@ const navItems = [
   { id: 'compare', label: 'Compare', icon: Scale },
   { id: 'add', label: 'Add Project', icon: Plus },
   { id: 'launchpad', label: 'Launchpad', icon: Sparkles },
+  { id: 'whitepaper', label: 'Whitepaper', icon: BookOpen },
   { id: 'about', label: 'About', icon: Info },
   { id: 'khan', label: '$KHAN', icon: Star },
 ];
@@ -2121,6 +2125,7 @@ function App() {
         {page === 'add' && <AddProjectPage onAdd={addProject} navigate={navigate} />}
         {page === 'launchpad' && <LaunchpadPage onCreateProfile={saveProjectProfile} navigate={navigate} />}
         {page === 'pricing' && <PricingPage navigate={navigate} />}
+        {page === 'whitepaper' && <WhitepaperPage navigate={navigate} />}
         {page === 'compare' && <ComparePage projects={projects} navigate={navigate} />}
         {page.startsWith('report/') && reportProject && (
           <RiskReportPage project={reportProject} navigate={navigate} />
@@ -4685,6 +4690,142 @@ function AdminAnalyticsPage() {
   );
 }
 
+const WHITEPAPER_TOPICS = [
+  { icon: BookOpen, title: 'Executive Summary', text: 'A concise overview of the KHAN ecosystem and what it sets out to fix.' },
+  { icon: AlertTriangle, title: 'The Problem Landscape', text: 'Why hype, anonymity, and weak transparency keep hurting crypto users.' },
+  { icon: Sparkles, title: 'The KHAN Solution', text: 'How public trust profiles and risk signals change the equation.' },
+  { icon: Shield, title: 'KHAN Trust Engine', text: 'The scoring methodology behind every project trust profile.' },
+  { icon: Layers3, title: 'Architecture', text: 'How KHAN Trust is built on Solana and structured for scale.' },
+  { icon: Star, title: 'Token Utility', text: 'The role $KHAN plays across the ecosystem.' },
+  { icon: TimerReset, title: 'Product Roadmap', text: 'What ships next, and the phases that follow.' },
+  { icon: TrendingUp, title: 'Future Vision', text: 'The long-term mission for KHAN Trust and its community.' },
+];
+
+const WHITEPAPER_REASONS = [
+  'The long-term vision',
+  'Platform utility',
+  'Trust Score philosophy',
+  'Ecosystem roadmap',
+  'Future products',
+  'Community mission',
+];
+
+function WhitepaperPage() {
+  useEffect(() => {
+    const previousTitle = document.title;
+    document.title = `${WHITEPAPER.title} | KHAN Trust`;
+    return () => {
+      document.title = previousTitle;
+    };
+  }, []);
+
+  return (
+    <>
+      <section className="hero-section whitepaper-hero">
+        <p className="eyebrow"><BookOpen size={16} /> Whitepaper</p>
+        <h1>{WHITEPAPER.title}</h1>
+        <p className="hero-subtitle">{WHITEPAPER.subtitle}</p>
+        <p className="hero-explainer">
+          This whitepaper outlines the vision, architecture, roadmap, and long-term mission of the
+          KHAN ecosystem — from how trust profiles are scored today to the products and community
+          milestones planned ahead.
+        </p>
+        <div className="whitepaper-meta-row">
+          <span><strong>Version</strong> {WHITEPAPER.version}</span>
+          <span><strong>Release date</strong> {WHITEPAPER.releaseDate}</span>
+        </div>
+      </section>
+
+      <section className="page-section">
+        <WhitepaperPreviewCard />
+      </section>
+
+      <section className="page-section">
+        <SectionTitle icon={Layers3} eyebrow="Inside the document" title="What you'll learn" />
+        <div className="whitepaper-topic-grid">
+          {WHITEPAPER_TOPICS.map(({ icon: Icon, title, text }) => (
+            <div key={title} className="whitepaper-topic-card">
+              <Icon size={20} className="gold-icon" />
+              <h3>{title}</h3>
+              <p>{text}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="page-section">
+        <SectionTitle icon={Info} eyebrow="Why it matters" title="Why read the whitepaper?" />
+        <div className="about-panel whitepaper-reasons-panel">
+          <p>Reading the KHAN Ecosystem Whitepaper helps you understand:</p>
+          <ul className="whitepaper-reasons-list">
+            {WHITEPAPER_REASONS.map((reason) => (
+              <li key={reason}><CheckCircle2 size={16} /> {reason}</li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      <Disclaimer text="This whitepaper is provided for informational purposes only and does not constitute financial, investment, or legal advice." />
+    </>
+  );
+}
+
+function WhitepaperPreviewCard() {
+  const [previewFailed, setPreviewFailed] = useState(false);
+
+  return (
+    <div className="whitepaper-preview-card">
+      <div className="whitepaper-preview-icon">
+        <FileText size={36} />
+      </div>
+      <div className="whitepaper-preview-info">
+        <h3>{WHITEPAPER.fileName}</h3>
+        <dl className="whitepaper-preview-details">
+          <div>
+            <dt>Version</dt>
+            <dd>{WHITEPAPER.version}</dd>
+          </div>
+          {WHITEPAPER.pageCount ? (
+            <div>
+              <dt>Pages</dt>
+              <dd>{WHITEPAPER.pageCount}</dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>Last updated</dt>
+            <dd>{WHITEPAPER.lastUpdated}</dd>
+          </div>
+        </dl>
+        {previewFailed && (
+          <p className="whitepaper-preview-fallback">
+            Preview isn't available right now — use the download button below instead.
+          </p>
+        )}
+        <div className="whitepaper-preview-actions">
+          <a
+            className="primary-button"
+            href={WHITEPAPER.fileUrl}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(event) => {
+              fetch(WHITEPAPER.fileUrl, { method: 'HEAD' })
+                .then((response) => {
+                  if (!response.ok) setPreviewFailed(true);
+                })
+                .catch(() => setPreviewFailed(true));
+            }}
+          >
+            View Whitepaper <ExternalLink size={18} />
+          </a>
+          <a className="secondary-button" href={WHITEPAPER.fileUrl} download={WHITEPAPER.fileName}>
+            Download PDF <Download size={18} />
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AboutPage({ openMethodology, navigate }) {
   return (
     <section className="page-section about-page">
@@ -4793,11 +4934,11 @@ function EmptyState({ title, text }) {
   );
 }
 
-function Disclaimer({ compact = false }) {
+function Disclaimer({ compact = false, text }) {
   return (
     <section className={compact ? 'disclaimer compact' : 'disclaimer'}>
       <AlertTriangle size={18} />
-      <p>KHAN Trust does not provide financial advice. Scores are for research and risk awareness only.</p>
+      <p>{text || 'KHAN Trust does not provide financial advice. Scores are for research and risk awareness only.'}</p>
     </section>
   );
 }

@@ -2490,6 +2490,21 @@ button:disabled {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
   background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.12s ease;
+}
+
+.contact-card:hover,
+.contact-card:focus-visible {
+  border-color: rgba(244, 216, 137, 0.55);
+  background: var(--gold-soft);
+}
+
+.contact-card:active {
+  transform: scale(0.98);
+  background: var(--gold-soft);
 }
 
 .contact-card h3 {

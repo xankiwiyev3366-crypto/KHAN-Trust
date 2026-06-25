@@ -5068,10 +5068,10 @@ function ContactPage() {
   const { t } = useTranslation();
   usePageSeo(`${t('contact.title')} | KHAN Trust`, t('contact.seoDescription'));
   const channels = [
-    { icon: Mail, label: t('contact.emailLabel'), value: t('contact.emailValue') },
-    { icon: MessageCircle, label: t('contact.telegramLabel'), value: t('contact.telegramValue') },
-    { icon: X, label: t('contact.xLabel'), value: t('contact.xValue') },
-    { icon: Github, label: t('contact.githubLabel'), value: t('contact.githubValue') },
+    { icon: Mail, label: t('contact.emailLabel'), value: t('contact.emailValue'), href: `mailto:${t('contact.emailValue')}` },
+    { icon: MessageCircle, label: t('contact.telegramLabel'), value: t('contact.telegramValue'), href: `https://t.me/${t('contact.telegramValue').replace(/^@/, '')}` },
+    { icon: X, label: t('contact.xLabel'), value: t('contact.xValue'), href: `https://x.com/${t('contact.xValue').replace(/^@/, '')}` },
+    { icon: Github, label: t('contact.githubLabel'), value: t('contact.githubValue'), href: `https://${t('contact.githubValue').replace(/^https?:\/\//, '')}` },
   ];
   return (
     <section className="page-section legal-page">
@@ -5080,12 +5080,20 @@ function ContactPage() {
       <div className="contact-grid">
         {channels.map((channel) => {
           const Icon = channel.icon;
+          const isEmail = channel.href.startsWith('mailto:');
           return (
-            <div className="contact-card" key={channel.label}>
+            <a
+              className="contact-card"
+              key={channel.label}
+              href={channel.href}
+              target={isEmail ? undefined : '_blank'}
+              rel={isEmail ? undefined : 'noopener noreferrer'}
+              aria-label={`${channel.label}: ${channel.value}`}
+            >
               <Icon size={20} className="gold-icon" />
               <h3>{channel.label}</h3>
               <p>{channel.value}</p>
-            </div>
+            </a>
           );
         })}
       </div>

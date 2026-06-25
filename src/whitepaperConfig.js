@@ -8,5 +8,5 @@ export const WHITEPAPER = {
   version: '1.0',
   releaseDate: 'June 2026',
   lastUpdated: '2026-06-25',
-  pageCount: 24,
+  pageCount: null,
 };

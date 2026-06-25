@@ -45,6 +45,7 @@ import {
   LineChart,
   ListFilter,
   Lock,
+  Mail,
   MessageCircle,
   Plus,
   Search,
@@ -2168,10 +2169,14 @@ function App() {
         )}
         {page === 'khan' && !selectedProject && <KhanEcosystemPage navigate={navigate} />}
         {page === 'about' && <AboutPage openMethodology={() => setMethodologyOpen(true)} navigate={navigate} />}
+        {page === 'privacy' && <PrivacyPolicyPage />}
+        {page === 'terms' && <TermsOfServicePage />}
+        {page === 'disclaimer' && <DisclaimerPage />}
+        {page === 'contact' && <ContactPage />}
         {page === 'admin-verify' && <AdminVerificationPage onReviewed={refreshVerificationMap} />}
         {page === 'admin-analytics' && <AdminAnalyticsPage />}
       </main>
-      <Footer />
+      <Footer navigate={navigate} />
       <MobileNav page={page} navigate={navigate} />
       {methodologyOpen && <MethodologyModal onClose={() => setMethodologyOpen(false)} />}
       {requestingVerification && (
@@ -4916,13 +4921,178 @@ function Disclaimer({ compact = false, text }) {
   );
 }
 
-function Footer() {
+function usePageSeo(title, description) {
+  useEffect(() => {
+    const previousTitle = document.title;
+    document.title = title;
+    let meta = document.querySelector('meta[name="description"]');
+    let createdMeta = false;
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'description');
+      document.head.appendChild(meta);
+      createdMeta = true;
+    }
+    const previousDescription = meta.getAttribute('content');
+    meta.setAttribute('content', description);
+    return () => {
+      document.title = previousTitle;
+      if (createdMeta) {
+        meta.remove();
+      } else if (previousDescription !== null) {
+        meta.setAttribute('content', previousDescription);
+      }
+    };
+  }, [title, description]);
+}
+
+const footerQuickLinks = [
+  { id: 'home', label: 'nav.home' },
+  { id: 'explore', label: 'nav.explore' },
+  { id: 'compare', label: 'nav.compare' },
+  { id: 'launchpad', label: 'nav.launchpad' },
+  { id: 'whitepaper', label: 'nav.whitepaper' },
+  { id: 'pricing', label: 'nav.pricing' },
+];
+
+const footerLegalLinks = [
+  { id: 'privacy', label: 'footer.legal.privacy' },
+  { id: 'terms', label: 'footer.legal.terms' },
+  { id: 'disclaimer', label: 'footer.legal.disclaimer' },
+  { id: 'contact', label: 'footer.legal.contact' },
+];
+
+function Footer({ navigate }) {
   const { t } = useTranslation();
+  const goTo = (id) => {
+    if (navigate) navigate(id);
+    else window.location.hash = `/${id}`;
+  };
   return (
     <footer className="site-footer">
-      <strong>KHAN Trust</strong>
-      <span>{t('footer.tagline')}</span>
+      <div className="footer-grid">
+        <div className="footer-brand">
+          <span className="brand">
+            <span className="brand-mark">K</span>
+            <span>
+              <strong>KHAN Trust</strong>
+            </span>
+          </span>
+          <p>{t('footer.tagline')}</p>
+        </div>
+        <div className="footer-column">
+          <h4>{t('footer.quickLinksTitle')}</h4>
+          <nav>
+            {footerQuickLinks.map((item) => (
+              <button key={item.id} type="button" onClick={() => goTo(item.id)}>
+                {t(item.label)}
+              </button>
+            ))}
+          </nav>
+        </div>
+        <div className="footer-column">
+          <h4>{t('footer.legalTitle')}</h4>
+          <nav>
+            {footerLegalLinks.map((item) => (
+              <button key={item.id} type="button" onClick={() => goTo(item.id)}>
+                {t(item.label)}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </div>
+      <div className="footer-bottom">
+        <span>{t('footer.copyright', { year: 2026 })}</span>
+      </div>
     </footer>
+  );
+}
+
+function PrivacyPolicyPage() {
+  const { t } = useTranslation();
+  usePageSeo(`${t('privacy.title')} | KHAN Trust`, t('privacy.seoDescription'));
+  return (
+    <section className="page-section legal-page">
+      <SectionTitle icon={Shield} eyebrow={t('privacy.eyebrow')} title={t('privacy.title')} />
+      <p className="legal-updated">{t('privacy.lastUpdated')}</p>
+      <div className="about-panel legal-panel">
+        {t('privacy.sections').map(([heading, body]) => (
+          <div className="legal-section" key={heading}>
+            <h3>{heading}</h3>
+            <p>{body}</p>
+          </div>
+        ))}
+      </div>
+      <Disclaimer text={t('disclaimer.default')} />
+    </section>
+  );
+}
+
+function TermsOfServicePage() {
+  const { t } = useTranslation();
+  usePageSeo(`${t('terms.title')} | KHAN Trust`, t('terms.seoDescription'));
+  return (
+    <section className="page-section legal-page">
+      <SectionTitle icon={FileText} eyebrow={t('terms.eyebrow')} title={t('terms.title')} />
+      <p className="legal-updated">{t('terms.lastUpdated')}</p>
+      <div className="about-panel legal-panel">
+        {t('terms.sections').map(([heading, body]) => (
+          <div className="legal-section" key={heading}>
+            <h3>{heading}</h3>
+            <p>{body}</p>
+          </div>
+        ))}
+      </div>
+      <Disclaimer text={t('disclaimer.default')} />
+    </section>
+  );
+}
+
+function DisclaimerPage() {
+  const { t } = useTranslation();
+  usePageSeo(`${t('disclaimerPage.title')} | KHAN Trust`, t('disclaimerPage.seoDescription'));
+  return (
+    <section className="page-section legal-page">
+      <SectionTitle icon={AlertTriangle} eyebrow={t('disclaimerPage.eyebrow')} title={t('disclaimerPage.title')} />
+      <div className="about-panel legal-panel">
+        <p className="legal-lead">{t('disclaimerPage.lead')}</p>
+        {t('disclaimerPage.points').map((point) => (
+          <p className="legal-point" key={point}><AlertTriangle size={16} /> {point}</p>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ContactPage() {
+  const { t } = useTranslation();
+  usePageSeo(`${t('contact.title')} | KHAN Trust`, t('contact.seoDescription'));
+  const channels = [
+    { icon: Mail, label: t('contact.emailLabel'), value: t('contact.emailValue') },
+    { icon: MessageCircle, label: t('contact.telegramLabel'), value: t('contact.telegramValue') },
+    { icon: X, label: t('contact.xLabel'), value: t('contact.xValue') },
+    { icon: Github, label: t('contact.githubLabel'), value: t('contact.githubValue') },
+  ];
+  return (
+    <section className="page-section legal-page">
+      <SectionTitle icon={Mail} eyebrow={t('contact.eyebrow')} title={t('contact.title')} />
+      <p className="legal-lead">{t('contact.intro')}</p>
+      <div className="contact-grid">
+        {channels.map((channel) => {
+          const Icon = channel.icon;
+          return (
+            <div className="contact-card" key={channel.label}>
+              <Icon size={20} className="gold-icon" />
+              <h3>{channel.label}</h3>
+              <p>{channel.value}</p>
+            </div>
+          );
+        })}
+      </div>
+      <div className="about-panel legal-panel">
+        <p>{t('contact.partnership')}</p>
+      </div>
+    </section>
   );
 }
 

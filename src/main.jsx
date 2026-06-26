@@ -2889,6 +2889,14 @@ function WalletPaymentSection({ onEntitlementChange }) {
               {connecting ? t('walletConnect.connecting') : t('pricing.payment.connectWalletCta', { name: item.adapter.name })}
             </button>
           ))}
+          {!availableWallets.length && (
+            <p className="inline-note">
+              {t('pricing.payment.noWalletDetected')}{' '}
+              <a href="https://phantom.app/download" target="_blank" rel="noreferrer">Phantom</a>
+              {' '}{t('common.or')}{' '}
+              <a href="https://solflare.com/download" target="_blank" rel="noreferrer">Solflare</a>.
+            </p>
+          )}
         </div>
       ) : (
         <>

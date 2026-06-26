@@ -7,8 +7,23 @@ function truncate(address) {
   return address ? `${address.slice(0, 4)}...${address.slice(-4)}` : '';
 }
 
+// Static install links shown when no Wallet Standard wallet has registered
+// itself (i.e. the visitor has no Phantom/Solflare extension at all). We no
+// longer pass explicit adapter instances to WalletProvider - see
+// WalletContextProvider.jsx for why - so there's nothing in `availableWallets`
+// to render an "Install" affordance for in that case; this static fallback
+// covers it without reintroducing the legacy adapters.
+const WALLET_INSTALL_LINKS = [
+  { name: 'Phantom', href: 'https://phantom.app/download' },
+  { name: 'Solflare', href: 'https://solflare.com/download' },
+];
+
 function connectErrorKey(error) {
   if (!error) return '';
+  // WalletNotReadyError/WalletNotSelectedError carry no message text (they're
+  // thrown with `new Error()` and no args) - identify them by name, not by
+  // matching against an empty string.
+  if (error?.name === 'WalletNotReadyError' || error?.name === 'WalletNotSelectedError') return 'walletConnect.notReady';
   const message = String(error?.message || error || '');
   if (/reject|denied|cancel/i.test(message)) return 'walletConnect.rejected';
   return 'walletConnect.failed';
@@ -122,6 +137,13 @@ export default function ConnectWalletButton({ variant = 'desktop' }) {
                   )}
                 </button>
               ))}
+              {!availableWallets.length &&
+                WALLET_INSTALL_LINKS.map((link) => (
+                  <a key={link.name} href={link.href} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
+                    <span>{link.name}</span>
+                    <small>{t('walletConnect.install')}</small>
+                  </a>
+                ))}
               {errorKey && (
                 <p className="wallet-connect-error">
                   <AlertTriangle size={14} /> {t(errorKey)}

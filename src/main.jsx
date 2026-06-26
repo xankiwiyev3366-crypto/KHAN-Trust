@@ -125,6 +125,18 @@ import {
   deleteTicket,
 } from './support.js';
 import {
+  REPORT_CATEGORIES,
+  REPORT_STATUSES,
+  MAX_ATTACHMENTS as MAX_REPORT_ATTACHMENTS,
+  fileToAttachment as reportFileToAttachment,
+  submitReport,
+  fetchReports,
+  fetchReportDetail,
+  setReportStatus,
+  setReportNotes,
+  deleteReport,
+} from './report.js';
+import {
   VERIFICATION_STATUS,
   normalizeVerificationStatus,
   verificationStatusLabel,
@@ -2237,6 +2249,7 @@ function App() {
         {page === 'admin-verify' && <AdminVerificationPage onReviewed={refreshVerificationMap} />}
         {page === 'admin-analytics' && <AdminAnalyticsPage />}
         {page === 'admin-support' && <AdminSupportPage />}
+        {page === 'admin-report' && <AdminReportPage />}
       </main>
       <Footer navigate={navigate} />
       <MobileNav page={page} navigate={navigate} />
@@ -3375,6 +3388,7 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
     const result = await handleUnlockPremiumClick(project, profileWallet);
     if (!result?.ok) alert(result?.message || stripeUnavailableMessage());
   };
+  const [reportModalOpen, setReportModalOpen] = useState(false);
 
   return (
     <section className="profile-page">
@@ -3414,7 +3428,7 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
             <button className="primary-button" onClick={unlockPremium}>
               <Lock size={18} /> {t('projectProfile.unlockPremium')}
             </button>
-            <button className="secondary-button" onClick={() => alert(t('projectProfile.reportSuggestAlert'))}>
+            <button className="secondary-button" onClick={() => setReportModalOpen(true)}>
               <Flag size={18} /> {t('projectProfile.reportSuggest')}
             </button>
             <button className="ghost-button" onClick={openMethodology}>
@@ -3449,7 +3463,136 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
           <Disclaimer compact />
         </aside>
       </div>
+      {reportModalOpen && (
+        <ReportSuggestModal project={project} wallet={profileWallet} onClose={() => setReportModalOpen(false)} />
+      )}
     </section>
+  );
+}
+
+// Real, backend-persisted "Report / Suggest Update" submission - replaces
+// the earlier MVP that just showed an alert() and discarded the input. Same
+// fallback-to-localStorage-when-functions-unavailable pattern as the
+// Support ticket form (see report.js / support.js), so this page's behavior
+// and the rest of the site are otherwise untouched.
+function ReportSuggestModal({ project, wallet, onClose }) {
+  const { t } = useTranslation();
+  const [form, setForm] = useState({ name: '', email: '', category: 'incorrect_info', subject: '', message: '', company: '' });
+  const [attachments, setAttachments] = useState([]);
+  const [attachmentError, setAttachmentError] = useState('');
+  const [submitState, setSubmitState] = useState({ status: 'idle', message: '' });
+
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const onAttachmentChange = async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length > MAX_REPORT_ATTACHMENTS) {
+      setAttachmentError(t('report.form.tooManyFiles', { count: MAX_REPORT_ATTACHMENTS }));
+      return;
+    }
+    setAttachmentError('');
+    try {
+      const converted = await Promise.all(files.map(reportFileToAttachment));
+      setAttachments(converted);
+    } catch (error) {
+      const key = error.code ? `report.form.attachmentErrors.${error.code}` : 'report.form.attachmentErrors.generic';
+      setAttachmentError(t(key, error.params));
+      setAttachments([]);
+    }
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (form.email.trim() && !EMAIL_PATTERN.test(form.email.trim())) {
+      setSubmitState({ status: 'error', message: t('report.form.invalidEmail') });
+      return;
+    }
+    if (!form.subject.trim() || !form.message.trim()) {
+      setSubmitState({ status: 'error', message: t('report.form.missingFields') });
+      return;
+    }
+    setSubmitState({ status: 'loading', message: '' });
+    try {
+      await submitReport({ ...form, projectId: project.id, projectName: project.name, wallet, attachments });
+      setSubmitState({ status: 'success', message: t('report.form.successMessage') });
+    } catch (error) {
+      setSubmitState({ status: 'error', message: error.message || t('report.form.submitFailed') });
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="modal-panel report-modal">
+        <header className="ticket-detail-header">
+          <strong>{t('report.modalTitle')}</strong>
+          <button className="ghost-button" type="button" onClick={onClose}><X size={18} /></button>
+        </header>
+
+        {submitState.status === 'success' ? (
+          <>
+            <p className="lookup-message success">
+              {submitState.message.split('\n').map((line, index) => <span key={index}>{line}<br /></span>)}
+            </p>
+            <button className="secondary-button" type="button" onClick={onClose}>{t('common.close')}</button>
+          </>
+        ) : (
+          <form className="add-form support-form" onSubmit={submit}>
+            <p className="legal-lead">{t('report.modalIntro', { name: project.name })}</p>
+            <input
+              type="text"
+              name="company"
+              value={form.company}
+              onChange={(event) => update('company', event.target.value)}
+              autoComplete="off"
+              tabIndex={-1}
+              aria-hidden="true"
+              className="honeypot-field"
+            />
+            <div className="support-form-grid">
+              <FormField label={t('report.form.nameLabel')} value={form.name} onChange={(value) => update('name', value)} placeholder={t('report.form.namePlaceholder')} />
+              <FormField label={t('report.form.emailLabel')} type="email" value={form.email} onChange={(value) => update('email', value)} placeholder={t('report.form.emailPlaceholder')} />
+            </div>
+            <label className="form-field">
+              <span>{t('report.form.categoryLabel')}</span>
+              <select value={form.category} onChange={(event) => update('category', event.target.value)}>
+                {REPORT_CATEGORIES.map((category) => (
+                  <option key={category.id} value={category.id}>{t(`report.categories.${category.id}`)}</option>
+                ))}
+              </select>
+            </label>
+            <FormField label={t('report.form.subjectLabel')} value={form.subject} onChange={(value) => update('subject', value)} required placeholder={t('report.form.subjectPlaceholder')} />
+            <label className="form-field wide">
+              <span>{t('report.form.messageLabel')}</span>
+              <textarea value={form.message} onChange={(event) => update('message', event.target.value)} required rows={5} placeholder={t('report.form.messagePlaceholder')} />
+            </label>
+            <label className="form-field wide">
+              <span>{t('report.form.attachmentLabel')}</span>
+              <input type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" onChange={onAttachmentChange} />
+              <small className="inline-note">{t('report.form.attachmentHint')}</small>
+            </label>
+            {attachments.length > 0 && (
+              <ul className="attachment-list">
+                {attachments.map((file) => (
+                  <li key={file.name}><Paperclip size={14} /> {file.name}</li>
+                ))}
+              </ul>
+            )}
+            {attachmentError && <p className="lookup-message error">{attachmentError}</p>}
+
+            <div className="payment-action-row">
+              <button className="primary-button" type="submit" disabled={submitState.status === 'loading'}>
+                {submitState.status === 'loading' ? t('report.form.sending') : t('report.form.submit')} <Send size={16} />
+              </button>
+              <button className="secondary-button" type="button" onClick={onClose}>{t('report.form.cancel')}</button>
+            </div>
+            {submitState.message && submitState.status === 'error' && (
+              <p className="lookup-message error">{submitState.message}</p>
+            )}
+          </form>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -5998,6 +6141,9 @@ function AdminSupportPage() {
         <button className="secondary-button" type="button" onClick={() => { window.location.hash = '/admin-analytics'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
           <BarChart3 size={16} /> {t('adminVerify.openAnalytics')}
         </button>
+        <button className="secondary-button" type="button" onClick={() => { window.location.hash = '/admin-report'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+          <Flag size={16} /> {t('adminReport.title')}
+        </button>
         <button className="ghost-button" type="button" onClick={logout}>{t('common.signOut')}</button>
       </div>
 
@@ -6080,6 +6226,332 @@ function AdminSupportPage() {
           token={token}
           ticketId={activeTicketId}
           onClose={() => setActiveTicketId(null)}
+          onChanged={() => load()}
+        />
+      )}
+    </section>
+  );
+}
+
+function reportStatusLabel(status) {
+  return translate(`report.statusLabels.${status}`) || status;
+}
+
+function AdminReportDetail({ token, reportId, onClose, onChanged }) {
+  const { t } = useTranslation();
+  const [report, setReport] = useState(null);
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = async () => {
+    try {
+      const data = await fetchReportDetail(token, reportId);
+      setReport(data);
+      setNotes(data?.adminNotes || '');
+    } catch (err) {
+      setError(err.message || t('adminReport.loadReportFailed'));
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [reportId]);
+
+  const runAction = async (fn) => {
+    setBusy(true);
+    setError('');
+    try {
+      await fn();
+      await load();
+      await onChanged?.();
+    } catch (err) {
+      setError(err.message || t('adminReport.actionFailed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!report) {
+    return (
+      <div className="modal-backdrop" role="dialog" aria-modal="true">
+        <div className="modal-panel ticket-detail-modal">
+          <p className="lookup-message">{error || t('adminReport.loadingReport')}</p>
+          <button className="secondary-button" type="button" onClick={onClose}>{t('common.close')}</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="modal-panel ticket-detail-modal">
+        <header className="ticket-detail-header">
+          <div>
+            <strong>{report.subject}</strong>
+            <p className="inline-note">{report.id}</p>
+          </div>
+          <button className="ghost-button" type="button" onClick={onClose}><X size={18} /></button>
+        </header>
+
+        <div className="ticket-detail-grid">
+          <p><strong>{t('adminReport.columns.project')}:</strong> {report.projectName || report.projectId}</p>
+          <p><strong>{t('adminReport.columns.name')}:</strong> {report.name || t('common.notAvailable')}</p>
+          <p><strong>{t('adminReport.columns.email')}:</strong> {report.email || t('common.notAvailable')}</p>
+          <p><strong>{t('adminReport.columns.wallet')}:</strong> {report.wallet || t('common.notAvailable')}</p>
+          <p><strong>{t('adminReport.columns.category')}:</strong> {t(`report.categories.${report.category}`)}</p>
+          <p><strong>{t('adminReport.submittedAt')}:</strong> {new Date(report.createdAt).toLocaleString()}</p>
+        </div>
+
+        <div className="ticket-detail-actions">
+          <label className="form-field">
+            <span>{t('adminReport.columns.status')}</span>
+            <select value={report.status} disabled={busy} onChange={(event) => runAction(() => setReportStatus(token, report.id, event.target.value))}>
+              {REPORT_STATUSES.map((status) => (
+                <option key={status} value={status}>{reportStatusLabel(status)}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <h4>{t('adminReport.message')}</h4>
+        <p className="ticket-message-body">{report.message}</p>
+
+        {report.attachments?.length > 0 && (
+          <>
+            <h4>{t('adminReport.attachments')}</h4>
+            <div className="attachment-grid">
+              {report.attachments.map((attachment) => (
+                <TicketAttachmentPreview attachment={attachment} key={attachment.name} />
+              ))}
+            </div>
+          </>
+        )}
+
+        <label className="form-field wide">
+          <span>{t('adminReport.internalNotesLabel')}</span>
+          <textarea value={notes} onChange={(event) => setNotes(event.target.value)} onBlur={() => runAction(() => setReportNotes(token, report.id, notes))} rows={3} placeholder={t('adminReport.internalNotesPlaceholder')} />
+        </label>
+
+        <div className="admin-request-actions">
+          <button className="secondary-button" type="button" disabled={busy} onClick={() => runAction(() => setReportStatus(token, report.id, 'resolved'))}>
+            <CheckCircle2 size={16} /> {t('adminReport.markResolved')}
+          </button>
+          <button className="secondary-button" type="button" disabled={busy} onClick={() => runAction(() => setReportStatus(token, report.id, 'rejected'))}>
+            <Flag size={16} /> {t('adminReport.markRejected')}
+          </button>
+          <button
+            className="ghost-button danger-button"
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              if (!window.confirm(t('adminReport.confirmDelete'))) return;
+              await runAction(async () => {
+                await deleteReport(token, report.id);
+                onClose();
+              });
+            }}
+          >
+            <Trash2 size={16} /> {t('adminReport.delete')}
+          </button>
+        </div>
+        {error && <p className="lookup-message error">{error}</p>}
+      </div>
+    </div>
+  );
+}
+
+function AdminReportPage() {
+  const { t } = useTranslation();
+  const [token, setToken] = useState(() => getStoredAdminToken());
+  const [passcode, setPasscode] = useState('');
+  const [authState, setAuthState] = useState({ status: 'idle', message: '' });
+  const [reports, setReports] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [projects, setProjects] = useState([]);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [projectFilter, setProjectFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [listState, setListState] = useState({ status: 'idle', message: '' });
+  const [activeReportId, setActiveReportId] = useState(null);
+
+  const load = async (activeToken = token) => {
+    if (!activeToken) return;
+    setListState({ status: 'loading', message: t('adminReport.loadingReports') });
+    try {
+      const data = await fetchReports(activeToken, {
+        status: statusFilter,
+        category: categoryFilter,
+        projectId: projectFilter === 'all' ? '' : projectFilter,
+        search,
+        dateFrom,
+        dateTo,
+      });
+      setReports(data.reports || []);
+      setStats(data.stats || null);
+      setProjects(data.projects || []);
+      setListState({ status: 'idle', message: '' });
+    } catch (error) {
+      setListState({ status: 'error', message: error.message || t('adminReport.loadFailed') });
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [token, statusFilter, categoryFilter, projectFilter, dateFrom, dateTo]);
+
+  const login = async (event) => {
+    event.preventDefault();
+    setAuthState({ status: 'loading', message: t('adminVerify.checkingPasscode') });
+    try {
+      const newToken = await adminLogin(passcode);
+      setToken(newToken);
+      setAuthState({ status: 'idle', message: '' });
+    } catch (error) {
+      setAuthState({ status: 'error', message: error.message || t('adminVerify.loginFailed') });
+    }
+  };
+
+  const logout = () => {
+    clearAdminToken();
+    setToken('');
+    setReports([]);
+    setStats(null);
+  };
+
+  if (!token) {
+    return (
+      <section className="page-section">
+        <SectionTitle icon={Lock} eyebrow={t('adminVerify.eyebrow')} title={t('adminReport.title')} />
+        <form className="add-form admin-login-form" onSubmit={login}>
+          <FormField label={t('adminVerify.passcodeLabel')} type="password" value={passcode} onChange={setPasscode} required />
+          <button className="primary-button wide-button" type="submit" disabled={authState.status === 'loading'}>
+            {t('common.signIn')} <ArrowRight size={18} />
+          </button>
+          {authState.message && <p className="lookup-message error">{authState.message}</p>}
+        </form>
+      </section>
+    );
+  }
+
+  return (
+    <section className="page-section analytics-dashboard">
+      <SectionTitle icon={Flag} eyebrow={t('adminVerify.eyebrow')} title={t('adminReport.title')} />
+      <div className="analytics-toolbar">
+        <button className="secondary-button" type="button" onClick={() => load()}>
+          {t('common.refresh')}
+        </button>
+        <button className="secondary-button" type="button" onClick={() => { window.location.hash = '/admin-support'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+          <LifeBuoy size={16} /> {t('adminSupport.title')}
+        </button>
+        <button className="ghost-button" type="button" onClick={logout}>{t('common.signOut')}</button>
+      </div>
+
+      {stats && (
+        <div className="analytics-stat-grid">
+          <StatCard icon={Inbox} label={t('adminReport.stats.new')} value={stats.new} />
+          <StatCard icon={Clock3} label={t('adminReport.stats.underReview')} value={stats.under_review} />
+          <StatCard icon={CheckCircle2} label={t('adminReport.stats.resolved')} value={stats.resolved} />
+          <StatCard icon={Flag} label={t('adminReport.stats.rejected')} value={stats.rejected} />
+        </div>
+      )}
+
+      <div className="support-filter-row">
+        <label className="form-field">
+          <span>{t('adminReport.filterStatus')}</span>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="all">{t('adminReport.allStatuses')}</option>
+            {REPORT_STATUSES.map((status) => (
+              <option key={status} value={status}>{reportStatusLabel(status)}</option>
+            ))}
+          </select>
+        </label>
+        <label className="form-field">
+          <span>{t('adminReport.filterCategory')}</span>
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+            <option value="all">{t('adminReport.allCategories')}</option>
+            {REPORT_CATEGORIES.map((category) => (
+              <option key={category.id} value={category.id}>{t(`report.categories.${category.id}`)}</option>
+            ))}
+          </select>
+        </label>
+        <label className="form-field">
+          <span>{t('adminReport.filterProject')}</span>
+          <select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
+            <option value="all">{t('adminReport.allProjects')}</option>
+            {projects.map((projectId) => (
+              <option key={projectId} value={projectId}>{projectId}</option>
+            ))}
+          </select>
+        </label>
+        <label className="form-field">
+          <span>{t('adminReport.filterDateFrom')}</span>
+          <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+        </label>
+        <label className="form-field">
+          <span>{t('adminReport.filterDateTo')}</span>
+          <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+        </label>
+        <label className="form-field">
+          <span>{t('adminReport.searchLabel')}</span>
+          <input
+            type="text"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter') load(); }}
+            placeholder={t('adminReport.searchPlaceholder')}
+          />
+        </label>
+        <button className="secondary-button" type="button" onClick={() => load()}>
+          <Search size={16} /> {t('common.search')}
+        </button>
+      </div>
+
+      {listState.message && <p className={listState.status === 'error' ? 'lookup-message error' : 'lookup-message'}>{listState.message}</p>}
+
+      {!reports.length ? (
+        <EmptyState title={t('adminReport.emptyTitle')} text={t('adminReport.emptyText')} />
+      ) : (
+        <div className="analytics-table-card support-inbox-table">
+          <table className="analytics-table">
+            <thead>
+              <tr>
+                <th>{t('adminReport.columns.id')}</th>
+                <th>{t('adminReport.columns.date')}</th>
+                <th>{t('adminReport.columns.project')}</th>
+                <th>{t('adminReport.columns.name')}</th>
+                <th>{t('adminReport.columns.email')}</th>
+                <th>{t('adminReport.columns.subject')}</th>
+                <th>{t('adminReport.columns.category')}</th>
+                <th>{t('adminReport.columns.status')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reports.map((report) => (
+                <tr key={report.id} className="ticket-row" onClick={() => setActiveReportId(report.id)}>
+                  <td>{report.id}</td>
+                  <td>{new Date(report.createdAt).toLocaleDateString()}</td>
+                  <td>{report.projectName || report.projectId}</td>
+                  <td>{report.name || t('common.notAvailable')}</td>
+                  <td>{report.email || t('common.notAvailable')}</td>
+                  <td>{report.subject}</td>
+                  <td>{t(`report.categories.${report.category}`)}</td>
+                  <td><span className={`status-badge ticket-status-${report.status}`}>{reportStatusLabel(report.status)}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {activeReportId && (
+        <AdminReportDetail
+          token={token}
+          reportId={activeReportId}
+          onClose={() => setActiveReportId(null)}
           onChanged={() => load()}
         />
       )}

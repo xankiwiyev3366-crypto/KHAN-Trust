@@ -2,6 +2,12 @@
 // api.mainnet-beta.solana.com) reject many browser-origin fetches with HTTP
 // 403 - this function performs the getTransaction lookup from Netlify's
 // infrastructure instead, where that restriction doesn't apply.
+//
+// On a verified payment this also grants an entitlement (see
+// _entitlementsStore.mjs) to the wallet that signed/paid for the
+// transaction, keyed by wallet address since there are no user accounts.
+
+import { grantEntitlement, isSignatureUsed, markSignatureUsed } from './_entitlementsStore.mjs';
 
 const RPC_URL = process.env.VITE_SOLANA_RPC_URL || '';
 const PAYMENT_WALLET = process.env.VITE_KHAN_PAYMENT_WALLET || '';
@@ -190,6 +196,14 @@ async function verifySolanaPayment({ transactionHash, plan }) {
     return { status: 'failed', message: 'Payment failed', reason: 'invalid_signature_format', debug };
   }
 
+  // A confirmed signature can only redeem one entitlement - without this a
+  // single paid transaction hash could be replayed to grant access to
+  // multiple wallets.
+  if (await isSignatureUsed(signature)) {
+    debug.finalDecision = 'already_used';
+    return { status: 'already_used', message: 'This transaction has already been used to unlock access', debug };
+  }
+
   let result;
   try {
     result = await rpcPost(
@@ -232,6 +246,23 @@ async function verifySolanaPayment({ transactionHash, plan }) {
   debug.detectedSolAmount = solAmount;
 
   const requiredUsd = debug.requiredUsdAmount;
+  const buyerWallet = extractAccountKeys(result.transaction)[0] || null;
+  debug.detectedBuyerWallet = buyerWallet;
+
+  async function grantAndReturn(currency, amountPaid) {
+    debug.finalDecision = 'verified';
+    await markSignatureUsed(signature, buyerWallet);
+    if (buyerWallet) {
+      await grantEntitlement(buyerWallet, {
+        plan,
+        currency,
+        amountPaid,
+        transactionHash: signature,
+        verifiedAt: new Date().toISOString(),
+      });
+    }
+    return { status: 'verified', message: 'Payment verified', buyerWallet, debug };
+  }
 
   if (tokenAmount > 0) {
     debug.detectedUsdValue = tokenAmount;
@@ -239,8 +270,7 @@ async function verifySolanaPayment({ transactionHash, plan }) {
       debug.finalDecision = 'amount_too_low';
       return { status: 'amount_too_low', message: 'Amount too low', debug };
     }
-    debug.finalDecision = 'verified';
-    return { status: 'verified', message: 'Payment verified', debug };
+    return grantAndReturn('USDC', tokenAmount);
   }
 
   if (solAmount > 0) {
@@ -255,8 +285,7 @@ async function verifySolanaPayment({ transactionHash, plan }) {
       debug.finalDecision = 'amount_too_low';
       return { status: 'amount_too_low', message: 'Amount too low', debug };
     }
-    debug.finalDecision = 'verified';
-    return { status: 'verified', message: 'Payment verified', debug };
+    return grantAndReturn('SOL', solAmount);
   }
 
   debug.finalDecision = 'amount_too_low (no transfer detected)';

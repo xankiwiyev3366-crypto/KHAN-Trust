@@ -33,7 +33,7 @@ function setSharedConnectError(error) {
 // yet - this only prepares the shape.
 export function useKhanWallet() {
   const { connection } = useConnection();
-  const { publicKey, connected, connecting, disconnecting, wallet, select, connect, disconnect, wallets } = useWallet();
+  const { publicKey, connected, connecting, disconnecting, wallet, select, connect, disconnect, wallets, sendTransaction } = useWallet();
 
   const address = useMemo(() => publicKey?.toString() || '', [publicKey]);
 
@@ -93,6 +93,7 @@ export function useKhanWallet() {
     selectAndConnect,
     connect,
     disconnect,
+    sendTransaction,
     connectError,
     connection,
     // Placeholder for future KHAN balance checks - intentionally unimplemented.

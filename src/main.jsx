@@ -89,6 +89,8 @@ import {
 } from './analytics.js';
 import { isStripeConfigured, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
+import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
+import { fetchEntitlement, hasPlanAccess } from './entitlements.js';
 import {
   VERIFICATION_STATUS,
   normalizeVerificationStatus,
@@ -2613,13 +2615,54 @@ function RiskReportPage({ project, navigate }) {
   );
 }
 
+// Polls the server-recorded entitlement (see entitlements.js) for whichever
+// wallet is currently connected, so Premium UI can reflect a real verified
+// payment instead of always showing the locked state.
+function useWalletEntitlement() {
+  const { address, connected } = useKhanWallet();
+  const [entitlement, setEntitlement] = useState(null);
+
+  const refresh = React.useCallback(async () => {
+    if (!connected || !address) {
+      setEntitlement(null);
+      return;
+    }
+    setEntitlement(await fetchEntitlement(address));
+  }, [connected, address]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { entitlement, hasPremium: hasPlanAccess(entitlement, 'premium'), refresh };
+}
+
 function PremiumLockedSection({ project, navigate }) {
   const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
+  const { hasPremium } = useWalletEntitlement();
   const unlockPremium = async () => {
     const result = await handleUnlockPremiumClick(project);
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
   };
+
+  if (hasPremium) {
+    return (
+      <section className="detail-section premium-lock-section">
+        <SectionTitle icon={CheckCircle2} eyebrow={t('premium.eyebrow')} title={t('premium.activeTitle')} />
+        <p className="inline-note verify-success">{t('premium.activeNote')}</p>
+        <div className="premium-feature-grid">
+          {t('premium.items').map(([title, text]) => (
+            <div className="premium-feature" key={title}>
+              <CheckCircle2 size={17} />
+              <span>{title}</span>
+              <p>{text}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="detail-section premium-lock-section">
@@ -2653,10 +2696,20 @@ function PremiumLockedSection({ project, navigate }) {
 function OneTimeUnlockCard({ project, navigate }) {
   const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
+  const { hasPremium } = useWalletEntitlement();
   const unlockPremium = async () => {
     const result = await handleUnlockPremiumClick(project);
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
   };
+
+  if (hasPremium) {
+    return (
+      <section className="detail-section one-time-card">
+        <SectionTitle icon={CheckCircle2} eyebrow={t('premium.eyebrow')} title={t('premium.activeTitle')} />
+        <p className="inline-note verify-success">{t('premium.activeNote')}</p>
+      </section>
+    );
+  }
 
   return (
     <section className="detail-section one-time-card">
@@ -2677,6 +2730,7 @@ function OneTimeUnlockCard({ project, navigate }) {
 function PricingPage({ navigate }) {
   const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
+  const { entitlement, hasPremium, refresh } = useWalletEntitlement();
   const beginCheckout = async (plan) => {
     const result = plan === 'early_supporter' ? await handleEarlySupporterClick() : await handleUnlockPremiumClick();
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
@@ -2696,6 +2750,11 @@ function PricingPage({ navigate }) {
       <p className="pricing-note payment-message">
         {t('pricing.launchpadNote', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel })}
       </p>
+      {hasPremium && (
+        <p className="pricing-note payment-message verify-success">
+          {t('premium.activeNote')} ({entitlement?.plan === 'early_supporter' ? t('pricing.plans.earlySupporter.name') : t('pricing.plans.premium.name')})
+        </p>
+      )}
       {paymentMessage && <p className="pricing-note payment-message">{paymentMessage}</p>}
       <div className="premium-value-strip">
         {t('premium.items').map(([title]) => (
@@ -2719,19 +2778,102 @@ function PricingPage({ navigate }) {
           </article>
         ))}
       </div>
-      <PaymentMethodsSection beginCheckout={beginCheckout} />
+      <PaymentMethodsSection beginCheckout={beginCheckout} onEntitlementChange={refresh} />
       <p className="pricing-note">{t('pricing.footerNote')}</p>
       <Disclaimer />
     </section>
   );
 }
 
-function PaymentMethodsSection({ beginCheckout }) {
+function PaymentMethodsSection({ beginCheckout, onEntitlementChange }) {
   return (
     <section className="payment-methods">
+      <WalletPaymentSection onEntitlementChange={onEntitlementChange} />
       <CardPaymentSection beginCheckout={beginCheckout} />
-      <CryptoPaymentSection />
+      <CryptoPaymentSection onEntitlementChange={onEntitlementChange} />
     </section>
+  );
+}
+
+function WalletPaymentSection({ onEntitlementChange }) {
+  const { t } = useTranslation();
+  const { address, connected, connecting, availableWallets, selectAndConnect, sendTransaction, connection } = useKhanWallet();
+  const [plan, setPlan] = useState('premium');
+  const [currency, setCurrency] = useState('USDC');
+  const [status, setStatus] = useState('idle');
+  const [message, setMessage] = useState('');
+  const walletConfigured = isWalletPaymentConfigured();
+
+  const planPrice = plan === 'early_supporter' ? '29' : '9';
+
+  const payNow = async () => {
+    setStatus('paying');
+    setMessage('');
+    trackCryptoVerifyStarted(plan);
+    const result = await payWithConnectedWallet({ connection, publicKey: new PublicKey(address), sendTransaction, plan, currency });
+    setStatus(result.ok ? 'verified' : result.status);
+    setMessage(result.message || '');
+    if (result.ok) {
+      trackCryptoVerifySuccess(plan);
+      onEntitlementChange?.();
+    } else {
+      trackCryptoVerifyFailed(plan, result.status);
+    }
+  };
+
+  return (
+    <div className="payment-method-card payment-method-primary">
+      <span className="status-badge">{t('pricing.payment.walletBadge')}</span>
+      <h3>{t('pricing.payment.walletTitle')}</h3>
+      <p>{t('pricing.payment.walletDescription')}</p>
+
+      {!walletConfigured && <p className="inline-note">{t('pricing.payment.cryptoNotConfigured')}</p>}
+
+      {!connected ? (
+        <div className="wallet-pay-connect">
+          {availableWallets.map((item) => (
+            <button
+              key={item.adapter.name}
+              type="button"
+              className="secondary-button"
+              disabled={item.readyState === 'NotDetected' || item.readyState === 'Unsupported'}
+              onClick={() => selectAndConnect(item.adapter.name)}
+            >
+              {connecting ? t('walletConnect.connecting') : t('pricing.payment.connectWalletCta', { name: item.adapter.name })}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <>
+          <label className="form-field">
+            <span>{t('pricing.payment.planLabel')}</span>
+            <select value={plan} onChange={(event) => setPlan(event.target.value)}>
+              <option value="premium">{t('pricing.payment.planPremiumOption')}</option>
+              <option value="early_supporter">{t('pricing.payment.planEarlySupporterOption')}</option>
+            </select>
+          </label>
+          <label className="form-field">
+            <span>{t('pricing.payment.currencyLabel')}</span>
+            <select value={currency} onChange={(event) => setCurrency(event.target.value)}>
+              <option value="USDC">{t('pricing.payment.currencyUsdc')}</option>
+              <option value="SOL">{t('pricing.payment.currencySol')}</option>
+            </select>
+          </label>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={payNow}
+            disabled={!walletConfigured || status === 'paying'}
+          >
+            {status === 'paying' ? t('pricing.payment.payingNow') : t('pricing.payment.payNow', { price: planPrice })}
+          </button>
+          {message && (
+            <p className={status === 'verified' ? 'inline-note verify-success' : 'inline-note'}>{message}</p>
+          )}
+          {status === 'verified' && <p className="inline-note verify-success">{t('pricing.payment.walletVerifiedFollowUp')}</p>}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -2769,7 +2911,7 @@ function verifyStatusMessageKey(status) {
   }[status] || 'pricing.payment.status.idle';
 }
 
-function CryptoPaymentSection() {
+function CryptoPaymentSection({ onEntitlementChange }) {
   const { t } = useTranslation();
   const [transactionHash, setTransactionHash] = useState('');
   const [copied, setCopied] = useState(false);
@@ -2817,6 +2959,7 @@ function CryptoPaymentSection() {
 
     if (result.status === 'verified') {
       trackCryptoVerifySuccess(plan);
+      onEntitlementChange?.();
     } else {
       trackCryptoVerifyFailed(plan, result.status);
     }
@@ -2829,6 +2972,7 @@ function CryptoPaymentSection() {
       <span className="status-badge">{t('pricing.payment.cryptoBadge')}</span>
       <h3>{t('pricing.payment.cryptoTitle')}</h3>
       <p>{t('pricing.payment.cryptoDescription')}</p>
+      <p className="inline-note">{t('pricing.payment.backupLabel')}</p>
       <div className="crypto-price-grid">
         <span>{t('pricing.payment.premiumPrice')}</span>
         <span>{t('pricing.payment.earlySupporterPrice')}</span>

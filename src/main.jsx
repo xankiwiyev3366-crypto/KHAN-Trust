@@ -1,3 +1,9 @@
+// Must run before any @solana/web3.js or @solana/spl-token code executes -
+// they reference the Node "Buffer" global at runtime (not just module
+// scope), and Vite's optimizeDeps inject only covers dev-time dependency
+// pre-bundling, not the production rollup build, so the production bundle
+// never got this without an explicit import here.
+import './bufferShim.js';
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {

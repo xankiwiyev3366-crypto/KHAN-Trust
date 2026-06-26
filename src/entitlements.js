@@ -16,8 +16,16 @@ export async function fetchEntitlement(walletAddress) {
   }
 }
 
+// Early Supporter is a superset of Premium (one-time $29 includes the same
+// research tools as the $9/month plan, plus the badge/recognition below) -
+// but it must never be reported as plain 'premium' to the UI, otherwise an
+// Early Supporter never sees their badge. Check isEarlySupporter() first.
 export function hasPlanAccess(entitlement, plan) {
   if (!entitlement) return false;
   if (plan === 'premium') return entitlement.plan === 'premium' || entitlement.plan === 'early_supporter';
   return entitlement.plan === plan;
+}
+
+export function isEarlySupporter(entitlement) {
+  return entitlement?.plan === 'early_supporter';
 }

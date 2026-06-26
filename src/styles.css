@@ -3503,3 +3503,125 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------------------------------------------------------------------- */
+/* Premium / Early Supporter value system                                 */
+/* ---------------------------------------------------------------------- */
+
+.early-supporter-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  margin: 6px 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--gold-soft), rgba(255,215,128,0.18));
+  border: 1px solid var(--gold);
+  color: var(--gold-bright);
+  font-size: 12px;
+  font-weight: 800;
+  width: fit-content;
+}
+
+.early-supporter-badge.compact {
+  padding: 3px;
+  margin: 0 0 0 4px;
+  border-radius: 50%;
+}
+
+.coming-soon-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.saved-reports-panel {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.02);
+}
+
+.saved-reports-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.saved-reports-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.saved-reports-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+}
+
+.saved-reports-list small {
+  color: var(--muted);
+}
+
+.unlocked-features-message {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--success);
+  background: rgba(120, 200, 120, 0.08);
+}
+
+.unlocked-features-message ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.unlocked-features-message li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--success);
+  font-weight: 700;
+}
+
+.comparison-table-card {
+  margin: 24px 0;
+}
+
+.comparison-table td:first-child {
+  text-align: left;
+  color: var(--text);
+}
+
+.comparison-table th:not(:first-child),
+.comparison-table td:not(:first-child) {
+  text-align: center;
+}
+
+.comparison-dash {
+  color: var(--muted);
+}

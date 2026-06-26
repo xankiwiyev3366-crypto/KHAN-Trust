@@ -103,7 +103,8 @@ import {
 import { isStripeConfigured, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
-import { fetchEntitlement, hasPlanAccess } from './entitlements.js';
+import { fetchEntitlement, hasPlanAccess, isEarlySupporter } from './entitlements.js';
+import { fetchUserData, saveReport, removeSavedReport, toggleServerWatch } from './userData.js';
 import {
   TICKET_CATEGORIES,
   TICKET_STATUSES,
@@ -1984,6 +1985,19 @@ function App() {
   const [editingProject, setEditingProject] = useState(null);
   const [verificationMap, setVerificationMap] = useState({});
   const [requestingVerification, setRequestingVerification] = useState(null);
+  const { hasPremium, wallet: entitledWallet } = useWalletEntitlement();
+
+  // Synced Watchlist (Premium/Early Supporter only): merge in whatever this
+  // wallet has saved server-side so watchlist follows the wallet across
+  // browsers/devices, on top of the existing free local-only watchlist.
+  useEffect(() => {
+    if (!hasPremium || !entitledWallet) return;
+    fetchUserData(entitledWallet).then((data) => {
+      const serverWatchlist = data.watchlist || [];
+      if (!serverWatchlist.length) return;
+      setWatchlist((items) => [...new Set([...items, ...serverWatchlist])]);
+    });
+  }, [hasPremium, entitledWallet]);
 
   const refreshVerificationMap = async () => {
     const statuses = await fetchVerificationStatuses();
@@ -2144,6 +2158,11 @@ function App() {
 
   const toggleWatch = (projectId) => {
     setWatchlist((items) => (items.includes(projectId) ? items.filter((id) => id !== projectId) : [...items, projectId]));
+    // Mirror to the server-synced watchlist for Premium/Early Supporter
+    // wallets only - free users keep the existing local-only behavior
+    // unchanged. Fire-and-forget: the server rejects writes for wallets
+    // without an entitlement anyway, so there's nothing to recover from here.
+    if (hasPremium && entitledWallet) toggleServerWatch(entitledWallet, projectId);
   };
 
   return (
@@ -2682,13 +2701,151 @@ function useWalletEntitlement() {
     refresh();
   }, [refresh]);
 
-  return { entitlement, hasPremium: hasPlanAccess(entitlement, 'premium'), refresh };
+  return {
+    entitlement,
+    wallet: connected ? address : '',
+    hasPremium: hasPlanAccess(entitlement, 'premium'),
+    isEarlySupporter: isEarlySupporter(entitlement),
+    refresh,
+  };
+}
+
+// Shared "what you get" list for a plan, filtered to items that are real and
+// unlocked today - 'comingSoon' items render with a distinct muted badge
+// instead of looking like an active benefit, so the UI never implies a
+// feature is included when it isn't built yet.
+function PlanFeatureGrid({ items, locked = false }) {
+  const { t } = useTranslation();
+  return (
+    <div className="premium-feature-grid">
+      {items.map(([title, text, status]) => (
+        <div className={locked ? 'premium-feature locked' : 'premium-feature'} key={title}>
+          {locked ? <Lock size={17} /> : status === 'comingSoon' ? <Clock3 size={17} /> : <CheckCircle2 size={17} />}
+          <span>
+            {title}
+            {status === 'comingSoon' && <em className="coming-soon-tag">{t('premium.comingSoonLabel')}</em>}
+          </span>
+          <p>{text}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Rendered right after a successful payment so the user sees concretely what
+// changed, instead of a generic "payment verified" line.
+function UnlockedFeaturesMessage({ plan }) {
+  const { t } = useTranslation();
+  const isEarly = plan === 'early_supporter';
+  const items = (isEarly ? t('earlySupporter.items') : t('premium.items')).filter(([, , status]) => status !== 'comingSoon');
+  return (
+    <div className="unlocked-features-message">
+      <strong>{t(isEarly ? 'earlySupporter.unlockedMessageTitle' : 'premium.unlockedMessageTitle')}</strong>
+      <ul>
+        {items.map(([title]) => (
+          <li key={title}><CheckCircle2 size={15} /> {title}</li>
+        ))}
+      </ul>
+      {isEarly && <p className="inline-note">{t('earlySupporter.noInvestmentReminder')}</p>}
+    </div>
+  );
+}
+
+// Small pill shown wherever a connected wallet's identity is displayed, so an
+// Early Supporter visibly looks different from a plain Premium subscriber
+// instead of sharing the exact same "Premium Active" treatment everywhere.
+function EarlySupporterBadge({ compact = false }) {
+  const { t } = useTranslation();
+  return (
+    <span className="early-supporter-badge" title={t('earlySupporter.badgeTooltip')}>
+      <Star size={compact ? 12 : 14} /> {t('earlySupporter.badgeLabel')}
+    </span>
+  );
+}
+
+// Real, working Saved Reports - the one Premium/Early Supporter feature that
+// previously existed only as marketing copy. Reads/writes go through
+// userData.js, which is rejected server-side for any wallet without an
+// active entitlement (see netlify/functions/user-data-save.mjs).
+function SavedReportsPanel({ wallet, project }) {
+  const { t } = useTranslation();
+  const [reports, setReports] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    const data = await fetchUserData(wallet);
+    setReports(data.savedReports || []);
+  };
+
+  useEffect(() => {
+    if (wallet) load();
+  }, [wallet]);
+
+  const isSaved = project && reports?.some((report) => report.projectId === project.id);
+
+  const handleSave = async () => {
+    if (!project) return;
+    setBusy(true);
+    try {
+      await saveReport(wallet, {
+        projectId: project.id,
+        name: project.name,
+        ticker: project.ticker,
+        contract: project.contract,
+        trustScore: project.trustScore,
+        riskLevel: project.riskLevel,
+      });
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRemove = async (reportId) => {
+    setBusy(true);
+    try {
+      await removeSavedReport(wallet, reportId);
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="saved-reports-panel">
+      <div className="saved-reports-header">
+        <strong>{t('premium.savedReports.title')}</strong>
+        {project && (
+          <button className="secondary-button" type="button" disabled={busy || isSaved} onClick={handleSave}>
+            {isSaved ? t('premium.savedReports.alreadySaved') : t('premium.savedReports.saveThisReport')}
+          </button>
+        )}
+      </div>
+      {!reports ? (
+        <p className="inline-note">{t('common.loading')}</p>
+      ) : !reports.length ? (
+        <p className="inline-note">{t('premium.savedReports.empty')}</p>
+      ) : (
+        <ul className="saved-reports-list">
+          {reports.map((report) => (
+            <li key={report.id}>
+              <span>{report.name} ({report.ticker})</span>
+              <small>{translateRiskLevel(report.riskLevel)} - {report.trustScore}/100</small>
+              <button className="ghost-button" type="button" disabled={busy} onClick={() => handleRemove(report.id)}>
+                <X size={14} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function PremiumLockedSection({ project, navigate }) {
   const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
-  const { hasPremium } = useWalletEntitlement();
+  const { hasPremium, isEarlySupporter: isEarly, wallet } = useWalletEntitlement();
   const unlockPremium = async () => {
     const result = await handleUnlockPremiumClick(project);
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
@@ -2697,17 +2854,11 @@ function PremiumLockedSection({ project, navigate }) {
   if (hasPremium) {
     return (
       <section className="detail-section premium-lock-section">
-        <SectionTitle icon={CheckCircle2} eyebrow={t('premium.eyebrow')} title={t('premium.activeTitle')} />
-        <p className="inline-note verify-success">{t('premium.activeNote')}</p>
-        <div className="premium-feature-grid">
-          {t('premium.items').map(([title, text]) => (
-            <div className="premium-feature" key={title}>
-              <CheckCircle2 size={17} />
-              <span>{title}</span>
-              <p>{text}</p>
-            </div>
-          ))}
-        </div>
+        <SectionTitle icon={CheckCircle2} eyebrow={t(isEarly ? 'earlySupporter.eyebrow' : 'premium.eyebrow')} title={t(isEarly ? 'earlySupporter.activeTitle' : 'premium.activeTitle')} />
+        {isEarly && <EarlySupporterBadge />}
+        <p className="inline-note verify-success">{t(isEarly ? 'earlySupporter.activeNote' : 'premium.activeNote')}</p>
+        <PlanFeatureGrid items={t(isEarly ? 'earlySupporter.items' : 'premium.items')} />
+        <SavedReportsPanel wallet={wallet} project={project} />
       </section>
     );
   }
@@ -2716,15 +2867,7 @@ function PremiumLockedSection({ project, navigate }) {
     <section className="detail-section premium-lock-section">
       <SectionTitle icon={Lock} eyebrow={t('premium.eyebrow')} title={t('premium.unlockToolsTitle')} />
       <p className="inline-note">{t('premium.optionalNote')}</p>
-      <div className="premium-feature-grid">
-        {t('premium.items').map(([title, text]) => (
-          <div className="premium-feature locked" key={title}>
-            <Lock size={17} />
-            <span>{title}</span>
-            <p>{text}</p>
-          </div>
-        ))}
-      </div>
+      <PlanFeatureGrid items={t('premium.items')} locked />
       <div className="unlock-bar">
         <strong>{t('premium.unlockBarTitle')}</strong>
         <div>
@@ -2744,7 +2887,7 @@ function PremiumLockedSection({ project, navigate }) {
 function OneTimeUnlockCard({ project, navigate }) {
   const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
-  const { hasPremium } = useWalletEntitlement();
+  const { hasPremium, isEarlySupporter: isEarly } = useWalletEntitlement();
   const unlockPremium = async () => {
     const result = await handleUnlockPremiumClick(project);
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
@@ -2753,8 +2896,9 @@ function OneTimeUnlockCard({ project, navigate }) {
   if (hasPremium) {
     return (
       <section className="detail-section one-time-card">
-        <SectionTitle icon={CheckCircle2} eyebrow={t('premium.eyebrow')} title={t('premium.activeTitle')} />
-        <p className="inline-note verify-success">{t('premium.activeNote')}</p>
+        <SectionTitle icon={CheckCircle2} eyebrow={t(isEarly ? 'earlySupporter.eyebrow' : 'premium.eyebrow')} title={t(isEarly ? 'earlySupporter.activeTitle' : 'premium.activeTitle')} />
+        {isEarly && <EarlySupporterBadge />}
+        <p className="inline-note verify-success">{t(isEarly ? 'earlySupporter.activeNote' : 'premium.activeNote')}</p>
       </section>
     );
   }
@@ -2775,10 +2919,44 @@ function OneTimeUnlockCard({ project, navigate }) {
   );
 }
 
+function PlanComparisonTable() {
+  const { t } = useTranslation();
+  const { columns, rows } = t('pricing.comparison');
+  const renderCell = (value) => {
+    if (value === true) return <CheckCircle2 size={16} className="gold-icon" />;
+    if (value === false) return <span className="comparison-dash">-</span>;
+    return value;
+  };
+  return (
+    <div className="analytics-table-card comparison-table-card">
+      <h4>{t('pricing.comparison.title')}</h4>
+      <table className="analytics-table comparison-table">
+        <thead>
+          <tr>
+            {columns.map((column) => (
+              <th key={column}>{column}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([feature, ...values]) => (
+            <tr key={feature}>
+              <td>{feature}</td>
+              {values.map((value, index) => (
+                <td key={index}>{renderCell(value)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function PricingPage({ navigate }) {
   const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
-  const { entitlement, hasPremium, refresh } = useWalletEntitlement();
+  const { entitlement, hasPremium, isEarlySupporter: isEarly, refresh } = useWalletEntitlement();
   const beginCheckout = async (plan) => {
     const result = plan === 'early_supporter' ? await handleEarlySupporterClick() : await handleUnlockPremiumClick();
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
@@ -2790,6 +2968,10 @@ function PricingPage({ navigate }) {
     { ...t('pricing.plans.earlySupporter'), action: () => beginCheckout('early_supporter') },
   ];
 
+  // Combine both plans' real (non-coming-soon) tools for the top value
+  // strip, deduped, so it never implies a "coming soon" item is included.
+  const activeToolNames = [...new Set([...t('premium.items'), ...t('earlySupporter.items')].filter(([, , status]) => status !== 'comingSoon').map(([title]) => title))];
+
   return (
     <section className="page-section pricing-page">
       <SectionTitle icon={WalletCards} eyebrow={t('pricing.eyebrow')} title={t('pricing.title')} />
@@ -2800,12 +2982,13 @@ function PricingPage({ navigate }) {
       </p>
       {hasPremium && (
         <p className="pricing-note payment-message verify-success">
-          {t('premium.activeNote')} ({entitlement?.plan === 'early_supporter' ? t('pricing.plans.earlySupporter.name') : t('pricing.plans.premium.name')})
+          {isEarly ? <EarlySupporterBadge compact /> : null}{' '}
+          {t(isEarly ? 'earlySupporter.activeNote' : 'premium.activeNote')}
         </p>
       )}
       {paymentMessage && <p className="pricing-note payment-message">{paymentMessage}</p>}
       <div className="premium-value-strip">
-        {t('premium.items').map(([title]) => (
+        {activeToolNames.map((title) => (
           <span key={title}><CheckCircle2 size={16} /> {title}</span>
         ))}
       </div>
@@ -2826,6 +3009,7 @@ function PricingPage({ navigate }) {
           </article>
         ))}
       </div>
+      <PlanComparisonTable />
       <PaymentMethodsSection beginCheckout={beginCheckout} onEntitlementChange={refresh} />
       <p className="pricing-note">{t('pricing.footerNote')}</p>
       <Disclaimer />
@@ -2932,7 +3116,12 @@ function WalletPaymentSection({ onEntitlementChange }) {
           {message && (
             <p className={status === 'verified' ? 'inline-note verify-success' : 'inline-note'}>{message}</p>
           )}
-          {status === 'verified' && <p className="inline-note verify-success">{t('pricing.payment.walletVerifiedFollowUp')}</p>}
+          {status === 'verified' && (
+            <>
+              <p className="inline-note verify-success">{t('pricing.payment.walletVerifiedFollowUp')}</p>
+              <UnlockedFeaturesMessage plan={plan} />
+            </>
+          )}
         </>
       )}
     </div>
@@ -3090,7 +3279,10 @@ function CryptoPaymentSection({ onEntitlementChange }) {
       </p>
 
       {verifyStatus === 'verified' && (
-        <p className="inline-note">{t('pricing.payment.verifiedFollowUp')}</p>
+        <>
+          <p className="inline-note">{t('pricing.payment.verifiedFollowUp')}</p>
+          <UnlockedFeaturesMessage plan={plan} />
+        </>
       )}
 
       {debugInfo && (

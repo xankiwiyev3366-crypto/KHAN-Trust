@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Wallet, Copy, ExternalLink, LogOut, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Wallet, Copy, ExternalLink, LogOut, CheckCircle2, AlertTriangle, Star } from 'lucide-react';
 import { useTranslation } from './i18n/I18nContext.jsx';
 import { useKhanWallet } from './wallet/useKhanWallet.js';
+import { fetchEntitlement, isEarlySupporter } from './entitlements.js';
 
 function truncate(address) {
   return address ? `${address.slice(0, 4)}...${address.slice(-4)}` : '';
@@ -31,8 +32,20 @@ export default function ConnectWalletButton({ variant = 'desktop' }) {
   const { address, connected, connecting, walletName, availableWallets, selectAndConnect, disconnect, connectError } = useKhanWallet();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isEarly, setIsEarly] = useState(false);
   const rootRef = useRef(null);
   const errorKey = connectErrorKey(connectError);
+
+  // Whichever wallet identity area is visible site-wide doubles as the
+  // closest thing this app has to a "profile" - an Early Supporter's badge
+  // belongs here so it's visible everywhere, not just on the pricing page.
+  useEffect(() => {
+    if (!connected || !address) {
+      setIsEarly(false);
+      return;
+    }
+    fetchEntitlement(address).then((entitlement) => setIsEarly(isEarlySupporter(entitlement)));
+  }, [connected, address]);
 
   useEffect(() => {
     if (!open) return;
@@ -89,6 +102,11 @@ export default function ConnectWalletButton({ variant = 'desktop' }) {
       >
         <Wallet size={16} />
         <span>{connecting ? t('walletConnect.connecting') : connected ? truncate(address) : t('walletConnect.connect')}</span>
+        {connected && isEarly && (
+          <span className="early-supporter-badge compact" title={t('earlySupporter.badgeTooltip')}>
+            <Star size={11} />
+          </span>
+        )}
       </button>
 
       {open && (
@@ -102,6 +120,11 @@ export default function ConnectWalletButton({ variant = 'desktop' }) {
                   <span>{truncate(address)}</span>
                 </div>
               </div>
+              {isEarly && (
+                <span className="early-supporter-badge" title={t('earlySupporter.badgeTooltip')}>
+                  <Star size={14} /> {t('earlySupporter.badgeLabel')}
+                </span>
+              )}
               <button type="button" onClick={copyAddress}>
                 <Copy size={15} /> {copied ? t('common.copied') : t('walletConnect.copyAddress')}
               </button>

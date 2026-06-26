@@ -129,7 +129,7 @@ const PROJECTS_KEY = 'khan-trust-projects-v1';
 const WATCHLIST_KEY = 'khan-trust-watchlist-v1';
 const CRYPTO_PAYMENT_WALLET = import.meta.env.VITE_KHAN_PAYMENT_WALLET || '';
 const OFFICIAL_KHAN_LINKS = {
-  website: 'https://khantrust.netlify.app',
+  website: 'https://khantrust.net',
   x: 'https://x.com/KXankiwiyev3366',
   telegram: 'https://t.me/+RXCuwpSNwikzNTE0',
 };

@@ -322,6 +322,7 @@ export default {
       cardTitle: 'Card payments',
       cardDescription: 'Use Stripe Checkout for Premium or Early Supporter access. Payments unlock platform features only.',
       cardNotConfigured: 'Card payments are not configured yet',
+      connectWalletFirst: 'Connect a wallet above first so we know where to grant access.',
       cryptoBadge: 'Manual crypto payment (backup)',
       cryptoTitle: 'Manual crypto payment',
       cryptoDescription: 'Supported networks: Solana / USDC / SOL. Automatic on-chain verification of your transaction hash.',

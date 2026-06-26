@@ -1,74 +1,46 @@
-const STRIPE_JS_URL = 'https://js.stripe.com/v3/';
+// Card payments go through a Stripe-hosted Checkout Session created
+// server-side (see netlify/functions/create-stripe-checkout-session.mjs),
+// not Stripe.js redirectToCheckout - that keeps the secret key and Price IDs
+// off the client and lets the session carry the connected wallet address so
+// the webhook knows which wallet to grant access to.
+const CREATE_SESSION_ENDPOINT = '/.netlify/functions/create-stripe-checkout-session';
 
-const stripeConfig = {
-  publishableKey: import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY,
-  premiumPriceId: import.meta.env.VITE_STRIPE_PREMIUM_PRICE_ID,
-  supporterPriceId: import.meta.env.VITE_STRIPE_SUPPORTER_PRICE_ID,
-};
+const PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 
-let stripeLoadPromise;
-
-function getPriceId(plan) {
-  return plan === 'early_supporter' ? stripeConfig.supporterPriceId : stripeConfig.premiumPriceId;
-}
-
-function getMode(plan) {
-  return plan === 'early_supporter' ? 'payment' : 'subscription';
-}
-
-export function isStripeConfigured(plan = 'premium') {
-  return Boolean(stripeConfig.publishableKey && getPriceId(plan));
+export function isStripeConfigured() {
+  return Boolean(PUBLISHABLE_KEY);
 }
 
 export function stripeUnavailableMessage() {
   return 'Card payments are not configured yet';
 }
 
-function loadStripeScript() {
-  if (typeof window === 'undefined') return Promise.reject(new Error('Stripe is unavailable in this environment.'));
-  if (window.Stripe) return Promise.resolve(window.Stripe);
-  if (stripeLoadPromise) return stripeLoadPromise;
-
-  stripeLoadPromise = new Promise((resolve, reject) => {
-    const existing = document.querySelector(`script[src="${STRIPE_JS_URL}"]`);
-    if (existing) {
-      existing.addEventListener('load', () => resolve(window.Stripe), { once: true });
-      existing.addEventListener('error', () => reject(new Error('Stripe failed to load.')), { once: true });
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = STRIPE_JS_URL;
-    script.async = true;
-    script.onload = () => resolve(window.Stripe);
-    script.onerror = () => reject(new Error('Stripe failed to load.'));
-    document.head.appendChild(script);
-  });
-
-  return stripeLoadPromise;
-}
-
-export async function startStripeCheckout(plan = 'premium') {
-  if (!isStripeConfigured(plan)) {
+export async function startStripeCheckout(plan = 'premium', wallet = '') {
+  if (!isStripeConfigured()) {
     return { ok: false, reason: 'missing_config', message: stripeUnavailableMessage() };
   }
 
-  const Stripe = await loadStripeScript();
-  if (typeof Stripe !== 'function') {
-    return { ok: false, reason: 'stripe_unavailable', message: stripeUnavailableMessage() };
+  if (!wallet) {
+    return { ok: false, reason: 'wallet_required', message: 'Connect a wallet first so we know where to grant access.' };
   }
 
-  const stripe = Stripe(stripeConfig.publishableKey);
-  const result = await stripe.redirectToCheckout({
-    lineItems: [{ price: getPriceId(plan), quantity: 1 }],
-    mode: getMode(plan),
-    successUrl: `${window.location.origin}${window.location.pathname}#/pricing?checkout=success`,
-    cancelUrl: `${window.location.origin}${window.location.pathname}#/pricing?checkout=cancelled`,
-  });
-
-  if (result?.error) {
-    return { ok: false, reason: 'redirect_failed', message: result.error.message || stripeUnavailableMessage() };
+  let response;
+  try {
+    response = await fetch(CREATE_SESSION_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ plan, wallet }),
+    });
+  } catch {
+    return { ok: false, reason: 'network_error', message: stripeUnavailableMessage() };
   }
 
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok || !data?.url) {
+    return { ok: false, reason: data?.reason || 'checkout_error', message: data?.message || stripeUnavailableMessage() };
+  }
+
+  window.location.href = data.url;
   return { ok: true };
 }

@@ -1886,25 +1886,30 @@ async function handleDownloadPdf(project) {
   }
 }
 
-function handleUnlockPremiumClick(project) {
+function handleUnlockPremiumClick(project, wallet) {
   trackPremiumClick();
-  return handleCheckout('premium');
+  return handleCheckout('premium', wallet);
 }
 
-function handleEarlySupporterClick() {
+function handleEarlySupporterClick(wallet) {
   trackEarlySupporterClick();
-  return handleCheckout('early_supporter');
+  return handleCheckout('early_supporter', wallet);
 }
 
-async function handleCheckout(plan) {
+async function handleCheckout(plan, wallet) {
   if (!isStripeConfigured(plan)) {
     trackCheckoutUnavailable(plan, 'missing_config');
     return { ok: false, message: stripeUnavailableMessage() };
   }
 
+  if (!wallet) {
+    trackCheckoutUnavailable(plan, 'wallet_required');
+    return { ok: false, message: 'Connect a wallet first so we know where to grant access.' };
+  }
+
   trackCheckoutStarted(plan);
   try {
-    const result = await startStripeCheckout(plan);
+    const result = await startStripeCheckout(plan, wallet);
     if (!result.ok) {
       trackCheckoutUnavailable(plan, result.reason);
     }
@@ -2847,7 +2852,7 @@ function PremiumLockedSection({ project, navigate }) {
   const [paymentMessage, setPaymentMessage] = useState('');
   const { hasPremium, isEarlySupporter: isEarly, wallet } = useWalletEntitlement();
   const unlockPremium = async () => {
-    const result = await handleUnlockPremiumClick(project);
+    const result = await handleUnlockPremiumClick(project, wallet);
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
   };
 
@@ -2887,9 +2892,9 @@ function PremiumLockedSection({ project, navigate }) {
 function OneTimeUnlockCard({ project, navigate }) {
   const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
-  const { hasPremium, isEarlySupporter: isEarly } = useWalletEntitlement();
+  const { hasPremium, isEarlySupporter: isEarly, wallet } = useWalletEntitlement();
   const unlockPremium = async () => {
-    const result = await handleUnlockPremiumClick(project);
+    const result = await handleUnlockPremiumClick(project, wallet);
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
   };
 
@@ -2956,9 +2961,10 @@ function PlanComparisonTable() {
 function PricingPage({ navigate }) {
   const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
-  const { entitlement, hasPremium, isEarlySupporter: isEarly, refresh } = useWalletEntitlement();
-  const beginCheckout = async (plan) => {
-    const result = plan === 'early_supporter' ? await handleEarlySupporterClick() : await handleUnlockPremiumClick();
+  const { entitlement, hasPremium, isEarlySupporter: isEarly, wallet, refresh } = useWalletEntitlement();
+  const beginCheckout = async (plan, walletOverride) => {
+    const checkoutWallet = walletOverride || wallet;
+    const result = plan === 'early_supporter' ? await handleEarlySupporterClick(checkoutWallet) : await handleUnlockPremiumClick(undefined, checkoutWallet);
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
   };
 
@@ -3130,18 +3136,20 @@ function WalletPaymentSection({ onEntitlementChange }) {
 
 function CardPaymentSection({ beginCheckout }) {
   const { t } = useTranslation();
-  const cardReady = isStripeConfigured('premium') || isStripeConfigured('early_supporter');
+  const { address, connected } = useKhanWallet();
+  const cardReady = isStripeConfigured();
   return (
     <div className="payment-method-card">
       <span className="status-badge">{t('pricing.payment.cardBadge')}</span>
       <h3>{t('pricing.payment.cardTitle')}</h3>
       <p>{t('pricing.payment.cardDescription')}</p>
       {!cardReady && <p className="inline-note">{t('pricing.payment.cardNotConfigured')}</p>}
+      {cardReady && !connected && <p className="inline-note">{t('pricing.payment.connectWalletFirst')}</p>}
       <div className="payment-action-row">
-        <button className="primary-button" type="button" onClick={() => beginCheckout('premium')}>
+        <button className="primary-button" type="button" disabled={!cardReady || !connected} onClick={() => beginCheckout('premium', address)}>
           {t('premium.unlockPremium')}
         </button>
-        <button className="secondary-button" type="button" onClick={() => beginCheckout('early_supporter')}>
+        <button className="secondary-button" type="button" disabled={!cardReady || !connected} onClick={() => beginCheckout('early_supporter', address)}>
           {t('pricing.plans.earlySupporter').cta}
         </button>
       </div>
@@ -3362,8 +3370,9 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
   const confidence = confidenceScore(project);
   const canRequestVerification =
     project.verificationStatus === VERIFICATION_STATUS.UNVERIFIED || project.verificationStatus === VERIFICATION_STATUS.REJECTED;
+  const { address: profileWallet } = useKhanWallet();
   const unlockPremium = async () => {
-    const result = await handleUnlockPremiumClick(project);
+    const result = await handleUnlockPremiumClick(project, profileWallet);
     if (!result?.ok) alert(result?.message || stripeUnavailableMessage());
   };
 

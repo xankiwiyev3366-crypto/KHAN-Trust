@@ -62,19 +62,29 @@ function generateTicketId() {
   return `KT-${stamp}-${random}`;
 }
 
+// Errors carry a `code` + `params` instead of a hardcoded English message so
+// the Support page can render them through the i18n system (see
+// support.form.attachmentErrors.* in src/i18n/*.js) regardless of site language.
+function attachmentError(code, params) {
+  const error = new Error(code);
+  error.code = code;
+  error.params = params;
+  return error;
+}
+
 export function fileToAttachment(file) {
   return new Promise((resolve, reject) => {
     if (!ALLOWED_ATTACHMENT_TYPES.has(file.type)) {
-      reject(new Error(`Unsupported file type: ${file.type || file.name}`));
+      reject(attachmentError('unsupported_type', { type: file.type || file.name }));
       return;
     }
     if (file.size > MAX_ATTACHMENT_BYTES) {
-      reject(new Error(`"${file.name}" exceeds the 4MB attachment limit.`));
+      reject(attachmentError('too_large', { name: file.name }));
       return;
     }
     const reader = new FileReader();
     reader.onload = () => resolve({ name: file.name, type: file.type, data: reader.result });
-    reader.onerror = () => reject(new Error(`Could not read file "${file.name}".`));
+    reader.onerror = () => reject(attachmentError('read_failed', { name: file.name }));
     reader.readAsDataURL(file);
   });
 }

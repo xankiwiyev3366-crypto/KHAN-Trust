@@ -819,6 +819,12 @@ export default {
       submitFailed: 'Could not send your message. Please try again.',
       successMessage: 'Your message has been received successfully. Our team will respond as soon as possible.',
       ticketIdLabel: 'Ticket ID',
+      attachmentErrors: {
+        unsupported_type: 'Unsupported file type: {{type}}',
+        too_large: '"{{name}}" exceeds the 4MB attachment limit.',
+        read_failed: 'Could not read file "{{name}}".',
+        generic: 'Could not process the selected file.',
+      },
     },
     history: {
       title: 'Your Ticket History',

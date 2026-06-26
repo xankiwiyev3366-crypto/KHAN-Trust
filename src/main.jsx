@@ -5568,7 +5568,8 @@ function SupportPage({ navigate }) {
       const converted = await Promise.all(files.map(fileToAttachment));
       setAttachments(converted);
     } catch (error) {
-      setAttachmentError(error.message);
+      const key = error.code ? `support.form.attachmentErrors.${error.code}` : 'support.form.attachmentErrors.generic';
+      setAttachmentError(t(key, error.params));
       setAttachments([]);
     }
   };

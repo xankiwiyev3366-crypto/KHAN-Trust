@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 
 // Module-level (not per-hook-instance) flag for "the user just explicitly
@@ -31,6 +31,15 @@ function setSharedConnectError(error) {
 // (e.g. via @solana/spl-token's getAssociatedTokenAddress + getAccount) without
 // touching any component that calls useKhanWallet(). No holder gating exists
 // yet - this only prepares the shape.
+// Explicit Phantom/Solflare adapters and their Wallet Standard counterparts
+// can both briefly exist while the Standard entry is still registering (see
+// WalletContextProvider.jsx) - if a connect() lands in that exact window it
+// fails with a WalletNotReadyError carrying no message text. That window is
+// normally milliseconds, so one short delayed retry against whatever adapter
+// is current by then resolves it without surfacing an error for what is
+// really just a timing race, not a real failure.
+const NOT_READY_RETRY_DELAY_MS = 350;
+
 export function useKhanWallet() {
   const { connection } = useConnection();
   const { publicKey, connected, connecting, disconnecting, wallet, select, connect, disconnect, wallets, sendTransaction } = useWallet();
@@ -42,6 +51,24 @@ export function useKhanWallet() {
     errorListeners.add(setConnectError);
     return () => errorListeners.delete(setConnectError);
   }, []);
+
+  // Always points at the latest `connect` from this render, so the delayed
+  // retry below calls connect() bound to whatever wallet is current at retry
+  // time rather than a closure frozen at the moment the first attempt failed.
+  const connectRef = useRef(connect);
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
+
+  const connectWithNotReadyRetry = (alreadyRetried = false) => {
+    connect().catch((error) => {
+      if (error?.name === 'WalletNotReadyError' && !alreadyRetried) {
+        setTimeout(() => connectRef.current().catch((retryError) => setSharedConnectError(retryError)), NOT_READY_RETRY_DELAY_MS);
+        return;
+      }
+      setSharedConnectError(error);
+    });
+  };
 
   // select(name) only marks an adapter as active; it does not itself open the
   // extension's approval popup. Connecting must happen in a follow-up effect
@@ -63,7 +90,7 @@ export function useKhanWallet() {
     if (!wallet || connected || connecting) return;
     if (pendingConnectName !== wallet.adapter.name) return;
     pendingConnectName = null;
-    connect().catch((error) => setSharedConnectError(error));
+    connectWithNotReadyRetry();
   }, [wallet, connected, connecting, connect]);
 
   const selectAndConnect = (walletName) => {
@@ -73,7 +100,7 @@ export function useKhanWallet() {
       // previous failed attempt) - select(walletName) would be a no-op since
       // nothing changes, so the effect above would never re-fire. Call
       // connect() directly instead of routing through the pending-flag effect.
-      connect().catch((error) => setSharedConnectError(error));
+      connectWithNotReadyRetry();
       return;
     }
     pendingConnectName = walletName;

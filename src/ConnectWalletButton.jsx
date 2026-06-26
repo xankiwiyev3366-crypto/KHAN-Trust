@@ -7,16 +7,13 @@ function truncate(address) {
   return address ? `${address.slice(0, 4)}...${address.slice(-4)}` : '';
 }
 
-// Static install links shown when no Wallet Standard wallet has registered
-// itself (i.e. the visitor has no Phantom/Solflare extension at all). We no
-// longer pass explicit adapter instances to WalletProvider - see
-// WalletContextProvider.jsx for why - so there's nothing in `availableWallets`
-// to render an "Install" affordance for in that case; this static fallback
-// covers it without reintroducing the legacy adapters.
-const WALLET_INSTALL_LINKS = [
-  { name: 'Phantom', href: 'https://phantom.app/download' },
-  { name: 'Solflare', href: 'https://solflare.com/download' },
-];
+// Official download links for the wallets we explicitly support (see
+// WalletContextProvider.jsx) - used to turn a disabled "not installed" entry
+// into an actionable link instead of a dead button.
+const WALLET_DOWNLOAD_URLS = {
+  Phantom: 'https://phantom.com/download',
+  Solflare: 'https://solflare.com/download',
+};
 
 function connectErrorKey(error) {
   if (!error) return '';
@@ -123,27 +120,40 @@ export default function ConnectWalletButton({ variant = 'desktop' }) {
           ) : (
             <>
               <span className="wallet-connect-menu-label">{t('walletConnect.chooseWallet')}</span>
-              {availableWallets.map((item) => (
-                <button
-                  key={item.adapter.name}
-                  type="button"
-                  disabled={item.readyState === 'NotDetected' || item.readyState === 'Unsupported'}
-                  onClick={() => pickWallet(item.adapter.name)}
-                >
-                  {item.adapter.icon && <img src={item.adapter.icon} alt="" width={18} height={18} />}
-                  <span>{item.adapter.name}</span>
-                  {(item.readyState === 'NotDetected' || item.readyState === 'Unsupported') && (
-                    <small>{t('walletConnect.install')}</small>
-                  )}
-                </button>
-              ))}
-              {!availableWallets.length &&
-                WALLET_INSTALL_LINKS.map((link) => (
-                  <a key={link.name} href={link.href} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
-                    <span>{link.name}</span>
-                    <small>{t('walletConnect.install')}</small>
-                  </a>
-                ))}
+              {availableWallets.map((item) => {
+                const notReady = item.readyState === 'NotDetected' || item.readyState === 'Unsupported';
+                const downloadUrl = WALLET_DOWNLOAD_URLS[item.adapter.name];
+
+                // A wallet we explicitly support but that isn't detected gets
+                // a real link to its official download page (and the clear
+                // "not installed" message below) instead of a disabled,
+                // unactionable button.
+                if (notReady && downloadUrl) {
+                  return (
+                    <a key={item.adapter.name} href={downloadUrl} target="_blank" rel="noreferrer" onClick={() => setOpen(false)}>
+                      {item.adapter.icon && <img src={item.adapter.icon} alt="" width={18} height={18} />}
+                      <span>{item.adapter.name}</span>
+                      <small>{t('walletConnect.install')}</small>
+                    </a>
+                  );
+                }
+
+                return (
+                  <button
+                    key={item.adapter.name}
+                    type="button"
+                    disabled={notReady}
+                    onClick={() => pickWallet(item.adapter.name)}
+                  >
+                    {item.adapter.icon && <img src={item.adapter.icon} alt="" width={18} height={18} />}
+                    <span>{item.adapter.name}</span>
+                    {notReady && <small>{t('walletConnect.install')}</small>}
+                  </button>
+                );
+              })}
+              {availableWallets.some(
+                (item) => item.adapter.name === 'Phantom' && (item.readyState === 'NotDetected' || item.readyState === 'Unsupported')
+              ) && <p className="wallet-connect-not-installed-note">{t('walletConnect.notInstalled', { wallet: 'Phantom' })}</p>}
               {errorKey && (
                 <p className="wallet-connect-error">
                   <AlertTriangle size={14} /> {t(errorKey)}

@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletReadyState } from '@solana/wallet-adapter-base';
+import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
+import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
 
 // api.mainnet-beta.solana.com rejects many browser-origin requests with HTTP
 // 403 (getAccountInfo, sendTransaction, confirmTransaction all hit this) -
@@ -9,43 +11,40 @@ import { WalletReadyState } from '@solana/wallet-adapter-base';
 // (Helius, QuickNode, Triton, etc).
 const MAINNET_RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 
-// Only auto-reconnect a wallet that is genuinely installed as a browser
-// extension. Solflare's adapter (and some others) treat "Loadable" as "not
-// installed, but connect() will redirect the user to install/use it" - if we
-// auto-connect for Loadable too, a user who once clicked Solflare without the
-// extension gets redirected to solflare.com on every single page load
-// thereafter, since the wallet name is persisted to localStorage regardless
-// of whether the connection actually completed. Restricting auto-connect to
-// Installed avoids that loop while still restoring a real prior session.
+// Only auto-reconnect a wallet that is genuinely installed/ready. Solflare's
+// adapter (and some others) treat "Loadable" as "not installed, but
+// connect() will redirect the user to install/use it" - if we auto-connect
+// for Loadable too, a user who once clicked Solflare without the extension
+// gets redirected to solflare.com on every single page load thereafter,
+// since the wallet name is persisted to localStorage regardless of whether
+// the connection actually completed. Restricting auto-connect to Installed
+// avoids that loop while still restoring a real prior session.
 function shouldAutoConnect(adapter) {
   return adapter.readyState === WalletReadyState.Installed;
 }
 
-// No explicit wallets array. Phantom and Solflare have both implemented the
-// Wallet Standard for years, so they self-register into the browser's
-// wallet-standard registry and @solana/wallet-adapter-react picks them up
-// automatically (via useStandardWalletAdapters internally) - no adapter
-// instance, no manual readyState polling needed.
-//
-// We used to pass explicit PhantomWalletAdapter/SolflareWalletAdapter
-// instances here, which caused two real, separate bugs once a tester's
-// browser also had Phantom registered as a Standard Wallet:
-//   1. @solana/wallet-adapter-phantom's own legacy `isPhantomInstalled`
-//      detection (added in 0.9.29, fixed in our deployed 0.9.28 pin) showed
-//      a genuinely installed Phantom as "not installed".
-//   2. Once the Standard Wallet entry registers, the SDK silently drops the
-//      explicit legacy adapter from the wallets list (same name, so it's
-//      treated as a duplicate) and swaps in the Standard one - if a connect
-//      attempt was already in flight against the legacy adapter when that
-//      swap happened, it surfaced as a generic "Could not connect wallet"
-//      error with no useful detail (logged a one-line SDK console.warn
-//      about it, easy to miss).
-// Standard Wallet detection has neither failure mode: there is no polling
-// gate to regress, and there is nothing to swap out from under an in-flight
-// connection because it's the only adapter for that wallet name from the
-// start. Keep an empty array (not undefined) so the WalletProvider prop
-// type stays explicit.
-const EXPLICIT_WALLETS = [];
+// Explicit Phantom/Solflare adapters are kept here (pinned to known-good
+// versions - see package.json) specifically for what Wallet Standard
+// auto-detection alone cannot do:
+//   - iOS Safari: PhantomWalletAdapter reports `Loadable` readyState and its
+//     connect() deep-links into Phantom's in-app browser
+//     (phantom.app/ul/browse/...). There is no browser extension API to
+//     register via the Wallet Standard on iOS Safari at all, so without this
+//     explicit adapter iOS users have no way to reach Phantom from a normal
+//     mobile tab.
+//   - Desktop, no extension installed: the explicit adapter's `NotDetected`
+//     state drives the "Phantom not installed" prompt (see
+//     ConnectWalletButton.jsx) instead of the wallet simply being absent
+//     from the list.
+// On desktop WITH the extension installed, @solana/wallet-adapter-react's
+// useStandardWalletAdapters() detects Phantom/Solflare's Wallet Standard
+// registration and transparently prefers that over the explicit adapter of
+// the same name (no duplicate entries). That auto-merge is also what
+// resolves @solana/wallet-adapter-phantom@0.9.29's `isPhantomInstalled`
+// detection regression - we additionally pin to the last known-good 0.9.28
+// (see package.json) so the explicit adapter itself reports correctly too,
+// rather than depending solely on the Standard Wallet entry winning the race.
+const wallets = [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
 
 // Single shared wallet connection for the whole site (nav "Connect Wallet").
 // This is intentionally separate from the page-specific Phantom signing flows
@@ -55,10 +54,14 @@ const EXPLICIT_WALLETS = [];
 // and is where future KHAN-holder checks (e.g. SPL balance lookups) should
 // read the connected publicKey from - see src/wallet/useKhanWallet.js.
 export default function WalletContextProvider({ children }) {
+  // useMemo so the adapter instances (and their internal detection polling)
+  // are created once per app lifetime, not re-created on every render.
+  const memoWallets = useMemo(() => wallets, []);
+
   return (
     <ConnectionProvider endpoint={MAINNET_RPC_URL}>
       <WalletProvider
-        wallets={EXPLICIT_WALLETS}
+        wallets={memoWallets}
         autoConnect={shouldAutoConnect}
         onError={(error) => console.error('[KHAN Trust] wallet connection error:', error)}
       >

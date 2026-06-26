@@ -154,6 +154,7 @@ import {
 const PROJECTS_KEY = 'khan-trust-projects-v1';
 const WATCHLIST_KEY = 'khan-trust-watchlist-v1';
 const CRYPTO_PAYMENT_WALLET = import.meta.env.VITE_KHAN_PAYMENT_WALLET || '';
+const WALLET_DOWNLOAD_URLS = { Phantom: 'https://phantom.com/download', Solflare: 'https://solflare.com/download' };
 const OFFICIAL_KHAN_LINKS = {
   website: 'https://khantrust.net',
   x: 'https://x.com/KXankiwiyev3366',
@@ -2878,24 +2879,30 @@ function WalletPaymentSection({ onEntitlementChange }) {
 
       {!connected ? (
         <div className="wallet-pay-connect">
-          {availableWallets.map((item) => (
-            <button
-              key={item.adapter.name}
-              type="button"
-              className="secondary-button"
-              disabled={item.readyState === 'NotDetected' || item.readyState === 'Unsupported'}
-              onClick={() => selectAndConnect(item.adapter.name)}
-            >
-              {connecting ? t('walletConnect.connecting') : t('pricing.payment.connectWalletCta', { name: item.adapter.name })}
-            </button>
-          ))}
-          {!availableWallets.length && (
-            <p className="inline-note">
-              {t('pricing.payment.noWalletDetected')}{' '}
-              <a href="https://phantom.app/download" target="_blank" rel="noreferrer">Phantom</a>
-              {' '}{t('common.or')}{' '}
-              <a href="https://solflare.com/download" target="_blank" rel="noreferrer">Solflare</a>.
-            </p>
+          {availableWallets.map((item) => {
+            const notReady = item.readyState === 'NotDetected' || item.readyState === 'Unsupported';
+            const downloadUrl = WALLET_DOWNLOAD_URLS[item.adapter.name];
+            if (notReady && downloadUrl) {
+              return (
+                <a key={item.adapter.name} className="secondary-button" href={downloadUrl} target="_blank" rel="noreferrer">
+                  {t('pricing.payment.installWalletCta', { name: item.adapter.name })}
+                </a>
+              );
+            }
+            return (
+              <button
+                key={item.adapter.name}
+                type="button"
+                className="secondary-button"
+                disabled={notReady}
+                onClick={() => selectAndConnect(item.adapter.name)}
+              >
+                {connecting ? t('walletConnect.connecting') : t('pricing.payment.connectWalletCta', { name: item.adapter.name })}
+              </button>
+            );
+          })}
+          {availableWallets.some((item) => item.adapter.name === 'Phantom' && (item.readyState === 'NotDetected' || item.readyState === 'Unsupported')) && (
+            <p className="inline-note">{t('walletConnect.notInstalled', { wallet: 'Phantom' })}</p>
           )}
         </div>
       ) : (

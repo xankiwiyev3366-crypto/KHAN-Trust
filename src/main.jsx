@@ -2208,7 +2208,7 @@ function App() {
         {page === 'terms' && <TermsOfServicePage />}
         {page === 'disclaimer' && <DisclaimerPage />}
         {page === 'contact' && <ContactPage />}
-        {page === 'support' && <SupportPage />}
+        {page === 'support' && <SupportPage navigate={navigate} />}
         {page === 'admin-verify' && <AdminVerificationPage onReviewed={refreshVerificationMap} />}
         {page === 'admin-analytics' && <AdminAnalyticsPage />}
         {page === 'admin-support' && <AdminSupportPage />}
@@ -2237,6 +2237,17 @@ function App() {
   );
 }
 
+// An admin who is already signed in (shared sessionStorage token - see
+// AdminVerificationPage/AdminAnalyticsPage/AdminSupportPage) should never get
+// bounced out to the public Support contact form by the main nav link; they
+// stay inside the admin area until they explicitly sign out. Read fresh at
+// click/render time rather than caching in state, since the only way this
+// changes is a login/logout elsewhere on the same page.
+function navTargetFor(itemId) {
+  if (itemId === 'support' && getStoredAdminToken()) return 'admin-support';
+  return itemId;
+}
+
 function Header({ page, navigate }) {
   const { t } = useTranslation();
   return (
@@ -2251,7 +2262,7 @@ function Header({ page, navigate }) {
       <div className="header-right">
         <nav className="desktop-nav">
           {navItems.map((item) => (
-            <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navigate(item.id)}>
+            <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navigate(navTargetFor(item.id))}>
               {t(`nav.${item.id}`)}
             </button>
           ))}
@@ -2270,7 +2281,7 @@ function MobileNav({ page, navigate }) {
       {navItems.map((item) => {
         const Icon = item.icon;
         return (
-          <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navigate(item.id)}>
+          <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navigate(navTargetFor(item.id))}>
             <Icon size={18} />
             <span>{t(`nav.${item.id}`)}</span>
           </button>
@@ -2285,6 +2296,7 @@ function MobileNav({ page, navigate }) {
 function isActive(page, id) {
   if (id === 'khan') return page === 'khan';
   if (id === 'explore') return page === 'explore' || page.startsWith('project/') || page.startsWith('report/');
+  if (id === 'support') return page === 'support' || page === 'admin-support';
   return page === id;
 }
 
@@ -5306,10 +5318,18 @@ function ticketPriorityLabel(priority) {
   return translate(`support.priorityLabels.${priority}`) || priority;
 }
 
-function SupportPage() {
+function SupportPage({ navigate }) {
   const { t } = useTranslation();
   usePageSeo(`${t('support.title')} | KHAN Trust`, t('support.seoDescription'));
   const { address, connected } = useKhanWallet();
+
+  // Public Support is for end users only - an admin who lands here directly
+  // (typed URL, stale bookmark, etc.) belongs in the Admin Support Center
+  // instead, same as the main nav link already redirects them.
+  useEffect(() => {
+    if (getStoredAdminToken()) navigate?.('admin-support');
+  }, []);
+
   const [form, setForm] = useState({ name: '', email: '', subject: '', category: 'general', message: '', company: '' });
   const [attachments, setAttachments] = useState([]);
   const [attachmentError, setAttachmentError] = useState('');

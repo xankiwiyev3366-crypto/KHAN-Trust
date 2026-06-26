@@ -26,6 +26,7 @@ import {
 import {
   Activity,
   AlertTriangle,
+  Archive,
   ArrowRight,
   BadgeCheck,
   BarChart3,
@@ -46,22 +47,28 @@ import {
   Globe2,
   History,
   Home,
+  Inbox,
   Info,
   Layers3,
+  LifeBuoy,
   LineChart,
   ListFilter,
   Lock,
   Mail,
   MessageCircle,
+  Paperclip,
   Plus,
   Search,
   Scale,
+  Send,
   Shield,
   Sparkles,
   Star,
   Target,
   TimerReset,
   TrendingUp,
+  Trash2,
+  UserPlus,
   Users,
   WalletCards,
   X,
@@ -97,6 +104,25 @@ import { isStripeConfigured, startStripeCheckout, stripeUnavailableMessage } fro
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
 import { fetchEntitlement, hasPlanAccess } from './entitlements.js';
+import {
+  TICKET_CATEGORIES,
+  TICKET_STATUSES,
+  TICKET_PRIORITIES,
+  MAX_ATTACHMENTS,
+  fileToAttachment,
+  submitSupportTicket,
+  fetchMyTickets,
+  fetchSupportTickets,
+  fetchSupportTicket,
+  replyToTicket,
+  setTicketStatus,
+  setTicketPriority,
+  assignTicket,
+  setTicketNotes,
+  archiveTicket,
+  unarchiveTicket,
+  deleteTicket,
+} from './support.js';
 import {
   VERIFICATION_STATUS,
   normalizeVerificationStatus,
@@ -339,6 +365,7 @@ const navItems = [
   { id: 'whitepaper', label: 'Whitepaper', icon: BookOpen },
   { id: 'about', label: 'About', icon: Info },
   { id: 'khan', label: '$KHAN', icon: Star },
+  { id: 'support', label: 'Support', icon: LifeBuoy },
 ];
 
 const filters = ['All', 'Solana', 'Ethereum', 'BSC', 'Base', 'New Projects', 'High Risk', 'Strong Community'];
@@ -2181,8 +2208,10 @@ function App() {
         {page === 'terms' && <TermsOfServicePage />}
         {page === 'disclaimer' && <DisclaimerPage />}
         {page === 'contact' && <ContactPage />}
+        {page === 'support' && <SupportPage />}
         {page === 'admin-verify' && <AdminVerificationPage onReviewed={refreshVerificationMap} />}
         {page === 'admin-analytics' && <AdminAnalyticsPage />}
+        {page === 'admin-support' && <AdminSupportPage />}
       </main>
       <Footer navigate={navigate} />
       <MobileNav page={page} navigate={navigate} />
@@ -4481,6 +4510,9 @@ function AdminVerificationPage({ onReviewed }) {
       <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-analytics'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
         <BarChart3 size={18} /> {t('adminVerify.openAnalytics')}
       </button>
+      <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-support'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+        <LifeBuoy size={18} /> {t('adminSupport.openSupport')}
+      </button>
     </section>
   );
 }
@@ -4717,6 +4749,9 @@ function AdminAnalyticsPage() {
         <button className="secondary-button" type="button" onClick={exportJson}><Download size={16} /> {t('adminAnalytics.exportJson')}</button>
         <button className="secondary-button" type="button" onClick={() => { window.location.hash = '/admin-verify'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
           <Shield size={16} /> {t('adminAnalytics.verificationReview')}
+        </button>
+        <button className="secondary-button" type="button" onClick={() => { window.location.hash = '/admin-support'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+          <LifeBuoy size={16} /> {t('adminSupport.openSupport')}
         </button>
         <button className="ghost-button" type="button" onClick={logout}>{t('common.signOut')}</button>
       </div>
@@ -5250,6 +5285,567 @@ function ContactPage() {
       <div className="about-panel legal-panel">
         <p>{t('contact.partnership')}</p>
       </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Support & Messaging Center - user-facing contact form + ticket history.
+// Tickets live server-side (see netlify/functions/support-*.mjs); the admin
+// side (AdminSupportPage below) reuses the same shared admin token as the
+// verification review and analytics dashboards.
+// ---------------------------------------------------------------------------
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function ticketStatusLabel(status) {
+  return translate(`support.statusLabels.${status}`) || status;
+}
+
+function ticketPriorityLabel(priority) {
+  return translate(`support.priorityLabels.${priority}`) || priority;
+}
+
+function SupportPage() {
+  const { t } = useTranslation();
+  usePageSeo(`${t('support.title')} | KHAN Trust`, t('support.seoDescription'));
+  const { address, connected } = useKhanWallet();
+  const [form, setForm] = useState({ name: '', email: '', subject: '', category: 'general', message: '', company: '' });
+  const [attachments, setAttachments] = useState([]);
+  const [attachmentError, setAttachmentError] = useState('');
+  const [submitState, setSubmitState] = useState({ status: 'idle', message: '', ticketId: '' });
+  const [lookupEmail, setLookupEmail] = useState('');
+  const [myTickets, setMyTickets] = useState(null);
+  const [lookupState, setLookupState] = useState({ status: 'idle', message: '' });
+
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const wallet = connected ? address : '';
+
+  const onAttachmentChange = async (event) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length > MAX_ATTACHMENTS) {
+      setAttachmentError(t('support.form.tooManyFiles', { count: MAX_ATTACHMENTS }));
+      return;
+    }
+    setAttachmentError('');
+    try {
+      const converted = await Promise.all(files.map(fileToAttachment));
+      setAttachments(converted);
+    } catch (error) {
+      setAttachmentError(error.message);
+      setAttachments([]);
+    }
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!EMAIL_PATTERN.test(form.email.trim())) {
+      setSubmitState({ status: 'error', message: t('support.form.invalidEmail'), ticketId: '' });
+      return;
+    }
+    if (!form.subject.trim() || !form.message.trim()) {
+      setSubmitState({ status: 'error', message: t('support.form.missingFields'), ticketId: '' });
+      return;
+    }
+    setSubmitState({ status: 'loading', message: '', ticketId: '' });
+    try {
+      const result = await submitSupportTicket({ ...form, wallet, attachments });
+      setSubmitState({ status: 'success', message: t('support.form.successMessage'), ticketId: result.ticketId });
+      setForm({ name: '', email: form.email, subject: '', category: 'general', message: '', company: '' });
+      setAttachments([]);
+    } catch (error) {
+      setSubmitState({ status: 'error', message: error.message || t('support.form.submitFailed'), ticketId: '' });
+    }
+  };
+
+  const lookupTickets = async (event) => {
+    event.preventDefault();
+    const email = lookupEmail.trim();
+    if (!email && !wallet) {
+      setLookupState({ status: 'error', message: t('support.history.needEmailOrWallet') });
+      return;
+    }
+    setLookupState({ status: 'loading', message: '' });
+    try {
+      const tickets = await fetchMyTickets({ email, wallet });
+      setMyTickets(tickets);
+      setLookupState({ status: 'idle', message: '' });
+    } catch (error) {
+      setLookupState({ status: 'error', message: error.message || t('support.history.lookupFailed') });
+    }
+  };
+
+  return (
+    <section className="page-section support-page">
+      <SectionTitle icon={LifeBuoy} eyebrow={t('support.eyebrow')} title={t('support.title')} />
+      <p className="legal-lead">{t('support.intro')}</p>
+
+      <form className="add-form support-form" onSubmit={submit}>
+        <input
+          type="text"
+          name="company"
+          value={form.company}
+          onChange={(event) => update('company', event.target.value)}
+          autoComplete="off"
+          tabIndex={-1}
+          aria-hidden="true"
+          className="honeypot-field"
+        />
+        <div className="support-form-grid">
+          <FormField label={t('support.form.nameLabel')} value={form.name} onChange={(value) => update('name', value)} placeholder={t('support.form.namePlaceholder')} />
+          <FormField label={t('support.form.emailLabel')} type="email" value={form.email} onChange={(value) => update('email', value)} required placeholder={t('support.form.emailPlaceholder')} />
+        </div>
+        <label className="form-field">
+          <span>{t('support.form.walletLabel')}</span>
+          <input type="text" value={wallet || t('support.form.walletNotConnected')} disabled />
+        </label>
+        <FormField label={t('support.form.subjectLabel')} value={form.subject} onChange={(value) => update('subject', value)} required placeholder={t('support.form.subjectPlaceholder')} />
+        <label className="form-field">
+          <span>{t('support.form.categoryLabel')}</span>
+          <select value={form.category} onChange={(event) => update('category', event.target.value)}>
+            {TICKET_CATEGORIES.map((category) => (
+              <option key={category.id} value={category.id}>{t(`support.categories.${category.id}`)}</option>
+            ))}
+          </select>
+        </label>
+        <label className="form-field wide">
+          <span>{t('support.form.messageLabel')}</span>
+          <textarea value={form.message} onChange={(event) => update('message', event.target.value)} required rows={6} placeholder={t('support.form.messagePlaceholder')} />
+        </label>
+        <label className="form-field wide">
+          <span>{t('support.form.attachmentLabel')}</span>
+          <input type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,application/pdf" onChange={onAttachmentChange} />
+          <small className="inline-note">{t('support.form.attachmentHint')}</small>
+        </label>
+        {attachments.length > 0 && (
+          <ul className="attachment-list">
+            {attachments.map((file) => (
+              <li key={file.name}><Paperclip size={14} /> {file.name}</li>
+            ))}
+          </ul>
+        )}
+        {attachmentError && <p className="lookup-message error">{attachmentError}</p>}
+
+        <button className="primary-button wide-button" type="submit" disabled={submitState.status === 'loading'}>
+          {submitState.status === 'loading' ? t('support.form.sending') : t('support.form.submit')} <Send size={18} />
+        </button>
+        {submitState.message && (
+          <p className={submitState.status === 'success' ? 'lookup-message success' : 'lookup-message error'}>
+            {submitState.message}
+            {submitState.ticketId && ` (${t('support.form.ticketIdLabel')}: ${submitState.ticketId})`}
+          </p>
+        )}
+      </form>
+
+      <div className="about-panel legal-panel support-history-panel">
+        <h3>{t('support.history.title')}</h3>
+        <p>{t('support.history.intro')}</p>
+        <form className="support-lookup-form" onSubmit={lookupTickets}>
+          <input
+            type="email"
+            value={lookupEmail}
+            onChange={(event) => setLookupEmail(event.target.value)}
+            placeholder={t('support.history.emailPlaceholder')}
+          />
+          <button className="secondary-button" type="submit" disabled={lookupState.status === 'loading'}>
+            {t('support.history.lookupCta')}
+          </button>
+        </form>
+        {wallet && <p className="inline-note">{t('support.history.walletHint', { wallet })}</p>}
+        {lookupState.message && <p className="lookup-message error">{lookupState.message}</p>}
+        {myTickets && !myTickets.length && <EmptyState title={t('support.history.emptyTitle')} text={t('support.history.emptyText')} />}
+        {myTickets && myTickets.length > 0 && (
+          <div className="my-tickets-list">
+            {myTickets.map((ticket) => (
+              <article className="my-ticket-card" key={ticket.id}>
+                <header>
+                  <strong>{ticket.subject}</strong>
+                  <span className={`status-badge ticket-status-${ticket.status}`}>{ticketStatusLabel(ticket.status)}</span>
+                </header>
+                <p className="inline-note">{ticket.id} - {new Date(ticket.createdAt).toLocaleString()}</p>
+                <p>{ticket.message}</p>
+                {ticket.replies?.length > 0 && (
+                  <div className="ticket-reply-thread">
+                    {ticket.replies.map((reply, index) => (
+                      <div className="ticket-reply" key={index}>
+                        <strong>{t('support.history.teamReply')}</strong>
+                        <p>{reply.message}</p>
+                        <small>{new Date(reply.createdAt).toLocaleString()}</small>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function TicketAttachmentPreview({ attachment }) {
+  if (attachment.type?.startsWith('image/') && attachment.data) {
+    return <img className="attachment-preview-image" src={attachment.data} alt={attachment.name} />;
+  }
+  return (
+    <a className="attachment-preview-file" href={attachment.data} download={attachment.name} target="_blank" rel="noreferrer">
+      <FileText size={16} /> {attachment.name}
+    </a>
+  );
+}
+
+function AdminSupportTicketDetail({ token, ticketId, onClose, onChanged }) {
+  const { t } = useTranslation();
+  const [ticket, setTicket] = useState(null);
+  const [replyMessage, setReplyMessage] = useState('');
+  const [notes, setNotes] = useState('');
+  const [assignee, setAssignee] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = async () => {
+    try {
+      const data = await fetchSupportTicket(token, ticketId);
+      setTicket(data);
+      setNotes(data?.adminNotes || '');
+      setAssignee(data?.assignedTo || '');
+    } catch (err) {
+      setError(err.message || t('adminSupport.loadTicketFailed'));
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [ticketId]);
+
+  const runAction = async (fn) => {
+    setBusy(true);
+    setError('');
+    try {
+      await fn();
+      await load();
+      await onChanged?.();
+    } catch (err) {
+      setError(err.message || t('adminSupport.actionFailed'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!ticket) {
+    return (
+      <div className="modal-backdrop" role="dialog" aria-modal="true">
+        <div className="modal-panel ticket-detail-modal">
+          <p className="lookup-message">{error || t('adminSupport.loadingTicket')}</p>
+          <button className="secondary-button" type="button" onClick={onClose}>{t('common.close')}</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Ticket detail">
+      <div className="modal-panel ticket-detail-modal">
+        <header className="ticket-detail-header">
+          <div>
+            <strong>{ticket.subject}</strong>
+            <p className="inline-note">{ticket.id}</p>
+          </div>
+          <button className="ghost-button" type="button" onClick={onClose}><X size={18} /></button>
+        </header>
+
+        <div className="ticket-detail-grid">
+          <p><strong>{t('adminSupport.columns.name')}:</strong> {ticket.name || t('common.notAvailable')}</p>
+          <p><strong>{t('adminSupport.columns.email')}:</strong> {ticket.email}</p>
+          <p><strong>{t('adminSupport.columns.wallet')}:</strong> {ticket.wallet || t('common.notAvailable')}</p>
+          <p><strong>{t('adminSupport.columns.category')}:</strong> {t(`support.categories.${ticket.category}`)}</p>
+          <p><strong>{t('adminSupport.submittedAt')}:</strong> {new Date(ticket.createdAt).toLocaleString()}</p>
+        </div>
+
+        <div className="ticket-detail-actions">
+          <label className="form-field">
+            <span>{t('adminSupport.columns.status')}</span>
+            <select value={ticket.status} disabled={busy} onChange={(event) => runAction(() => setTicketStatus(token, ticket.id, event.target.value))}>
+              {TICKET_STATUSES.map((status) => (
+                <option key={status} value={status}>{ticketStatusLabel(status)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="form-field">
+            <span>{t('adminSupport.columns.priority')}</span>
+            <select value={ticket.priority} disabled={busy} onChange={(event) => runAction(() => setTicketPriority(token, ticket.id, event.target.value))}>
+              {TICKET_PRIORITIES.map((priority) => (
+                <option key={priority} value={priority}>{ticketPriorityLabel(priority)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="form-field">
+            <span>{t('adminSupport.assignTo')}</span>
+            <input
+              type="text"
+              value={assignee}
+              onChange={(event) => setAssignee(event.target.value)}
+              onBlur={() => runAction(() => assignTicket(token, ticket.id, assignee))}
+              placeholder={t('adminSupport.assignPlaceholder')}
+            />
+          </label>
+        </div>
+
+        <h4>{t('adminSupport.message')}</h4>
+        <p className="ticket-message-body">{ticket.message}</p>
+
+        {ticket.attachments?.length > 0 && (
+          <>
+            <h4>{t('adminSupport.attachments')}</h4>
+            <div className="attachment-grid">
+              {ticket.attachments.map((attachment) => (
+                <TicketAttachmentPreview attachment={attachment} key={attachment.name} />
+              ))}
+            </div>
+          </>
+        )}
+
+        <h4>{t('adminSupport.replyHistory')}</h4>
+        {!ticket.replies?.length && <p className="inline-note">{t('adminSupport.noReplies')}</p>}
+        <div className="ticket-reply-thread">
+          {(ticket.replies || []).map((reply, index) => (
+            <div className="ticket-reply" key={index}>
+              <strong>{reply.by}</strong>
+              <p>{reply.message}</p>
+              <small>{new Date(reply.createdAt).toLocaleString()}</small>
+            </div>
+          ))}
+        </div>
+
+        <label className="form-field wide">
+          <span>{t('adminSupport.replyLabel')}</span>
+          <textarea value={replyMessage} onChange={(event) => setReplyMessage(event.target.value)} rows={4} placeholder={t('adminSupport.replyPlaceholder')} />
+        </label>
+        <button
+          className="primary-button"
+          type="button"
+          disabled={busy || !replyMessage.trim()}
+          onClick={() => runAction(async () => {
+            await replyToTicket(token, ticket.id, replyMessage);
+            setReplyMessage('');
+          })}
+        >
+          <Send size={16} /> {t('adminSupport.sendReply')}
+        </button>
+
+        <label className="form-field wide">
+          <span>{t('adminSupport.internalNotesLabel')}</span>
+          <textarea value={notes} onChange={(event) => setNotes(event.target.value)} onBlur={() => runAction(() => setTicketNotes(token, ticket.id, notes))} rows={3} placeholder={t('adminSupport.internalNotesPlaceholder')} />
+        </label>
+
+        <div className="admin-request-actions">
+          <button className="secondary-button" type="button" disabled={busy} onClick={() => runAction(() => setTicketStatus(token, ticket.id, 'resolved'))}>
+            <CheckCircle2 size={16} /> {t('adminSupport.markResolved')}
+          </button>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={busy}
+            onClick={() => runAction(() => (ticket.archived ? unarchiveTicket(token, ticket.id) : archiveTicket(token, ticket.id)))}
+          >
+            <Archive size={16} /> {ticket.archived ? t('adminSupport.unarchive') : t('adminSupport.archive')}
+          </button>
+          <button
+            className="ghost-button danger-button"
+            type="button"
+            disabled={busy}
+            onClick={async () => {
+              if (!window.confirm(t('adminSupport.confirmDelete'))) return;
+              await runAction(async () => {
+                await deleteTicket(token, ticket.id);
+                onClose();
+              });
+            }}
+          >
+            <Trash2 size={16} /> {t('adminSupport.delete')}
+          </button>
+        </div>
+        {error && <p className="lookup-message error">{error}</p>}
+      </div>
+    </div>
+  );
+}
+
+function AdminSupportPage() {
+  const { t } = useTranslation();
+  const [token, setToken] = useState(() => getStoredAdminToken());
+  const [passcode, setPasscode] = useState('');
+  const [authState, setAuthState] = useState({ status: 'idle', message: '' });
+  const [tickets, setTickets] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [listState, setListState] = useState({ status: 'idle', message: '' });
+  const [activeTicketId, setActiveTicketId] = useState(null);
+  const [lastSeenNewCount, setLastSeenNewCount] = useState(0);
+
+  const load = async (activeToken = token) => {
+    if (!activeToken) return;
+    setListState({ status: 'loading', message: t('adminSupport.loadingTickets') });
+    try {
+      const data = await fetchSupportTickets(activeToken, { status: statusFilter, category: categoryFilter });
+      setTickets(data.tickets || []);
+      setStats(data.stats || null);
+      setListState({ status: 'idle', message: '' });
+    } catch (error) {
+      setListState({ status: 'error', message: error.message || t('adminSupport.loadFailed') });
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, [token, statusFilter, categoryFilter]);
+
+  // Lightweight polling so the "new ticket" badge updates without a manual
+  // refresh - a real-time push channel is the documented future upgrade.
+  useEffect(() => {
+    if (!token) return;
+    const interval = window.setInterval(() => load(token), 30000);
+    return () => window.clearInterval(interval);
+  }, [token, statusFilter, categoryFilter]);
+
+  const login = async (event) => {
+    event.preventDefault();
+    setAuthState({ status: 'loading', message: t('adminVerify.checkingPasscode') });
+    try {
+      const newToken = await adminLogin(passcode);
+      setToken(newToken);
+      setAuthState({ status: 'idle', message: '' });
+    } catch (error) {
+      setAuthState({ status: 'error', message: error.message || t('adminVerify.loginFailed') });
+    }
+  };
+
+  const logout = () => {
+    clearAdminToken();
+    setToken('');
+    setTickets([]);
+    setStats(null);
+  };
+
+  if (!token) {
+    return (
+      <section className="page-section">
+        <SectionTitle icon={Lock} eyebrow={t('adminVerify.eyebrow')} title={t('adminSupport.title')} />
+        <form className="add-form admin-login-form" onSubmit={login}>
+          <FormField label={t('adminVerify.passcodeLabel')} type="password" value={passcode} onChange={setPasscode} required />
+          <button className="primary-button wide-button" type="submit" disabled={authState.status === 'loading'}>
+            {t('common.signIn')} <ArrowRight size={18} />
+          </button>
+          {authState.message && <p className="lookup-message error">{authState.message}</p>}
+        </form>
+      </section>
+    );
+  }
+
+  const newCount = stats?.new || 0;
+  const hasUnseenNew = newCount > lastSeenNewCount;
+
+  return (
+    <section className="page-section analytics-dashboard">
+      <SectionTitle icon={LifeBuoy} eyebrow={t('adminVerify.eyebrow')} title={t('adminSupport.title')} />
+      <div className="analytics-toolbar">
+        <button className="secondary-button" type="button" onClick={() => { load(); setLastSeenNewCount(newCount); }}>
+          {t('common.refresh')}
+          {hasUnseenNew && <span className="notification-badge">{newCount}</span>}
+        </button>
+        <button className="secondary-button" type="button" onClick={() => { window.location.hash = '/admin-verify'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+          <Shield size={16} /> {t('adminAnalytics.verificationReview')}
+        </button>
+        <button className="secondary-button" type="button" onClick={() => { window.location.hash = '/admin-analytics'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+          <BarChart3 size={16} /> {t('adminVerify.openAnalytics')}
+        </button>
+        <button className="ghost-button" type="button" onClick={logout}>{t('common.signOut')}</button>
+      </div>
+
+      {stats && (
+        <div className="analytics-stat-grid">
+          <StatCard icon={Inbox} label={t('adminSupport.stats.new')} value={stats.new} />
+          <StatCard icon={Clock3} label={t('adminSupport.stats.open')} value={stats.open} />
+          <StatCard icon={CheckCircle2} label={t('adminSupport.stats.resolved')} value={stats.resolved} />
+          <StatCard
+            icon={TimerReset}
+            label={t('adminSupport.stats.avgResponse')}
+            value={stats.avgResponseMinutes != null ? `${stats.avgResponseMinutes}m` : t('common.notAvailable')}
+          />
+        </div>
+      )}
+
+      <div className="support-filter-row">
+        <label className="form-field">
+          <span>{t('adminSupport.filterStatus')}</span>
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="all">{t('adminSupport.allStatuses')}</option>
+            {TICKET_STATUSES.map((status) => (
+              <option key={status} value={status}>{ticketStatusLabel(status)}</option>
+            ))}
+            <option value="archived">{t('adminSupport.archived')}</option>
+          </select>
+        </label>
+        <label className="form-field">
+          <span>{t('adminSupport.filterCategory')}</span>
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)}>
+            <option value="all">{t('adminSupport.allCategories')}</option>
+            {TICKET_CATEGORIES.map((category) => (
+              <option key={category.id} value={category.id}>{t(`support.categories.${category.id}`)}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {listState.message && <p className={listState.status === 'error' ? 'lookup-message error' : 'lookup-message'}>{listState.message}</p>}
+
+      {!tickets.length ? (
+        <EmptyState title={t('adminSupport.emptyTitle')} text={t('adminSupport.emptyText')} />
+      ) : (
+        <div className="analytics-table-card support-inbox-table">
+          <table className="analytics-table">
+            <thead>
+              <tr>
+                <th>{t('adminSupport.columns.id')}</th>
+                <th>{t('adminSupport.columns.date')}</th>
+                <th>{t('adminSupport.columns.name')}</th>
+                <th>{t('adminSupport.columns.email')}</th>
+                <th>{t('adminSupport.columns.wallet')}</th>
+                <th>{t('adminSupport.columns.subject')}</th>
+                <th>{t('adminSupport.columns.category')}</th>
+                <th>{t('adminSupport.columns.status')}</th>
+                <th>{t('adminSupport.columns.priority')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tickets.map((ticket) => (
+                <tr key={ticket.id} className="ticket-row" onClick={() => setActiveTicketId(ticket.id)}>
+                  <td>{ticket.id}</td>
+                  <td>{new Date(ticket.createdAt).toLocaleDateString()}</td>
+                  <td>{ticket.name || t('common.notAvailable')}</td>
+                  <td>{ticket.email}</td>
+                  <td>{ticket.wallet ? `${ticket.wallet.slice(0, 4)}...${ticket.wallet.slice(-4)}` : t('common.notAvailable')}</td>
+                  <td>{ticket.subject}</td>
+                  <td>{t(`support.categories.${ticket.category}`)}</td>
+                  <td><span className={`status-badge ticket-status-${ticket.status}`}>{ticketStatusLabel(ticket.status)}</span></td>
+                  <td><span className={`status-badge ticket-priority-${ticket.priority}`}>{ticketPriorityLabel(ticket.priority)}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {activeTicketId && (
+        <AdminSupportTicketDetail
+          token={token}
+          ticketId={activeTicketId}
+          onClose={() => setActiveTicketId(null)}
+          onChanged={() => load()}
+        />
+      )}
     </section>
   );
 }

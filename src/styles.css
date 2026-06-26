@@ -3298,3 +3298,208 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------------------------------------------------------------------- */
+/* Support & Messaging Center                                             */
+/* ---------------------------------------------------------------------- */
+
+.honeypot-field {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  left: -9999px;
+}
+
+.support-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+}
+
+.attachment-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.support-history-panel {
+  margin-top: 28px;
+}
+
+.support-lookup-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.support-lookup-form input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.my-tickets-list,
+.ticket-reply-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.my-ticket-card {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.02);
+}
+
+.my-ticket-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ticket-reply {
+  padding: 12px;
+  border-left: 2px solid var(--gold);
+  background: rgba(255,255,255,0.03);
+  border-radius: 0 10px 10px 0;
+}
+
+.ticket-reply small {
+  color: var(--muted);
+}
+
+.status-badge.ticket-status-new { color: #f0c419; border-color: #f0c419; }
+.status-badge.ticket-status-open { color: #6fb6ff; border-color: #6fb6ff; }
+.status-badge.ticket-status-in_progress { color: #6fb6ff; border-color: #6fb6ff; }
+.status-badge.ticket-status-waiting_for_user { color: #f08a4b; border-color: #f08a4b; }
+.status-badge.ticket-status-resolved { color: var(--success); border-color: var(--success); }
+.status-badge.ticket-status-closed { color: var(--muted); border-color: var(--border); }
+
+.status-badge.ticket-priority-low { color: var(--muted); }
+.status-badge.ticket-priority-medium { color: #6fb6ff; }
+.status-badge.ticket-priority-high { color: #f08a4b; }
+.status-badge.ticket-priority-urgent { color: var(--danger); border-color: var(--danger); }
+
+.support-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 18px 0;
+}
+
+.support-inbox-table table {
+  width: 100%;
+}
+
+.ticket-row {
+  cursor: pointer;
+}
+
+.ticket-row:hover {
+  background: rgba(255,255,255,0.04);
+}
+
+.notification-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 8px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.ticket-detail-modal {
+  width: min(820px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ticket-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ticket-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  color: var(--muted);
+}
+
+.ticket-detail-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ticket-message-body {
+  white-space: pre-wrap;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+}
+
+.attachment-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.attachment-preview-image {
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+.attachment-preview-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.danger-button {
+  color: var(--danger);
+}
+
+@media (max-width: 740px) {
+  .support-form-grid,
+  .ticket-detail-grid,
+  .ticket-detail-actions {
+    grid-template-columns: 1fr;
+  }
+}

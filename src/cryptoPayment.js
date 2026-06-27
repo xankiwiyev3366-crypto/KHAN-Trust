@@ -67,6 +67,19 @@ export async function payWithConnectedWallet({ connection, publicKey, sendTransa
   transaction.feePayer = publicKey;
 
   try {
+    // Phantom simulates the transaction (via its own simulateTransaction
+    // call) before showing the approval popup, and that simulation requires
+    // a valid recentBlockhash already bound into the message. Without it
+    // set explicitly here, whether it gets filled in - and with what - is
+    // left to wallet-adapter/wallet-standard internals, which can vary by
+    // code path and has produced "Unable to simulate the result of this
+    // request" in Phantom. Fetching and setting it ourselves removes that
+    // ambiguity; lastValidBlockHeight is kept alongside it so the
+    // confirmation below can use the non-deprecated, more reliable
+    // {signature, blockhash, lastValidBlockHeight} form.
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+    transaction.recentBlockhash = blockhash;
+
     if (currency === 'USDC') {
       const mint = new PublicKey(USDC_MINT);
       const senderAta = await getAssociatedTokenAddress(mint, publicKey);
@@ -89,7 +102,7 @@ export async function payWithConnectedWallet({ connection, publicKey, sendTransa
     }
 
     const signature = await sendTransaction(transaction, connection);
-    await connection.confirmTransaction(signature, 'confirmed');
+    await connection.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, 'confirmed');
 
     const result = await verifySolanaPayment({ transactionHash: signature, plan });
     return { ok: result.status === 'verified', status: result.status, message: result.message, transactionHash: signature, debug: result.debug };

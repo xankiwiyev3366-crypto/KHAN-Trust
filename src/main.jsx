@@ -597,12 +597,15 @@ function normalizeProject(input) {
   const authoritativeHolders = liveScoringProject?.holders ?? holders;
   const authoritativeCommunitySize = liveScoringProject?.communitySize ?? communitySize;
   const score = calculateTrustScore(authoritativeProject, rawRealData);
+  const breakdown = buildScoreBreakdown(authoritativeProject, authoritativeHolders, authoritativeCommunitySize, score);
 
   return {
     ...scoringProject,
     trustScore: score,
     riskLevel: scoreToRisk(score),
-    scoreBreakdown: buildScoreBreakdown(authoritativeProject, authoritativeHolders, authoritativeCommunitySize, score),
+    scoreBreakdown: breakdown,
+    categoryBreakdown: buildCategoryBreakdown(breakdown),
+    scamRisk: calculateScamRisk(authoritativeProject, rawRealData || {}),
     riskFlags: deriveRiskFlags(authoritativeProject, authoritativeHolders, authoritativeCommunitySize),
   };
 }
@@ -638,12 +641,101 @@ function buildScoreBreakdown(project, holders, communitySize, score) {
       holderGrowthScore: liveScores.holderGrowthScore,
       supplyScore: liveScores.supplyScore,
       securityScore: liveScores.securityScore,
+      marketActivityScore: liveScores.marketActivityScore,
       finalTrustScore: liveScores.finalTrustScore,
     };
   }
 
   return calculateManualScores(project);
 }
+
+// Groups the existing fine-grained scores into the 5 named categories a
+// research-platform-style breakdown shows (Contract Security, Liquidity,
+// Holder Health, Market Activity, Community). This is purely a display
+// aggregation over scores that calculateLiveScores already computed -
+// it does not change finalTrustScore or any individual score's math.
+const TRUST_CATEGORIES = [
+  { key: 'contractSecurity', labelKey: 'contractSecurity', scoreKeys: ['securityScore'] },
+  { key: 'liquidity', labelKey: 'liquidity', scoreKeys: ['liquidityScore', 'marketCapScore'] },
+  { key: 'holderHealth', labelKey: 'holderHealth', scoreKeys: ['holderScore', 'topHolderScore', 'topTenHolderScore', 'holderGrowthScore'] },
+  { key: 'marketActivity', labelKey: 'marketActivity', scoreKeys: ['marketActivityScore', 'tokenAgeScore'] },
+  { key: 'community', labelKey: 'community', scoreKeys: ['websiteScore', 'twitterScore', 'telegramScore', 'githubScore', 'coingeckoScore', 'founderActivity', 'roadmapClarity', 'transparency'] },
+];
+
+function buildCategoryBreakdown(scoreBreakdown = {}) {
+  return TRUST_CATEGORIES.map((category) => {
+    const values = category.scoreKeys
+      .map((key) => scoreBreakdown[key])
+      .filter((value) => value !== null && value !== undefined);
+    const score = values.length ? Math.round(values.reduce((total, value) => total + value, 0) / values.length) : null;
+    return {
+      key: category.key,
+      labelKey: category.labelKey,
+      score,
+      // /20 scale to match the "Contract Security 18/20" style breakdown -
+      // purely a display rescale of the same 0-100 average, not a new score.
+      outOf20: score === null ? null : Math.round(score / 5),
+      available: values.length > 0,
+    };
+  });
+}
+
+// Rule-based scam-risk signal built only from real, already-fetched data
+// (holder concentration, liquidity, social presence, mint/freeze/upgrade
+// flags, token age). Never penalizes a category that is simply unknown -
+// only confirmed-true findings add risk points, consistent with the rest
+// of the engine's "Unknown != Bad" policy. Deeper checks this can't cover
+// without a specialized API (honeypot simulation, LP lock/burn, clone-site
+// detection) are intentionally left out rather than guessed - see
+// SCAM_RISK_COVERAGE_NOTE below for what's not covered.
+function calculateScamRisk(project = {}, data = {}) {
+  const reasons = [];
+  let riskPoints = 0;
+
+  const addRisk = (points, reason) => {
+    riskPoints += points;
+    reasons.push(reason);
+  };
+
+  if (typeof data.topHolderPercent === 'number' && data.topHolderPercent > 50) {
+    addRisk(25, `Largest holder controls ${formatPercent(data.topHolderPercent)} of supply`);
+  }
+  if (typeof data.topTenHolderPercent === 'number' && data.topTenHolderPercent > 80) {
+    addRisk(20, `Top 10 holders control ${formatPercent(data.topTenHolderPercent)} of supply`);
+  }
+
+  const liquidity = Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0);
+  if (data.socialMetadataAvailable && !liquidity) {
+    addRisk(15, 'No public liquidity was found for this token');
+  } else if (liquidity > 0 && liquidity < 2000) {
+    addRisk(15, 'Liquidity is extremely low (under $2,000)');
+  }
+
+  const noSocial = !hasValue(project.website) && !hasValue(project.twitter) && !hasValue(project.telegram);
+  if (noSocial && data.socialMetadataAvailable) {
+    addRisk(15, 'No website, X/Twitter, or Telegram presence found');
+  }
+
+  if (data.mintAuthorityEnabled === true) addRisk(10, 'Mint authority is still enabled');
+  if (data.freezeAuthorityEnabled === true) addRisk(10, 'Freeze authority is still enabled');
+  if (data.upgradeable === true) addRisk(10, 'Contract is upgradeable');
+
+  if (typeof data.tokenAgeDays === 'number' && data.tokenAgeDays < 3) {
+    addRisk(10, 'Token is less than 3 days old');
+  }
+
+  const riskScore = clamp(riskPoints, 0, 100);
+  const level = riskScore >= 50 ? 'High' : riskScore >= 25 ? 'Medium' : 'Low';
+  return { riskScore, level, reasons };
+}
+
+// Deliberately NOT implemented (would require fabricating data or a paid
+// specialized API rather than reading real on-chain/market data):
+// honeypot/transfer-restriction simulation, LP lock/burn status, fake
+// website or clone-branding detection. These would need GoPlus Security,
+// RugCheck, or TokenSniffer-style integrations - documented here rather
+// than guessed.
+const SCAM_RISK_COVERAGE_NOTE = 'Concentration, liquidity, social presence, mint/freeze/upgrade authority, and token age only.';
 
 function calculateLiveScores(project = {}, data = {}) {
   const holderCount = Number(data.holderCount || project.holders || project.communitySize || 0);
@@ -680,6 +772,7 @@ function calculateLiveScores(project = {}, data = {}) {
     holderGrowthScore: scoreHolderGrowth(data.holderGrowthPercent),
     supplyScore: scoreSupply(data.supply),
     securityScore: scoreSecurity(data.mintAuthorityEnabled, data.freezeAuthorityEnabled, data.upgradeable),
+    marketActivityScore: scoreMarketActivity(data.volume24hUsd, data.totalLiquidityUsd ?? data.liquidityUsd),
   };
   const weighted = weightedAverage([
     [scores.holderScore, 16],
@@ -689,6 +782,7 @@ function calculateLiveScores(project = {}, data = {}) {
     [scores.liquidityScore, 16],
     [scores.marketCapScore, 6],
     [scores.securityScore, 8],
+    [scores.marketActivityScore, 6],
     [scores.websiteScore, 6],
     [scores.twitterScore, 6],
     [scores.telegramScore, 5],
@@ -848,6 +942,25 @@ function scoreSupply(value) {
   if (supply <= 10000000000) return 62;
   if (supply <= 100000000000) return 50;
   return 38;
+}
+
+// Real trading activity, not just a liquidity snapshot - a token can have a
+// deep pool that nobody is actually trading against. Scored relative to its
+// own liquidity (turnover) when both are known, falling back to absolute
+// volume only when liquidity is unavailable (e.g. a native asset).
+function scoreMarketActivity(volume24hUsd, liquidityUsd) {
+  if (volume24hUsd === null || volume24hUsd === undefined) return null;
+  if (!volume24hUsd) return 15;
+  if (!liquidityUsd) {
+    if (volume24hUsd >= 1000000) return 85;
+    if (volume24hUsd >= 100000) return 65;
+    if (volume24hUsd >= 10000) return 45;
+    return 25;
+  }
+  const turnover = volume24hUsd / liquidityUsd;
+  if (turnover >= 0.5 && volume24hUsd >= 10000) return 88;
+  if (turnover >= 0.1 && volume24hUsd >= 1000) return 68;
+  return 40;
 }
 
 // Large, CoinGecko-verified assets (BTC, ETH, USDC, ...) routinely have no
@@ -1058,10 +1171,32 @@ function roadmapToText(roadmap = []) {
   return roadmap.map((item) => item.phase).join('\n');
 }
 
+// Short-lived in-memory cache for live lookups. A single scan already fans
+// out to ~8 APIs in parallel; without this, re-opening the same token (back
+// button, the same address appearing in a multi-chain search list, a quick
+// re-scan) repeats every one of those calls. 45s is long enough to absorb
+// that kind of immediate re-navigation without serving meaningfully stale
+// price/liquidity data. Resets on page reload (module-level, not persisted).
+const LOOKUP_CACHE_TTL_MS = 45_000;
+const lookupCache = new Map();
+
+async function withLookupCache(cacheKey, fetcher) {
+  const cached = lookupCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < LOOKUP_CACHE_TTL_MS) {
+    return cached.value;
+  }
+  const value = await fetcher();
+  lookupCache.set(cacheKey, { value, fetchedAt: Date.now() });
+  return value;
+}
+
 async function lookupSolanaToken(contractAddress) {
   const address = contractAddress.trim();
   if (!address) throw new Error('Enter a Solana contract address first.');
+  return withLookupCache(`solana:${address.toLowerCase()}`, () => lookupSolanaTokenUncached(address));
+}
 
+async function lookupSolanaTokenUncached(address) {
   const [dexData, rpcData, holderAnalyticsData, jupiterData, mintInfoData, mintCreationData, coingeckoData, geckoTerminalData] = await Promise.allSettled([
     fetchDexscreenerToken(address),
     fetchSolanaRpcToken(address),
@@ -1120,6 +1255,7 @@ async function lookupSolanaToken(contractAddress) {
   const mintAuthorityEnabled = mintInfo?.mintAuthorityEnabled ?? jupiter?.mintAuthorityEnabled ?? null;
   const freezeAuthorityEnabled = mintInfo?.freezeAuthorityEnabled ?? jupiter?.freezeAuthorityEnabled ?? null;
   const coingeckoListed = Boolean(coingecko?.listed);
+  const dexStats = aggregateDexTradingStats(dex);
   // Logo priority (Phase 2): CoinGecko > GeckoTerminal > Dexscreener pair
   // image > none. Never falls back to a different token's image.
   const logoUrl = coingecko?.logoUrl || geckoTerminal?.logoUrl || info.imageUrl || '';
@@ -1173,7 +1309,10 @@ async function lookupSolanaToken(contractAddress) {
       priceChange30d: coingecko?.priceChange30d ?? null,
       ath: coingecko?.ath ?? null,
       atl: coingecko?.atl ?? null,
-      volume24hUsd: coingecko?.volume24hUsd ?? null,
+      volume24hUsd: coingecko?.volume24hUsd ?? dexStats?.volume24hUsd ?? null,
+      buys24h: dexStats?.buys24h ?? null,
+      sells24h: dexStats?.sells24h ?? null,
+      topPoolConcentrationPercent: dexStats?.topPoolConcentrationPercent ?? null,
       topAccountCount: rpc?.topAccountCount || null,
       mintAuthorityEnabled,
       freezeAuthorityEnabled,
@@ -1287,6 +1426,10 @@ async function fetchTokenSearchMatches(term) {
 }
 
 async function lookupGenericChainToken(chainId, address) {
+  return withLookupCache(`${chainId}:${address.toLowerCase()}`, () => lookupGenericChainTokenUncached(chainId, address));
+}
+
+async function lookupGenericChainTokenUncached(chainId, address) {
   const [dexResult, coingeckoResult, geckoTerminalResult, explorerCreationResult, explorerFlagsResult] = await Promise.allSettled([
     fetchDexscreenerToken(address, chainId),
     fetchCoinGeckoTokenData(chainId, address),
@@ -1335,6 +1478,7 @@ async function lookupGenericChainToken(chainId, address) {
   const article = /^[aeiou]/i.test(chainLabel) ? 'an' : 'a';
   const name = token.name || geckoTerminal?.name || coingecko?.name || '';
   const logoUrl = coingecko?.logoUrl || geckoTerminal?.logoUrl || info.imageUrl || '';
+  const dexStats = aggregateDexTradingStats(dex);
   const sources = [
     dex?.primaryPair ? 'Dexscreener pools' : null,
     geckoTerminal ? 'GeckoTerminal' : null,
@@ -1389,7 +1533,10 @@ async function lookupGenericChainToken(chainId, address) {
       priceChange30d: coingecko?.priceChange30d ?? null,
       ath: coingecko?.ath ?? null,
       atl: coingecko?.atl ?? null,
-      volume24hUsd: coingecko?.volume24hUsd ?? null,
+      volume24hUsd: coingecko?.volume24hUsd ?? dexStats?.volume24hUsd ?? null,
+      buys24h: dexStats?.buys24h ?? null,
+      sells24h: dexStats?.sells24h ?? null,
+      topPoolConcentrationPercent: dexStats?.topPoolConcentrationPercent ?? null,
       topAccountCount: null,
       mintAuthorityEnabled: null,
       freezeAuthorityEnabled: null,
@@ -1583,6 +1730,30 @@ async function fetchDexscreenerToken(address, chainId = 'solana') {
       .map((pair) => pair.pairCreatedAt)
       .filter(Boolean)
       .sort((a, b) => a - b)[0] || null,
+  };
+}
+
+// Dexscreener's per-pool objects already include 24h volume and buy/sell
+// transaction counts (dex.pairs, fetched above) - this was being discarded
+// after only liquidity was summed. No new API call: just reads fields
+// already present on data we fetch for every lookup.
+function aggregateDexTradingStats(dex) {
+  const pairs = Array.isArray(dex?.pairs) ? dex.pairs : [];
+  if (!pairs.length) return null;
+  const volume24hUsd = pairs.reduce((total, pair) => total + Number(pair?.volume?.h24 || 0), 0);
+  const buys24h = pairs.reduce((total, pair) => total + Number(pair?.txns?.h24?.buys || 0), 0);
+  const sells24h = pairs.reduce((total, pair) => total + Number(pair?.txns?.h24?.sells || 0), 0);
+  const totalLiquidity = dex.totalLiquidityUsd || 0;
+  const primaryLiquidity = Number(dex.primaryPair?.liquidity?.usd || 0);
+  // What share of total liquidity sits in the single largest pool - a token
+  // whose liquidity is almost entirely concentrated in one pool is more
+  // exposed to that pool being pulled than one spread across several.
+  const topPoolConcentrationPercent = totalLiquidity > 0 ? roundPercent(primaryLiquidity / totalLiquidity) : null;
+  return {
+    volume24hUsd: volume24hUsd || null,
+    buys24h: pairs.some((p) => p?.txns?.h24) ? buys24h : null,
+    sells24h: pairs.some((p) => p?.txns?.h24) ? sells24h : null,
+    topPoolConcentrationPercent,
   };
 }
 
@@ -4459,8 +4630,10 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
         <div className="main-column">
           <RiskSummary project={project} />
           <InfoGrid project={project} />
+          <CategoryScoreCards project={project} />
           <TrustBreakdown project={project} />
           {project.realData && <RealDataSection project={project} data={project.realData} />}
+          <ScamRiskCard project={project} />
           <RiskFlags flags={project.riskFlags} />
           <Timeline items={project.timeline} />
           <Roadmap phases={project.roadmap} />
@@ -4814,6 +4987,73 @@ function normalizeExternalUrl(value = '') {
   return '';
 }
 
+const CATEGORY_ICONS = {
+  contractSecurity: Lock,
+  liquidity: BarChart3,
+  holderHealth: Users,
+  marketActivity: Activity,
+  community: Globe2,
+};
+
+function CategoryScoreCards({ project }) {
+  const { t } = useTranslation();
+  const categories = project.categoryBreakdown || [];
+  if (!categories.length) return null;
+  const labels = t('profileSections.categoryLabels');
+  const explainers = t('profileSections.categoryExplainers');
+
+  return (
+    <section className="detail-section">
+      <SectionTitle icon={Shield} eyebrow={t('profileSections.categoryEyebrow')} title={t('profileSections.categoryTitle')} />
+      <div className="category-grid">
+        {categories.map((category) => {
+          const Icon = CATEGORY_ICONS[category.key] || Shield;
+          const tone = category.score === null ? 'limited' : category.score >= 70 ? 'good' : category.score >= 45 ? 'medium' : 'poor';
+          return (
+            <div className={`category-card category-${tone}`} key={category.key} title={explainers[category.key]}>
+              <div className="category-card-head">
+                <Icon size={18} />
+                <span>{labels[category.key]}</span>
+              </div>
+              <strong>{category.score === null ? t('common.notAvailable') : `${category.outOf20}/20`}</strong>
+              <div className="category-card-bar">
+                <i style={{ width: `${category.score || 0}%` }} />
+              </div>
+              <p>{explainers[category.key]}</p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ScamRiskCard({ project }) {
+  const { t } = useTranslation();
+  const scamRisk = project.scamRisk;
+  if (!scamRisk) return null;
+  const toneClass = scamRisk.level === 'High' ? 'high' : scamRisk.level === 'Medium' ? 'medium' : 'low';
+  return (
+    <section className="detail-section">
+      <SectionTitle icon={AlertTriangle} eyebrow={t('profileSections.scamRiskEyebrow')} title={t('profileSections.scamRiskTitle')} />
+      <div className="result-score-row">
+        <span className={`risk-pill ${toneClass}`}>{t(`profileSections.scamRiskLevel.${toneClass}`)}</span>
+        <strong>{scamRisk.riskScore}/100</strong>
+      </div>
+      {scamRisk.reasons.length ? (
+        <ul className="scam-risk-reasons">
+          {scamRisk.reasons.map((reason) => (
+            <li key={reason}><AlertTriangle size={14} /> {reason}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="inline-note">{t('profileSections.scamRiskNone')}</p>
+      )}
+      <p className="inline-note scam-risk-coverage">{t('profileSections.scamRiskCoverage')}</p>
+    </section>
+  );
+}
+
 function TrustBreakdown({ project }) {
   const { t } = useTranslation();
   const labels = t('profileSections.breakdownLabels');
@@ -4923,10 +5163,12 @@ function RealDataSection({ project, data }) {
     [r.priceUsd, data.priceUsd ? formatTinyOrCurrency(data.priceUsd) : t('common.notAvailable'), LineChart],
     [r.priceChange24h, formatPercent(data.priceChange24h), TrendingUp],
     [r.volume24h, data.volume24hUsd ? formatCurrency(data.volume24hUsd) : t('common.notAvailable'), BarChart3],
+    [r.buySellRatio, data.buys24h !== null && data.buys24h !== undefined ? `${formatNumber(data.buys24h)} / ${formatNumber(data.sells24h)}` : t('common.notAvailable'), Activity],
     [r.ath, data.ath ? formatTinyOrCurrency(data.ath) : t('common.notAvailable'), LineChart],
     [r.supply, data.supply ? formatNumber(data.supply) : t('common.notAvailable'), WalletCards],
     [r.holderGrowth, data.holderGrowthPercent === null ? t('profileSections.holderGrowthNeedsLookup') : formatPercent(data.holderGrowthPercent), TrendingUp],
     [r.poolsFound, formatNumber(data.poolCount), Layers3],
+    [r.liquidityConcentration, formatPercent(data.topPoolConcentrationPercent), BarChart3],
     [r.coingeckoListed, data.coingeckoListed ? t('common.yes') : (data.coingeckoListed === false ? t('common.no') : t('common.notAvailable')), BadgeCheck],
     [r.contractSecurity, contractSecuritySummary(data), Lock],
     [r.dataSource, data.source, BadgeCheck],

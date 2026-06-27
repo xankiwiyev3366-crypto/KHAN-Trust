@@ -82,12 +82,22 @@ button {
 .brand {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 12px;
   min-width: 0;
   color: var(--text);
   background: transparent;
   border: 0;
   text-align: left;
+  transition: opacity 0.2s ease;
+}
+
+.brand:hover {
+  opacity: 0.92;
+}
+
+.brand:hover .brand-mark {
+  transform: translateY(-1px) scale(1.04);
+  box-shadow: 0 14px 36px rgba(224, 183, 92, 0.32);
 }
 
 .brand-mark {
@@ -97,11 +107,14 @@ button {
   place-items: center;
   flex: 0 0 auto;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: linear-gradient(135deg, #f4d889, #8d641d);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(145deg, var(--gold-bright) 0%, var(--gold) 45%, #8d641d 100%);
   color: #100d07;
   font-weight: 900;
+  font-size: 18px;
+  letter-spacing: -0.02em;
   box-shadow: 0 10px 30px rgba(224, 183, 92, 0.2);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
 
 .brand strong,
@@ -111,10 +124,13 @@ button {
 
 .brand strong {
   font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
 }
 
 .brand small {
   color: var(--muted);
+  letter-spacing: 0.02em;
   font-size: 12px;
 }
 
@@ -1340,6 +1356,12 @@ main {
   background: rgba(255,255,255,0.04);
 }
 
+@property --score {
+  syntax: '<angle>';
+  inherits: true;
+  initial-value: 0deg;
+}
+
 .score-circle {
   --score: 0deg;
   display: grid;
@@ -1350,6 +1372,7 @@ main {
   border-radius: 50%;
   background: conic-gradient(var(--gold-bright) var(--score), rgba(255,255,255,0.08) 0);
   position: relative;
+  transition: --score 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .score-circle::after {
@@ -1395,23 +1418,27 @@ main {
 
 .risk-pill {
   padding: 7px 10px;
+  border: 1px solid transparent;
 }
 
 .risk-pill.low,
 .risk-pill.lower {
   color: var(--success);
   background: rgba(103, 211, 156, 0.13);
+  border-color: rgba(103, 211, 156, 0.32);
 }
 
 .risk-pill.medium,
 .risk-pill.moderate {
   color: var(--warning);
   background: rgba(247, 190, 82, 0.13);
+  border-color: rgba(247, 190, 82, 0.32);
 }
 
 .risk-pill.high {
   color: var(--danger);
   background: rgba(255, 117, 110, 0.13);
+  border-color: rgba(255, 117, 110, 0.32);
 }
 
 .filter-row {
@@ -1459,13 +1486,15 @@ main {
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
+  border: 1px solid var(--border-soft);
 }
 
 .project-logo-placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255,255,255,0.08);
+  background: linear-gradient(145deg, var(--gold-soft), rgba(255,255,255,0.04));
+  border: 1px solid var(--border-soft);
   color: var(--gold);
   font-weight: 800;
 }
@@ -3840,4 +3869,82 @@ button:disabled {
 
 .comparison-dash {
   color: var(--muted);
+}
+
+/* ==========================================================================
+   Premium micro-interactions
+   Page mount fades, skeleton shimmer, and search placeholder polish.
+   Pure CSS transforms/opacity - no JS, no layout-affecting properties.
+   ========================================================================== */
+
+@keyframes khanFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes khanShimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.hero-section,
+.page-section,
+.profile-page,
+.content-band {
+  animation: khanFadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-section,
+  .page-section,
+  .profile-page,
+  .content-band,
+  .project-card,
+  .analytics-stat-card,
+  .brand-mark {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.skeleton-block {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.skeleton-block::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  animation: khanShimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+}
+
+.skeleton-stat-grid .skeleton-block {
+  height: 92px;
+}
+
+.search-box input::placeholder {
+  transition: opacity 0.2s ease;
+}
+
+.search-box input:focus::placeholder {
+  opacity: 0.55;
 }

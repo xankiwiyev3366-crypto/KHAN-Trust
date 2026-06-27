@@ -4,7 +4,7 @@
 // pre-bundling, not the production rollup build, so the production bundle
 // never got this without an explicit import here.
 import './bufferShim.js';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Connection,
@@ -5906,11 +5906,11 @@ function DonutChart({ data, size = 140 }) {
   );
 }
 
-function StatCard({ icon: Icon, label, value, sublabel }) {
+function StatCard({ icon: Icon, label, value, numericValue, sublabel }) {
   return (
     <div className="analytics-stat-card">
       <Icon size={20} />
-      <strong>{value}</strong>
+      <strong>{numericValue !== undefined ? <AnimatedNumber value={numericValue} format={(n) => n.toLocaleString('en-US')} /> : value}</strong>
       <span>{label}</span>
       {sublabel && <small>{sublabel}</small>}
     </div>
@@ -6019,6 +6019,11 @@ function AdminAnalyticsPage() {
       <section className="page-section">
         <SectionTitle icon={BarChart3} eyebrow={t('adminVerify.eyebrow')} title={t('adminAnalytics.title')} />
         <p className="lookup-message">{t('adminAnalytics.loadingAnalytics')}</p>
+        <div className="skeleton-stat-grid" aria-hidden="true">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div className="skeleton-block" key={index} />
+          ))}
+        </div>
       </section>
     );
   }
@@ -6064,14 +6069,14 @@ function AdminAnalyticsPage() {
       <p className="analytics-meta">{t('adminAnalytics.generated', { date: new Date(summary.generatedAt).toLocaleString(), count: summary.eventCount })}</p>
 
       <div className="analytics-stat-grid">
-        <StatCard icon={Activity} label={t('adminAnalytics.totalScans')} value={formatNumber(summary.overview.totalScans)} />
-        <StatCard icon={Layers3} label={t('adminAnalytics.totalProjects')} value={formatNumber(summary.overview.totalProjects)} />
-        <StatCard icon={BadgeCheck} label={t('adminAnalytics.verifiedProjects')} value={formatNumber(summary.overview.verifiedProjects)} />
+        <StatCard icon={Activity} label={t('adminAnalytics.totalScans')} numericValue={summary.overview.totalScans} />
+        <StatCard icon={Layers3} label={t('adminAnalytics.totalProjects')} numericValue={summary.overview.totalProjects} />
+        <StatCard icon={BadgeCheck} label={t('adminAnalytics.verifiedProjects')} numericValue={summary.overview.verifiedProjects} />
         <StatCard icon={LineChart} label={t('adminAnalytics.averageTrustScore')} value={summary.trustScoreAnalytics.average ?? 'N/A'} sublabel={t('adminAnalytics.scoredProjects', { count: summary.trustScoreAnalytics.sampleSize })} />
-        <StatCard icon={Users} label={t('adminAnalytics.totalUsers')} value={formatNumber(summary.overview.totalUsers)} sublabel={t('adminAnalytics.uniqueVisitors')} />
+        <StatCard icon={Users} label={t('adminAnalytics.totalUsers')} numericValue={summary.overview.totalUsers} sublabel={t('adminAnalytics.uniqueVisitors')} />
         <StatCard icon={Search} label={t('adminAnalytics.topSearches')} value={summary.popularSearches[0]?.query || 'N/A'} sublabel={summary.popularSearches[0] ? `${summary.popularSearches[0].count} ${t('adminAnalytics.columns').count}` : ''} />
-        <StatCard icon={Clock3} label={t('adminAnalytics.pendingVerification')} value={formatNumber(summary.overview.pendingVerification)} />
-        <StatCard icon={X} label={t('adminAnalytics.rejectedVerification')} value={formatNumber(summary.overview.rejectedVerification)} />
+        <StatCard icon={Clock3} label={t('adminAnalytics.pendingVerification')} numericValue={summary.overview.pendingVerification} />
+        <StatCard icon={X} label={t('adminAnalytics.rejectedVerification')} numericValue={summary.overview.rejectedVerification} />
       </div>
 
       <div className="detail-section analytics-section">
@@ -6399,12 +6404,57 @@ function SearchMatches({ state, onSelect }) {
   );
 }
 
+// Counts up from 0 to `value` once the element scrolls into view, purely as
+// a presentational micro-interaction - the underlying number/logic this
+// wraps is unchanged, this only affects how it's drawn on screen.
+function AnimatedNumber({ value, duration = 900, format }) {
+  const ref = useRef(null);
+  const [display, setDisplay] = useState(0);
+  const numericValue = Number(value);
+  const isAnimatable = Number.isFinite(numericValue);
+
+  useEffect(() => {
+    if (!isAnimatable) return;
+    const node = ref.current;
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setDisplay(numericValue);
+      return;
+    }
+    let frame;
+    const animate = () => {
+      const start = performance.now();
+      const from = 0;
+      const step = (now) => {
+        const progress = Math.min((now - start) / duration, 1);
+        const eased = 1 - (1 - progress) ** 3;
+        setDisplay(Math.round(from + (numericValue - from) * eased));
+        if (progress < 1) frame = requestAnimationFrame(step);
+      };
+      frame = requestAnimationFrame(step);
+    };
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        animate();
+        observer.disconnect();
+      }
+    }, { threshold: 0.3 });
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [numericValue, duration, isAnimatable]);
+
+  if (!isAnimatable) return <span ref={ref}>{value}</span>;
+  return <span ref={ref}>{format ? format(display) : display}</span>;
+}
+
 function ScoreCircle({ score, size = 'normal' }) {
   const { t } = useTranslation();
   const style = { '--score': `${score * 3.6}deg` };
   return (
     <div className={`score-circle ${size}`} style={style}>
-      <span>{score}</span>
+      <span><AnimatedNumber value={score} /></span>
       <small>{t('common.trust')}</small>
     </div>
   );
@@ -7115,9 +7165,9 @@ function AdminSupportPage() {
 
       {stats && (
         <div className="analytics-stat-grid">
-          <StatCard icon={Inbox} label={t('adminSupport.stats.new')} value={stats.new} />
-          <StatCard icon={Clock3} label={t('adminSupport.stats.open')} value={stats.open} />
-          <StatCard icon={CheckCircle2} label={t('adminSupport.stats.resolved')} value={stats.resolved} />
+          <StatCard icon={Inbox} label={t('adminSupport.stats.new')} numericValue={stats.new} />
+          <StatCard icon={Clock3} label={t('adminSupport.stats.open')} numericValue={stats.open} />
+          <StatCard icon={CheckCircle2} label={t('adminSupport.stats.resolved')} numericValue={stats.resolved} />
           <StatCard
             icon={TimerReset}
             label={t('adminSupport.stats.avgResponse')}
@@ -7418,10 +7468,10 @@ function AdminReportPage() {
 
       {stats && (
         <div className="analytics-stat-grid">
-          <StatCard icon={Inbox} label={t('adminReport.stats.new')} value={stats.new} />
-          <StatCard icon={Clock3} label={t('adminReport.stats.underReview')} value={stats.under_review} />
-          <StatCard icon={CheckCircle2} label={t('adminReport.stats.resolved')} value={stats.resolved} />
-          <StatCard icon={Flag} label={t('adminReport.stats.rejected')} value={stats.rejected} />
+          <StatCard icon={Inbox} label={t('adminReport.stats.new')} numericValue={stats.new} />
+          <StatCard icon={Clock3} label={t('adminReport.stats.underReview')} numericValue={stats.under_review} />
+          <StatCard icon={CheckCircle2} label={t('adminReport.stats.resolved')} numericValue={stats.resolved} />
+          <StatCard icon={Flag} label={t('adminReport.stats.rejected')} numericValue={stats.rejected} />
         </div>
       )}
 

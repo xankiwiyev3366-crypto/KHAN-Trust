@@ -231,6 +231,30 @@ const CHAIN_TO_GECKOTERMINAL_NETWORK = {
   sui: 'sui',
 };
 
+const COINGECKO_PLATFORM_TO_CHAIN = Object.fromEntries(
+  Object.entries(CHAIN_TO_COINGECKO_PLATFORM).map(([chainId, platform]) => [platform, chainId])
+);
+
+// Native chain coins (BTC, ETH, BNB, SOL, ...) have no on-chain contract of
+// their own - they can only be resolved through CoinGecko's coin id, never
+// through a token-pairs/contract lookup. Keyed by the ticker users actually
+// type, mapped to the CoinGecko coin id used for /coins/{id}.
+const NATIVE_ASSET_COINGECKO_IDS = {
+  BTC: 'bitcoin',
+  ETH: 'ethereum',
+  BNB: 'binancecoin',
+  SOL: 'solana',
+  SUI: 'sui',
+  DOGE: 'dogecoin',
+  LTC: 'litecoin',
+  XRP: 'ripple',
+  AVAX: 'avalanche-2',
+  MATIC: 'matic-network',
+  TRX: 'tron',
+  ADA: 'cardano',
+  DOT: 'polkadot',
+};
+
 // Block-explorer "contract creation timestamp" + "is proxy/upgradeable"
 // lookups. These need a free API key per chain (Etherscan/BscScan/
 // BaseScan/PolygonScan all offer one at no cost) - set the matching env var
@@ -680,7 +704,11 @@ function calculateLiveScores(project = {}, data = {}) {
   // status, description, roadmap) can never be fully cancelled out by on-chain risk
   // signals alone — those signals still matter, but profile quality keeps contributing.
   const penalty = Math.min(livePenaltyValue + riskPenaltyValue, MAX_TRUST_SCORE_PENALTY);
-  const finalTrustScore = clamp(Math.max(5, weighted - penalty), 5, 100);
+  // A large, CoinGecko-verified asset should never read as "high risk" just
+  // because one source (e.g. a DEX liquidity pool, an on-chain holder scan)
+  // didn't return data for it - confidence floor, not a fabricated score.
+  const verifiedFloor = isLargeVerifiedAsset(data) ? 70 : 0;
+  const finalTrustScore = clamp(Math.max(5, verifiedFloor, weighted - penalty), 5, 100);
   return {
     ...scores,
     finalTrustScore,
@@ -821,13 +849,23 @@ function scoreSupply(value) {
   return 38;
 }
 
+// Large, CoinGecko-verified assets (BTC, ETH, USDC, ...) routinely have no
+// "liquidity pool" or "holder count" concept the way a DEX-traded token
+// does - missing that data is not a risk signal for them. The flat "missing
+// data" penalties below only apply to unverified/lower-cap tokens, where an
+// absent metric is itself a real transparency gap worth flagging.
+function isLargeVerifiedAsset(data = {}) {
+  return Boolean(data.coingeckoListed) && Number(data.marketCapUsd || 0) >= 50000000;
+}
+
 function liveDataPenalty(data = {}, holderCount = 0) {
   let penalty = 0;
   const liquidity = Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0);
-  if (!liquidity) penalty += 4;
+  const skipMissingDataPenalty = isLargeVerifiedAsset(data);
+  if (!liquidity && !skipMissingDataPenalty) penalty += 4;
   if (liquidity > 0 && liquidity < 5000) penalty += 12;
   if (holderCount > 0 && holderCount < 100) penalty += 10;
-  if (!holderCount) penalty += 3;
+  if (!holderCount && !skipMissingDataPenalty) penalty += 3;
   if (data.tokenAgeDays !== null && data.tokenAgeDays !== undefined && data.tokenAgeDays < 7) penalty += 8;
   if (data.topHolderPercent > 35) penalty += 12;
   if (data.topTenHolderPercent > 70) penalty += 10;
@@ -884,6 +922,7 @@ function mergeSocialLinks(...items) {
     website: firstPresent(links.website, item.website, item.websiteUrl),
     twitter: firstPresent(links.twitter, item.twitter, item.twitterUrl, item.xUrl),
     telegram: firstPresent(links.telegram, item.telegram, item.telegramUrl),
+    discord: firstPresent(links.discord, item.discord, item.discordUrl),
     github: firstPresent(links.github, item.github, item.githubUrl),
   }), {});
 }
@@ -894,6 +933,7 @@ function socialPresenceState(kind, project = {}, data = {}) {
     twitter: ['twitter', 'twitterUrl', 'xUrl'],
     telegram: ['telegram', 'telegramUrl'],
     github: ['github', 'githubUrl'],
+    discord: ['discord', 'discordUrl'],
   };
   const value = firstPresent(...fieldMap[kind].flatMap((field) => [project[field], data[field]]));
   if (value) return { state: 'Present', value };
@@ -1052,12 +1092,13 @@ async function lookupSolanaToken(contractAddress) {
     jupiter?.socialLinks,
     extractSocialLinksFromMetadata(dex?.primaryPair),
     extractSocialLinksFromMetadata(jupiter?.rawToken),
-    { website: coingecko?.website, twitter: coingecko?.twitter, telegram: coingecko?.telegram, github: coingecko?.github }
+    { website: coingecko?.website, twitter: coingecko?.twitter, telegram: coingecko?.telegram, discord: coingecko?.discord, github: coingecko?.github }
   );
   const website = socialLinks.website || '';
   const twitter = socialLinks.twitter || '';
   const telegram = socialLinks.telegram || '';
   const github = socialLinks.github || '';
+  const discord = socialLinks.discord || '';
   const socialMetadataAvailable = Boolean(dex?.primaryPair || jupiter || coingecko);
   // Real asset age priority: CoinGecko's genesis_date (authoritative for
   // listed assets, no RPC dependency) first, then the mint's own genesis
@@ -1078,6 +1119,9 @@ async function lookupSolanaToken(contractAddress) {
   const mintAuthorityEnabled = mintInfo?.mintAuthorityEnabled ?? jupiter?.mintAuthorityEnabled ?? null;
   const freezeAuthorityEnabled = mintInfo?.freezeAuthorityEnabled ?? jupiter?.freezeAuthorityEnabled ?? null;
   const coingeckoListed = Boolean(coingecko?.listed);
+  // Logo priority (Phase 2): CoinGecko > GeckoTerminal > Dexscreener pair
+  // image > none. Never falls back to a different token's image.
+  const logoUrl = coingecko?.logoUrl || geckoTerminal?.logoUrl || info.imageUrl || '';
   const sources = [
     'Dexscreener pools',
     geckoTerminal ? 'GeckoTerminal' : null,
@@ -1088,18 +1132,19 @@ async function lookupSolanaToken(contractAddress) {
 
   return {
     id: `solana-${slugify(address)}`,
-    name: token.name || jupiter?.name || geckoTerminal?.name || '',
-    ticker: token.symbol ? token.symbol.toUpperCase() : (jupiter?.symbol?.toUpperCase() || geckoTerminal?.symbol?.toUpperCase() || ''),
+    name: token.name || jupiter?.name || geckoTerminal?.name || coingecko?.name || '',
+    ticker: token.symbol ? token.symbol.toUpperCase() : (jupiter?.symbol?.toUpperCase() || geckoTerminal?.symbol?.toUpperCase() || coingecko?.symbol || ''),
     chain: 'Solana',
     contract: address,
     website,
     twitter,
     telegram,
     github,
+    logoUrl,
     launchDate: createdAt ? new Date(createdAt).toISOString().slice(0, 10) : '',
-    description: token.name || jupiter?.name
+    description: coingecko?.description || (token.name || jupiter?.name
       ? `${token.name || jupiter.name} is a Solana token profile enriched with public market and on-chain signals.`
-      : 'Solana token profile enriched with public market and on-chain signals.',
+      : 'Solana token profile enriched with public market and on-chain signals.'),
     status: 'Live Solana data',
     lastUpdate: new Date().toISOString().slice(0, 10),
     holderCount: holderCount || 0,
@@ -1118,7 +1163,16 @@ async function lookupSolanaToken(contractAddress) {
       topHolderPercent: holderAnalytics?.topHolderPercent ?? rpc?.topHolderPercent ?? null,
       topTenHolderPercent: holderAnalytics?.topTenHolderPercent ?? rpc?.topTenHolderPercent ?? jupiter?.topHoldersPercentage ?? null,
       holderGrowthPercent: jupiter?.holderGrowthPercent ?? null,
-      supply: rpc?.supply || jupiter?.totalSupply || geckoTerminal?.totalSupply || null,
+      supply: rpc?.supply || jupiter?.totalSupply || geckoTerminal?.totalSupply || coingecko?.circulatingSupply || null,
+      maxSupply: coingecko?.maxSupply ?? null,
+      totalSupply: coingecko?.totalSupply ?? null,
+      priceUsd: coingecko?.priceUsd ?? geckoTerminal?.priceUsd ?? null,
+      priceChange24h: coingecko?.priceChange24h ?? null,
+      priceChange7d: coingecko?.priceChange7d ?? null,
+      priceChange30d: coingecko?.priceChange30d ?? null,
+      ath: coingecko?.ath ?? null,
+      atl: coingecko?.atl ?? null,
+      volume24hUsd: coingecko?.volume24hUsd ?? null,
       topAccountCount: rpc?.topAccountCount || null,
       mintAuthorityEnabled,
       freezeAuthorityEnabled,
@@ -1131,6 +1185,7 @@ async function lookupSolanaToken(contractAddress) {
       twitterUrl: twitter,
       telegramUrl: telegram,
       githubUrl: github,
+      discordUrl: discord,
       socialMetadataAvailable,
       tokenProgram: jupiter?.tokenProgram || '',
       launchpad: jupiter?.launchpad || '',
@@ -1141,7 +1196,11 @@ async function lookupSolanaToken(contractAddress) {
   };
 }
 
-async function fetchTokenSearchMatches(term) {
+// Dexscreener's general search - broad pair-level coverage, but it has no
+// notion of "the official token" and ranks purely by pool stats. Used as
+// the fallback layer beneath CoinGecko's canonical resolution, never as
+// the primary source of truth for which contract is the real asset.
+async function fetchDexscreenerSearchMatches(term) {
   const response = await fetch(`${DEXSCREENER_SEARCH_URL}?q=${encodeURIComponent(term)}`);
   if (!response.ok) throw new Error('Token search failed.');
   const data = await response.json();
@@ -1166,10 +1225,63 @@ async function fetchTokenSearchMatches(term) {
       // Dexscreener doesn't expose an explicit "verified" flag for search
       // results; a curated profile image is the closest available signal.
       verified: Boolean(pair.info?.imageUrl),
+      source: 'dexscreener',
     });
   });
+  return Array.from(byKey.values()).sort((a, b) => b.marketCap - a.marketCap);
+}
+
+// Canonical token resolution (Phase 1): CoinGecko's own listing is checked
+// first since it is the closest available ground truth for "which contract
+// is the real asset" - an exact native-asset ticker match (BTC, ETH, SOL...)
+// is resolved directly rather than trusting fuzzy search ranking. Dexscreener
+// results are only used to fill in anything CoinGecko didn't have, and any
+// Dexscreener entry that duplicates a CoinGecko-verified one is dropped in
+// favor of the verified entry.
+async function fetchTokenSearchMatches(term) {
+  const nativeId = NATIVE_ASSET_COINGECKO_IDS[term.trim().toUpperCase()];
+  const [canonicalResult, nativeResult, dexResult] = await Promise.allSettled([
+    fetchCoinGeckoCanonicalMatches(term),
+    nativeId ? fetchCoinGeckoCoinDetail(nativeId) : Promise.resolve(null),
+    fetchDexscreenerSearchMatches(term),
+  ]);
+  const canonical = canonicalResult.status === 'fulfilled' ? canonicalResult.value : [];
+  const native = nativeResult.status === 'fulfilled' ? nativeResult.value : null;
+  const dex = dexResult.status === 'fulfilled' ? dexResult.value : [];
+
+  const byKey = new Map();
+  const upsertVerified = (match) => {
+    const key = match.chainId === 'native' ? `native-${match.coingeckoId}` : `${match.chainId}-${match.address.toLowerCase()}`;
+    byKey.set(key, match);
+  };
+
+  if (native) {
+    upsertVerified({
+      address: null,
+      chainId: 'native',
+      chain: native.name,
+      coingeckoId: native.coingeckoId,
+      name: native.name,
+      symbol: native.symbol,
+      marketCap: native.realMarketCapUsd,
+      logoUrl: native.logoUrl,
+      verified: true,
+      source: 'coingecko',
+    });
+  }
+  canonical.forEach(upsertVerified);
+  dex.forEach((match) => {
+    const key = `${match.chainId}-${match.address.toLowerCase()}`;
+    if (byKey.has(key)) return;
+    byKey.set(key, match);
+  });
+
   return Array.from(byKey.values())
-    .sort((a, b) => b.marketCap - a.marketCap)
+    .sort((a, b) => {
+      if (a.source === 'coingecko' && b.source !== 'coingecko') return -1;
+      if (b.source === 'coingecko' && a.source !== 'coingecko') return 1;
+      return b.marketCap - a.marketCap;
+    })
     .slice(0, 8);
 }
 
@@ -1196,12 +1308,13 @@ async function lookupGenericChainToken(chainId, address) {
   const socialLinks = mergeSocialLinks(
     extractSocialLinksFromDexInfo(info),
     extractSocialLinksFromMetadata(dex?.primaryPair),
-    { website: coingecko?.website, twitter: coingecko?.twitter, telegram: coingecko?.telegram, github: coingecko?.github }
+    { website: coingecko?.website, twitter: coingecko?.twitter, telegram: coingecko?.telegram, discord: coingecko?.discord, github: coingecko?.github }
   );
   const website = socialLinks.website || '';
   const twitter = socialLinks.twitter || '';
   const telegram = socialLinks.telegram || '';
   const github = socialLinks.github || '';
+  const discord = socialLinks.discord || '';
   // Real asset age priority: CoinGecko's genesis_date, then the chain's
   // own contract-deployment timestamp (requires a free explorer API key -
   // see EXPLORER_CONFIG). A DEX pair's first-liquidity date is never used.
@@ -1219,7 +1332,8 @@ async function lookupGenericChainToken(chainId, address) {
   const marketCapIsFdv = !realMarketCapUsd && Boolean(fdvUsd);
   const chainLabel = chainLabelFor(chainId);
   const article = /^[aeiou]/i.test(chainLabel) ? 'an' : 'a';
-  const name = token.name || geckoTerminal?.name || '';
+  const name = token.name || geckoTerminal?.name || coingecko?.name || '';
+  const logoUrl = coingecko?.logoUrl || geckoTerminal?.logoUrl || info.imageUrl || '';
   const sources = [
     dex?.primaryPair ? 'Dexscreener pools' : null,
     geckoTerminal ? 'GeckoTerminal' : null,
@@ -1230,17 +1344,18 @@ async function lookupGenericChainToken(chainId, address) {
   return {
     id: `${chainId}-${slugify(address)}`,
     name,
-    ticker: token.symbol ? token.symbol.toUpperCase() : (geckoTerminal?.symbol?.toUpperCase() || ''),
+    ticker: token.symbol ? token.symbol.toUpperCase() : (geckoTerminal?.symbol?.toUpperCase() || coingecko?.symbol || ''),
     chain: chainLabel,
     contract: address,
     website,
     twitter,
     telegram,
     github,
+    logoUrl,
     launchDate: createdAt ? new Date(createdAt).toISOString().slice(0, 10) : '',
-    description: name
+    description: coingecko?.description || (name
       ? `${name} is ${article} ${chainLabel} token profile enriched with public market signals.`
-      : `${chainLabel} token profile enriched with public market signals.`,
+      : `${chainLabel} token profile enriched with public market signals.`),
     status: 'Live market data',
     lastUpdate: new Date().toISOString().slice(0, 10),
     holderCount: 0,
@@ -1264,7 +1379,16 @@ async function lookupGenericChainToken(chainId, address) {
       topHolderPercent: null,
       topTenHolderPercent: null,
       holderGrowthPercent: null,
-      supply: geckoTerminal?.totalSupply || null,
+      supply: geckoTerminal?.totalSupply || coingecko?.circulatingSupply || null,
+      maxSupply: coingecko?.maxSupply ?? null,
+      totalSupply: coingecko?.totalSupply ?? null,
+      priceUsd: coingecko?.priceUsd ?? geckoTerminal?.priceUsd ?? null,
+      priceChange24h: coingecko?.priceChange24h ?? null,
+      priceChange7d: coingecko?.priceChange7d ?? null,
+      priceChange30d: coingecko?.priceChange30d ?? null,
+      ath: coingecko?.ath ?? null,
+      atl: coingecko?.atl ?? null,
+      volume24hUsd: coingecko?.volume24hUsd ?? null,
       topAccountCount: null,
       mintAuthorityEnabled: null,
       freezeAuthorityEnabled: null,
@@ -1278,6 +1402,7 @@ async function lookupGenericChainToken(chainId, address) {
       twitterUrl: twitter,
       telegramUrl: telegram,
       githubUrl: github,
+      discordUrl: discord,
       socialMetadataAvailable: Boolean(dex?.primaryPair || coingecko),
       pairUrl: dex?.primaryPair?.url || '',
       pairAddress: dex?.primaryPair?.pairAddress || '',
@@ -1287,8 +1412,94 @@ async function lookupGenericChainToken(chainId, address) {
 }
 
 async function lookupTokenMatch(match) {
-  if (match.chainId === 'solana') return lookupSolanaToken(match.address);
-  return lookupGenericChainToken(match.chainId, match.address);
+  let project;
+  if (match.chainId === 'native') {
+    project = await lookupNativeCoinGeckoAsset(match.coingeckoId, match.chain);
+  } else if (match.chainId === 'solana') {
+    project = await lookupSolanaToken(match.address);
+  } else {
+    project = await lookupGenericChainToken(match.chainId, match.address);
+  }
+  // The match the user actually picked from the selection list (logo, name,
+  // chain) takes priority for display - it's what they saw and chose, and
+  // for CoinGecko-verified matches it's already the most authoritative logo.
+  return {
+    ...project,
+    logoUrl: match.logoUrl || project.logoUrl || '',
+    name: project.name || match.name || '',
+    ticker: project.ticker || match.symbol || '',
+  };
+}
+
+// Native chain coins (BTC, ETH, BNB, SOL, ...) have no contract to look up -
+// the only real source is CoinGecko's coin detail by id. No holder count,
+// mint authority, or liquidity concept applies to a chain's own native
+// asset, so those fields stay null/unknown rather than being guessed.
+async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel) {
+  const detail = await fetchCoinGeckoCoinDetail(coingeckoId);
+  if (!detail) throw new Error('No public CoinGecko data was found for this asset.');
+  const createdAt = detail.genesisDate ? new Date(detail.genesisDate).getTime() : null;
+  const tokenAgeDays = createdAt ? daysSince(createdAt) : null;
+  const socialLinks = mergeSocialLinks({ website: detail.website, twitter: detail.twitter, telegram: detail.telegram, github: detail.github });
+
+  return {
+    id: `native-${slugify(coingeckoId)}`,
+    name: detail.name,
+    ticker: detail.symbol,
+    chain: chainLabel,
+    contract: 'Native asset (no contract)',
+    website: socialLinks.website || '',
+    twitter: socialLinks.twitter || '',
+    telegram: socialLinks.telegram || '',
+    github: socialLinks.github || '',
+    logoUrl: detail.logoUrl,
+    launchDate: createdAt ? new Date(createdAt).toISOString().slice(0, 10) : '',
+    description: detail.description || `${detail.name} is ${chainLabel}'s native chain asset.`,
+    status: 'Live CoinGecko data',
+    lastUpdate: new Date().toISOString().slice(0, 10),
+    holderCount: 0,
+    communitySize: 0,
+    riskNotes: translate('scoring.riskNotes.liveDataAvailable'),
+    realData: {
+      source: 'CoinGecko',
+      holderSource: null,
+      liquidityUsd: null,
+      totalLiquidityUsd: null,
+      marketCapUsd: detail.realMarketCapUsd || detail.fdvUsd,
+      marketCapIsFdv: !detail.realMarketCapUsd && Boolean(detail.fdvUsd),
+      tokenAgeDays,
+      tokenAgeSource: createdAt ? 'CoinGecko genesis date' : null,
+      holderCount: null,
+      topHolderPercent: null,
+      topTenHolderPercent: null,
+      holderGrowthPercent: null,
+      supply: detail.circulatingSupply,
+      maxSupply: detail.maxSupply,
+      totalSupply: detail.totalSupply,
+      priceUsd: detail.priceUsd,
+      priceChange24h: detail.priceChange24h,
+      priceChange7d: detail.priceChange7d,
+      priceChange30d: detail.priceChange30d,
+      ath: detail.ath,
+      atl: detail.atl,
+      volume24hUsd: detail.volume24hUsd,
+      topAccountCount: null,
+      mintAuthorityEnabled: null,
+      freezeAuthorityEnabled: null,
+      upgradeable: null,
+      coingeckoListed: true,
+      twitterFollowers: detail.twitterFollowers,
+      telegramUsers: detail.telegramUsers,
+      poolCount: 0,
+      websiteUrl: socialLinks.website || '',
+      twitterUrl: socialLinks.twitter || '',
+      telegramUrl: socialLinks.telegram || '',
+      githubUrl: socialLinks.github || '',
+      socialMetadataAvailable: true,
+      isNativeAsset: true,
+      fetchedAt: new Date().toISOString(),
+    },
+  };
 }
 
 function createDemoRiskProject(contractAddress, reason = '') {
@@ -1386,6 +1597,48 @@ function getDexTokenForAddress(pair, address) {
 // genesis_date - the most trustworthy "real asset age" signal available
 // without depending on a chain RPC. Not every token is listed, so a 404 is
 // a normal "not found" result, not an error worth surfacing.
+// Shared parser for CoinGecko's "coin detail" shape, returned identically
+// by /coins/{platform}/contract/{address} and /coins/{id}.
+function parseCoinGeckoCoinDetail(data) {
+  const links = data.links || {};
+  const community = data.community_data || {};
+  const market = data.market_data || {};
+  const telegramHandle = links.telegram_channel_identifier;
+  const discordUrl = (links.chat_url || []).find((url) => /discord/i.test(url || ''));
+  return {
+    listed: true,
+    coingeckoId: data.id || '',
+    name: data.name || '',
+    symbol: data.symbol ? data.symbol.toUpperCase() : '',
+    logoUrl: data.image?.large || data.image?.small || data.image?.thumb || '',
+    description: cleanLink(data.description?.en)?.split(/\r?\n/)[0]?.slice(0, 280) || '',
+    platforms: data.platforms || {},
+    realMarketCapUsd: Number(market.market_cap?.usd || 0),
+    fdvUsd: Number(market.fully_diluted_valuation?.usd || 0),
+    priceUsd: Number(market.current_price?.usd || 0),
+    priceChange24h: market.price_change_percentage_24h ?? null,
+    priceChange7d: market.price_change_percentage_7d ?? null,
+    priceChange30d: market.price_change_percentage_30d ?? null,
+    ath: Number(market.ath?.usd || 0) || null,
+    athDate: market.ath_date?.usd || null,
+    atl: Number(market.atl?.usd || 0) || null,
+    atlDate: market.atl_date?.usd || null,
+    volume24hUsd: Number(market.total_volume?.usd || 0) || null,
+    circulatingSupply: Number(market.circulating_supply || 0) || null,
+    maxSupply: Number(market.max_supply || 0) || null,
+    totalSupply: Number(market.total_supply || 0) || null,
+    genesisDate: data.genesis_date || null,
+    category: Array.isArray(data.categories) ? data.categories.find(hasValue) || '' : '',
+    website: cleanLink(links.homepage?.find(hasValue)),
+    twitter: links.twitter_screen_name ? `https://twitter.com/${links.twitter_screen_name}` : '',
+    telegram: telegramHandle ? `https://t.me/${telegramHandle}` : '',
+    discord: discordUrl || '',
+    github: cleanLink(links.repos_url?.github?.find(hasValue)),
+    twitterFollowers: Number(community.twitter_followers || 0) || null,
+    telegramUsers: Number(community.telegram_channel_user_count || 0) || null,
+  };
+}
+
 async function fetchCoinGeckoTokenData(chainId, address) {
   const platform = CHAIN_TO_COINGECKO_PLATFORM[chainId];
   if (!platform) return null;
@@ -1393,22 +1646,75 @@ async function fetchCoinGeckoTokenData(chainId, address) {
   if (response.status === 404) return null;
   if (!response.ok) throw new Error('CoinGecko lookup failed.');
   const data = await response.json();
-  const links = data.links || {};
-  const community = data.community_data || {};
-  const market = data.market_data || {};
-  const telegramHandle = links.telegram_channel_identifier;
-  return {
-    listed: true,
-    realMarketCapUsd: Number(market.market_cap?.usd || 0),
-    fdvUsd: Number(market.fully_diluted_valuation?.usd || 0),
-    genesisDate: data.genesis_date || null,
-    website: cleanLink(links.homepage?.find(hasValue)),
-    twitter: links.twitter_screen_name ? `https://twitter.com/${links.twitter_screen_name}` : '',
-    telegram: telegramHandle ? `https://t.me/${telegramHandle}` : '',
-    github: cleanLink(links.repos_url?.github?.find(hasValue)),
-    twitterFollowers: Number(community.twitter_followers || 0) || null,
-    telegramUsers: Number(community.telegram_channel_user_count || 0) || null,
-  };
+  return parseCoinGeckoCoinDetail(data);
+}
+
+async function fetchCoinGeckoCoinDetail(coingeckoId) {
+  const response = await fetch(`${COINGECKO_API_BASE}/coins/${coingeckoId}`);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error('CoinGecko lookup failed.');
+  const data = await response.json();
+  return parseCoinGeckoCoinDetail(data);
+}
+
+// CoinGecko's own search index is the closest thing to a ground truth for
+// "which contract is the REAL token behind this name/ticker" - Dexscreener's
+// search has no concept of an official/canonical asset and will happily
+// rank an unrelated higher-liquidity imitator above the real one. Only the
+// top few CoinGecko search hits (by market_cap_rank) are resolved in full,
+// to stay within the free, no-key rate limit.
+async function fetchCoinGeckoCanonicalMatches(term) {
+  const response = await fetch(`${COINGECKO_API_BASE}/search?query=${encodeURIComponent(term)}`);
+  if (!response.ok) throw new Error('CoinGecko search failed.');
+  const data = await response.json();
+  const coins = Array.isArray(data?.coins) ? data.coins : [];
+  const ranked = coins
+    .filter((coin) => coin.market_cap_rank !== null && coin.market_cap_rank !== undefined)
+    .sort((a, b) => a.market_cap_rank - b.market_cap_rank)
+    .slice(0, 3);
+  const details = await Promise.allSettled(ranked.map((coin) => fetchCoinGeckoCoinDetail(coin.id)));
+
+  const matches = [];
+  details.forEach((result, index) => {
+    if (result.status !== 'fulfilled' || !result.value) return;
+    const detail = result.value;
+    const coin = ranked[index];
+    const platformEntries = Object.entries(detail.platforms || {}).filter(([, address]) => hasValue(address));
+    if (!platformEntries.length) {
+      // No on-chain contract anywhere - this is the chain's own native
+      // asset (BTC, ETH, BNB, SOL, ...), not a token deployed on a chain.
+      matches.push({
+        address: null,
+        chainId: 'native',
+        chain: detail.name,
+        coingeckoId: coin.id,
+        name: detail.name,
+        symbol: detail.symbol,
+        marketCap: detail.realMarketCapUsd,
+        logoUrl: detail.logoUrl,
+        verified: true,
+        source: 'coingecko',
+      });
+      return;
+    }
+    platformEntries.forEach(([platform, address]) => {
+      const chainId = COINGECKO_PLATFORM_TO_CHAIN[platform];
+      if (!chainId) return;
+      matches.push({
+        address,
+        chainId,
+        chain: chainLabelFor(chainId),
+        coingeckoId: coin.id,
+        name: detail.name,
+        symbol: detail.symbol,
+        marketCap: detail.realMarketCapUsd,
+        logoUrl: detail.logoUrl,
+        verified: true,
+        source: 'coingecko',
+      });
+    });
+  });
+  return matches;
 }
 
 // GeckoTerminal covers the same DEX pool universe as Dexscreener but
@@ -1436,6 +1742,7 @@ async function fetchGeckoTerminalToken(chainId, address) {
     fdvUsd: Number(attrs.fdv_usd || 0),
     totalSupply,
     priceUsd: Number(attrs.price_usd || 0),
+    logoUrl: cleanLink(attrs.image_url) && !/missing_large/i.test(attrs.image_url || '') ? attrs.image_url : '',
   };
 }
 
@@ -1490,6 +1797,7 @@ function extractSocialLinksFromDexInfo(info = {}) {
       const url = cleanLink(item?.url);
       if (type.includes('twitter') || type === 'x') return { twitter: url };
       if (type.includes('telegram') || type === 'tg') return { telegram: url };
+      if (type.includes('discord')) return { discord: url };
       if (type.includes('github')) return { github: url };
       if (type.includes('website') || type.includes('site')) return { website: url };
       return {};
@@ -1883,6 +2191,17 @@ function formatCurrency(value) {
     currency: 'USD',
     maximumFractionDigits: number >= 1000 ? 0 : 2,
   }).format(number);
+}
+
+// formatCurrency rounds sub-cent prices to "$0.00", which looks like
+// missing data for memecoin-range prices that are very real (e.g. PEPE's
+// $0.0000028 ATH). Use full precision below $1 instead of silently
+// truncating to zero.
+function formatTinyOrCurrency(value) {
+  const number = Number(value || 0);
+  if (!number) return translate('common.notAvailable');
+  if (number >= 1) return formatCurrency(number);
+  return `$${number.toPrecision(4)}`;
 }
 
 function formatNumber(value) {
@@ -2701,7 +3020,7 @@ function App() {
     try {
       const matches = await fetchTokenSearchMatches(term);
       if (mentionsKhan(term)) {
-        const withoutOfficial = matches.filter((match) => match.address.toLowerCase() !== OFFICIAL_KHAN_CONTRACT.toLowerCase());
+        const withoutOfficial = matches.filter((match) => (match.address || '').toLowerCase() !== OFFICIAL_KHAN_CONTRACT.toLowerCase());
         matches.length = 0;
         matches.push(OFFICIAL_KHAN_MATCH, ...withoutOfficial);
       }
@@ -3936,16 +4255,30 @@ function roadmapClarity(project) {
   return translate('scoring.roadmapClarity', { count: project.roadmap.length, completed, inProgress });
 }
 
+function ProjectLogo({ project, size = 40 }) {
+  if (project.logoUrl) {
+    return <img src={project.logoUrl} alt="" className="project-logo" style={{ width: size, height: size }} />;
+  }
+  return (
+    <span className="project-logo project-logo-placeholder" style={{ width: size, height: size }}>
+      {(project.ticker || project.name || '?').trim().slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
 function ProjectCard({ project, navigate }) {
   const { t } = useTranslation();
   return (
     <article className="project-card">
       <div className="card-top">
-        <div>
-          <span className="status-badge">{project.status}</span>
-          <h3>{project.name}</h3>
-          <p>{project.ticker} on {project.chain}</p>
-          <VerifiedBadge status={project.verificationStatus} />
+        <div className="card-top-identity">
+          <ProjectLogo project={project} size={36} />
+          <div>
+            <span className="status-badge">{project.status}</span>
+            <h3>{project.name}</h3>
+            <p>{project.ticker} on {project.chain}</p>
+            <VerifiedBadge status={project.verificationStatus} />
+          </div>
         </div>
         <ScoreCircle score={project.trustScore} />
       </div>
@@ -3984,8 +4317,10 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
         <div>
           <button className="back-button" onClick={() => navigate('explore')}>{t('projectProfile.backToExplore')}</button>
           <div className="profile-title-row">
+            <ProjectLogo project={project} size={48} />
             <h1>{project.name}</h1>
             <span className="ticker-pill">{project.ticker}</span>
+            <span className="chain-badge">{project.chain}</span>
             <VerifiedBadge status={project.verificationStatus} size={16} />
           </div>
           <p>{project.description}</p>
@@ -4497,6 +4832,11 @@ function RealDataSection({ project, data }) {
     [r.twitter, socialPresenceState('twitter', project, data), ExternalLink],
     [r.telegram, socialPresenceState('telegram', project, data), MessageCircle],
     [r.github, socialPresenceState('github', project, data), Github],
+    [r.discord, socialPresenceState('discord', project, data), MessageCircle],
+    [r.priceUsd, data.priceUsd ? formatTinyOrCurrency(data.priceUsd) : t('common.notAvailable'), LineChart],
+    [r.priceChange24h, formatPercent(data.priceChange24h), TrendingUp],
+    [r.volume24h, data.volume24hUsd ? formatCurrency(data.volume24hUsd) : t('common.notAvailable'), BarChart3],
+    [r.ath, data.ath ? formatTinyOrCurrency(data.ath) : t('common.notAvailable'), LineChart],
     [r.supply, data.supply ? formatNumber(data.supply) : t('common.notAvailable'), WalletCards],
     [r.holderGrowth, data.holderGrowthPercent === null ? t('profileSections.holderGrowthNeedsLookup') : formatPercent(data.holderGrowthPercent), TrendingUp],
     [r.poolsFound, formatNumber(data.poolCount), Layers3],
@@ -6035,7 +6375,7 @@ function SearchMatches({ state, onSelect }) {
     <div className="search-matches">
       {state.matches.map((match) => (
         <button
-          key={`${match.chainId}-${match.address}`}
+          key={match.chainId === 'native' ? `native-${match.coingeckoId}` : `${match.chainId}-${match.address}`}
           type="button"
           className="search-match-row"
           onClick={() => onSelect(match)}

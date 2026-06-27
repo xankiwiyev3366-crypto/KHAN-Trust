@@ -1383,6 +1383,36 @@ main {
   background: var(--gold-bright);
 }
 
+.chain-badge {
+  padding: 8px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.project-logo {
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.project-logo-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.08);
+  color: var(--gold);
+  font-weight: 800;
+}
+
+.card-top-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
 .mission-text {
   color: var(--gold-bright) !important;
 }

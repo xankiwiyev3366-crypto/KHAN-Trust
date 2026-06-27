@@ -6,6 +6,7 @@
 import './bufferShim.js';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import {
   Connection,
   Keypair,
@@ -5203,7 +5204,16 @@ function LiveMarketChart({ project, data }) {
         )}
       </div>
 
-      {fullscreen && (
+      {fullscreen && typeof document !== 'undefined' && createPortal(
+        // Rendered via portal directly into document.body, not in place
+        // here: .profile-page (an ancestor of this component) has a CSS
+        // animation with fill-mode "both", which leaves transform:
+        // translateY(0) permanently applied even after the animation ends.
+        // Per spec, any ancestor with a transform becomes the containing
+        // block for position:fixed descendants - so without the portal,
+        // this modal would render relative to that tall page element
+        // instead of the viewport (the "dark overlay, no visible chart"
+        // bug: the real content was rendering far down the page, off-screen).
         <div className="modal-backdrop market-fullscreen-modal" role="dialog" aria-modal="true" aria-label={m.title}>
           <div className="modal-panel market-fullscreen-panel">
             <button className="close-button" onClick={() => setFullscreen(false)} aria-label={t('common.close')}><X size={20} /></button>
@@ -5211,7 +5221,8 @@ function LiveMarketChart({ project, data }) {
               <ChartEmbed provider={provider} data={data} retryKey={retryKey} widgetReady={widgetReady} title={m.title} onLoad={() => {}} />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {showFallback && (

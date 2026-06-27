@@ -34,6 +34,7 @@ import {
   BookOpen,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   CircleDot,
   Clock3,
   Copy,
@@ -3953,6 +3954,95 @@ function PaymentMethodsSection({ beginCheckout, onEntitlementChange }) {
   );
 }
 
+// Official token logos (CoinGecko-hosted, same CDN already used elsewhere
+// in this app for live token lookups) - purely a visual label for the
+// currency picker, no effect on payment logic or which mint is used.
+const CURRENCY_OPTIONS = [
+  { value: 'USDC', labelKey: 'currencyUsdc', logo: 'https://coin-images.coingecko.com/coins/images/6319/small/usdc.png' },
+  { value: 'USDT', labelKey: 'currencyUsdt', logo: 'https://coin-images.coingecko.com/coins/images/325/small/Tether.png' },
+  { value: 'SOL', labelKey: 'currencySol', logo: 'https://coin-images.coingecko.com/coins/images/4128/small/solana.png' },
+];
+
+function CurrencyLogo({ option, size = 22 }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <span className="currency-logo currency-logo-fallback" style={{ width: size, height: size }}>
+        {option.value.slice(0, 1)}
+      </span>
+    );
+  }
+  return (
+    <img
+      src={option.logo}
+      alt=""
+      className="currency-logo"
+      style={{ width: size, height: size }}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+function CurrencySelect({ value, onChange }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+  const selected = CURRENCY_OPTIONS.find((option) => option.value === value) || CURRENCY_OPTIONS[0];
+
+  useEffect(() => {
+    if (!open) return;
+    const onClickOutside = (event) => {
+      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
+    };
+    const onKey = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="currency-select" ref={rootRef}>
+      <button
+        type="button"
+        className="currency-select-trigger"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <CurrencyLogo option={selected} />
+        <span>{t(`pricing.payment.${selected.labelKey}`)}</span>
+        <ChevronDown size={16} className="currency-select-chevron" />
+      </button>
+      {open && (
+        <ul className="currency-select-menu" role="listbox">
+          {CURRENCY_OPTIONS.map((option) => (
+            <li key={option.value}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={option.value === value}
+                className={option.value === value ? 'active' : ''}
+                onClick={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+              >
+                <CurrencyLogo option={option} />
+                <span>{t(`pricing.payment.${option.labelKey}`)}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function WalletPaymentSection({ onEntitlementChange }) {
   const { t } = useTranslation();
   const { address, connected, connecting, availableWallets, selectAndConnect, sendTransaction, connection } = useKhanWallet();
@@ -4026,11 +4116,7 @@ function WalletPaymentSection({ onEntitlementChange }) {
           </label>
           <label className="form-field">
             <span>{t('pricing.payment.currencyLabel')}</span>
-            <select value={currency} onChange={(event) => setCurrency(event.target.value)}>
-              <option value="USDC">{t('pricing.payment.currencyUsdc')}</option>
-              <option value="USDT">{t('pricing.payment.currencyUsdt')}</option>
-              <option value="SOL">{t('pricing.payment.currencySol')}</option>
-            </select>
+            <CurrencySelect value={currency} onChange={setCurrency} />
           </label>
           <button
             className="primary-button"

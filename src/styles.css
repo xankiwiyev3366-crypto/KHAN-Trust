@@ -2102,13 +2102,78 @@ main {
   color: var(--text);
 }
 
+.market-fullscreen-btn {
+  margin-left: auto;
+  padding: 0 12px;
+  min-height: 34px;
+  font-size: 12.5px;
+}
+
+.market-fullscreen-modal .modal-panel {
+  width: min(96vw, 980px);
+  padding: 14px;
+}
+
+.market-chart-frame-large {
+  aspect-ratio: 16 / 9;
+  margin-bottom: 0;
+}
+
 @media (max-width: 540px) {
+  /* A fixed, generous height (rather than a tight aspect-ratio) gives the
+     chart real usable space on a phone screen instead of a cramped strip -
+     this is the section users most want to actually interact with. */
   .market-chart-frame {
-    aspect-ratio: 4 / 3;
+    aspect-ratio: auto;
+    height: 70vh;
+    min-height: 360px;
+    max-height: 520px;
   }
 
   .market-metrics-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .market-status-row {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .market-fullscreen-btn {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .market-fullscreen-modal {
+    padding: 0;
+  }
+
+  .market-fullscreen-modal .modal-panel {
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+    padding: 12px;
+    padding-top: max(12px, env(safe-area-inset-top, 0px));
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    display: flex;
+    flex-direction: column;
+  }
+
+  .market-chart-frame-large {
+    aspect-ratio: auto;
+    flex: 1;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+  }
+
+  /* .app-shell already reserves space for the fixed mobile bottom nav
+     (112px on mobile, see above) for every page - this is just a small
+     extra buffer under the chart's own metrics grid specifically, since
+     it's the tallest single block on the profile page. */
+  .market-metrics-grid {
+    margin-bottom: 16px;
   }
 }
 

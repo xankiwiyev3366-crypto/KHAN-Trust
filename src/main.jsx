@@ -53,6 +53,7 @@ import {
   Layers3,
   LifeBuoy,
   LineChart,
+  Maximize2,
   ListFilter,
   Lock,
   Mail,
@@ -5080,6 +5081,35 @@ const CHART_LOAD_TIMEOUT_MS = 8000;
 // - An 8s watchdog flips to the fallback state with a Retry button if
 //   neither provider's onload fires in time, instead of leaving a
 //   perpetual "Loading pair..." iframe.
+// Renders the actual iframe/widget element - shared between the inline
+// chart frame and the fullscreen modal so both stay in sync with a single
+// implementation instead of two copies drifting apart.
+function ChartEmbed({ provider, data, retryKey, widgetReady, onLoad, title }) {
+  if (provider === 'dexscreener') {
+    return (
+      <iframe
+        key={`${data.pairAddress}-${retryKey}`}
+        title={title}
+        src={`https://dexscreener.com/${data.dexChainId}/${data.pairAddress}?embed=1&theme=dark&trades=0&info=0`}
+        loading="lazy"
+        onLoad={onLoad}
+      />
+    );
+  }
+  if (provider === 'coingecko' && widgetReady) {
+    return (
+      <gecko-coin-price-chart-widget
+        key={`${data.coingeckoId}-${retryKey}`}
+        locale="en"
+        transparent-background="true"
+        coin-id={data.coingeckoId}
+        initial-currency="usd"
+      />
+    );
+  }
+  return null;
+}
+
 function LiveMarketChart({ project, data }) {
   const { t } = useTranslation();
   const m = t('profileSections.marketChart');
@@ -5093,6 +5123,16 @@ function LiveMarketChart({ project, data }) {
   const [chartStatus, setChartStatus] = useState('loading'); // loading | loaded | timeout
   const [retryKey, setRetryKey] = useState(0);
   const [widgetReady, setWidgetReady] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (event) => {
+      if (event.key === 'Escape') setFullscreen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
 
   useEffect(() => {
     if (provider === 'none' || typeof IntersectionObserver === 'undefined') {
@@ -5147,31 +5187,32 @@ function LiveMarketChart({ project, data }) {
           {provider === 'dexscreener' ? m.statusLive : provider === 'coingecko' ? m.statusFallback : m.statusUnavailable}
         </span>
         {data?.dexId && <span className="chain-badge">{data.dexId}</span>}
+        {showChart && (
+          <button type="button" className="ghost-button market-fullscreen-btn" onClick={() => setFullscreen(true)}>
+            <Maximize2 size={15} /> {m.openLarge}
+          </button>
+        )}
       </div>
 
       <div className="market-chart-frame" style={{ display: showChart ? 'block' : 'none' }}>
         {showSkeleton && <div className="skeleton-block market-chart-skeleton" />}
-        {provider === 'dexscreener' && (
-          <iframe
-            key={`${data.pairAddress}-${retryKey}`}
-            title={m.title}
-            src={`https://dexscreener.com/${data.dexChainId}/${data.pairAddress}?embed=1&theme=dark&trades=0&info=0`}
-            loading="lazy"
-            onLoad={() => setChartStatus('loaded')}
-            style={{ visibility: showSkeleton ? 'hidden' : 'visible' }}
-          />
-        )}
-        {provider === 'coingecko' && widgetReady && (
-          <gecko-coin-price-chart-widget
-            key={`${data.coingeckoId}-${retryKey}`}
-            locale="en"
-            transparent-background="true"
-            coin-id={data.coingeckoId}
-            initial-currency="usd"
-            onLoad={() => setChartStatus('loaded')}
-          />
+        {!fullscreen && (
+          <div style={{ visibility: showSkeleton ? 'hidden' : 'visible', position: 'absolute', inset: 0 }}>
+            <ChartEmbed provider={provider} data={data} retryKey={retryKey} widgetReady={widgetReady} title={m.title} onLoad={() => setChartStatus('loaded')} />
+          </div>
         )}
       </div>
+
+      {fullscreen && (
+        <div className="modal-backdrop market-fullscreen-modal" role="dialog" aria-modal="true" aria-label={m.title}>
+          <div className="modal-panel market-fullscreen-panel">
+            <button className="close-button" onClick={() => setFullscreen(false)} aria-label={t('common.close')}><X size={20} /></button>
+            <div className="market-chart-frame market-chart-frame-large">
+              <ChartEmbed provider={provider} data={data} retryKey={retryKey} widgetReady={widgetReady} title={m.title} onLoad={() => {}} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {showFallback && (
         <div className="market-chart-fallback">

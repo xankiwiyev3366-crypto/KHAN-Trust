@@ -643,6 +643,7 @@ export default {
       fallback: 'Live chart is not available for this token yet. Market metrics will appear when reliable pair data becomes available.',
       timeout: 'The live chart took too long to load. Market metrics above are still accurate.',
       retry: 'Retry Chart',
+      openLarge: 'Open Large Chart',
       price: 'Current Price',
       marketCap: 'Market Cap',
       liquidity: 'Liquidity',

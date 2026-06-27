@@ -67,6 +67,7 @@ import {
   Star,
   Target,
   TimerReset,
+  TrendingDown,
   TrendingUp,
   Trash2,
   UserPlus,
@@ -1303,8 +1304,11 @@ async function lookupSolanaTokenUncached(address) {
       supply: rpc?.supply || jupiter?.totalSupply || geckoTerminal?.totalSupply || coingecko?.circulatingSupply || null,
       maxSupply: coingecko?.maxSupply ?? null,
       totalSupply: coingecko?.totalSupply ?? null,
-      priceUsd: coingecko?.priceUsd ?? geckoTerminal?.priceUsd ?? null,
-      priceChange24h: coingecko?.priceChange24h ?? null,
+      priceUsd: coingecko?.priceUsd ?? geckoTerminal?.priceUsd ?? (Number(dex?.primaryPair?.priceUsd || 0) || null),
+      priceChange5m: dex?.primaryPair?.priceChange?.m5 ?? null,
+      priceChange1h: dex?.primaryPair?.priceChange?.h1 ?? null,
+      priceChange6h: dex?.primaryPair?.priceChange?.h6 ?? null,
+      priceChange24h: coingecko?.priceChange24h ?? dex?.primaryPair?.priceChange?.h24 ?? null,
       priceChange7d: coingecko?.priceChange7d ?? null,
       priceChange30d: coingecko?.priceChange30d ?? null,
       ath: coingecko?.ath ?? null,
@@ -1331,6 +1335,10 @@ async function lookupSolanaTokenUncached(address) {
       launchpad: jupiter?.launchpad || '',
       pairUrl: dex?.primaryPair?.url || '',
       pairAddress: dex?.primaryPair?.pairAddress || '',
+      dexChainId: dex?.primaryPair ? 'solana' : null,
+      dexId: dex?.primaryPair?.dexId || '',
+      baseSymbol: token.symbol ? token.symbol.toUpperCase() : '',
+      quoteSymbol: dex?.primaryPair?.quoteToken?.symbol || '',
       fetchedAt: new Date().toISOString(),
     },
   };
@@ -1527,8 +1535,11 @@ async function lookupGenericChainTokenUncached(chainId, address) {
       supply: geckoTerminal?.totalSupply || coingecko?.circulatingSupply || null,
       maxSupply: coingecko?.maxSupply ?? null,
       totalSupply: coingecko?.totalSupply ?? null,
-      priceUsd: coingecko?.priceUsd ?? geckoTerminal?.priceUsd ?? null,
-      priceChange24h: coingecko?.priceChange24h ?? null,
+      priceUsd: coingecko?.priceUsd ?? geckoTerminal?.priceUsd ?? (Number(dex?.primaryPair?.priceUsd || 0) || null),
+      priceChange5m: dex?.primaryPair?.priceChange?.m5 ?? null,
+      priceChange1h: dex?.primaryPair?.priceChange?.h1 ?? null,
+      priceChange6h: dex?.primaryPair?.priceChange?.h6 ?? null,
+      priceChange24h: coingecko?.priceChange24h ?? dex?.primaryPair?.priceChange?.h24 ?? null,
       priceChange7d: coingecko?.priceChange7d ?? null,
       priceChange30d: coingecko?.priceChange30d ?? null,
       ath: coingecko?.ath ?? null,
@@ -1554,6 +1565,10 @@ async function lookupGenericChainTokenUncached(chainId, address) {
       socialMetadataAvailable: Boolean(dex?.primaryPair || coingecko),
       pairUrl: dex?.primaryPair?.url || '',
       pairAddress: dex?.primaryPair?.pairAddress || '',
+      dexChainId: dex?.primaryPair ? chainId : null,
+      dexId: dex?.primaryPair?.dexId || '',
+      baseSymbol: token.symbol ? token.symbol.toUpperCase() : '',
+      quoteSymbol: dex?.primaryPair?.quoteToken?.symbol || '',
       fetchedAt: new Date().toISOString(),
     },
   };
@@ -1720,7 +1735,14 @@ async function fetchDexscreenerToken(address, chainId = 'solana') {
       const normalized = address.toLowerCase();
       return pair.baseToken?.address?.toLowerCase() === normalized || pair.quoteToken?.address?.toLowerCase() === normalized;
     });
-  const sortedPairs = solanaPairs.sort((a, b) => Number(b?.liquidity?.usd || 0) - Number(a?.liquidity?.usd || 0));
+  // Primary pair (and therefore the chart/metrics pair) is chosen by
+  // liquidity first, then 24h volume as a tiebreaker for near-equal pools -
+  // never an arbitrary/first-returned pair.
+  const sortedPairs = solanaPairs.sort((a, b) => {
+    const liquidityDiff = Number(b?.liquidity?.usd || 0) - Number(a?.liquidity?.usd || 0);
+    if (liquidityDiff !== 0) return liquidityDiff;
+    return Number(b?.volume?.h24 || 0) - Number(a?.volume?.h24 || 0);
+  });
   return {
     primaryPair: sortedPairs[0] || null,
     pairs: sortedPairs,
@@ -4630,6 +4652,7 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
         <div className="main-column">
           <RiskSummary project={project} />
           <InfoGrid project={project} />
+          <LiveMarketChart project={project} data={project.realData} />
           <CategoryScoreCards project={project} />
           <TrustBreakdown project={project} />
           {project.realData && <RealDataSection project={project} data={project.realData} />}
@@ -4985,6 +5008,116 @@ function normalizeExternalUrl(value = '') {
   if (/^https?:\/\//i.test(text)) return text;
   if (/^[\w.-]+\.[a-z]{2,}/i.test(text)) return `https://${text}`;
   return '';
+}
+
+function PriceChangeStat({ label, value }) {
+  const { t } = useTranslation();
+  if (value === null || value === undefined) {
+    return (
+      <div className="market-metric">
+        <span>{label}</span>
+        <strong>{t('common.notAvailable')}</strong>
+      </div>
+    );
+  }
+  const positive = Number(value) >= 0;
+  const Icon = positive ? TrendingUp : TrendingDown;
+  return (
+    <div className="market-metric">
+      <span>{label}</span>
+      <strong className={positive ? 'trend-up' : 'trend-down'}>
+        <Icon size={14} /> {formatPercent(value)}
+      </strong>
+    </div>
+  );
+}
+
+// Live Market Chart section. Reuses data already fetched by
+// lookupSolanaToken/lookupGenericChainToken (dexChainId, pairAddress,
+// price/volume/liquidity fields) - no separate fetch, no new API calls.
+// The chart's presence/absence never feeds into Trust Score: this
+// component only reads `project`/`data` for display and calls no scoring
+// function.
+function LiveMarketChart({ project, data }) {
+  const { t } = useTranslation();
+  const m = t('profileSections.marketChart');
+  const hasPair = Boolean(data?.dexChainId && data?.pairAddress);
+
+  return (
+    <section className="detail-section">
+      <SectionTitle icon={LineChart} eyebrow={m.eyebrow} title={m.title} />
+      <div className="market-status-row">
+        <span className={`status-badge ${hasPair ? 'market-live' : 'market-unavailable'}`}>
+          {hasPair ? m.statusLive : m.statusUnavailable}
+        </span>
+        {data?.dexId && <span className="chain-badge">{data.dexId}</span>}
+      </div>
+
+      {hasPair ? (
+        <div className="market-chart-frame">
+          <iframe
+            key={data.pairAddress}
+            title={m.title}
+            src={`https://dexscreener.com/${data.dexChainId}/${data.pairAddress}?embed=1&theme=dark&trades=0&info=0`}
+            loading="lazy"
+          />
+        </div>
+      ) : (
+        <div className="market-chart-fallback">
+          <LineChart size={28} />
+          <p>{m.fallback}</p>
+        </div>
+      )}
+
+      <div className="market-metrics-grid">
+        <div className="market-metric">
+          <span>{m.price}</span>
+          <strong>{data?.priceUsd ? formatTinyOrCurrency(data.priceUsd) : t('common.notAvailable')}</strong>
+        </div>
+        <div className="market-metric">
+          <span>{marketCapLabel(m.marketCap, data)}</span>
+          <strong>{data?.marketCapUsd ? formatCurrency(data.marketCapUsd) : t('common.notAvailable')}</strong>
+        </div>
+        <div className="market-metric">
+          <span>{m.liquidity}</span>
+          <strong>{(data?.totalLiquidityUsd ?? data?.liquidityUsd) ? formatCurrency(data.totalLiquidityUsd ?? data.liquidityUsd) : t('common.notAvailable')}</strong>
+        </div>
+        <div className="market-metric">
+          <span>{m.volume24h}</span>
+          <strong>{data?.volume24hUsd ? formatCurrency(data.volume24hUsd) : t('common.notAvailable')}</strong>
+        </div>
+        <PriceChangeStat label={m.change5m} value={data?.priceChange5m} />
+        <PriceChangeStat label={m.change1h} value={data?.priceChange1h} />
+        <PriceChangeStat label={m.change6h} value={data?.priceChange6h} />
+        <PriceChangeStat label={m.change24h} value={data?.priceChange24h} />
+        <div className="market-metric">
+          <span>{m.buys24h}</span>
+          <strong>{data?.buys24h !== null && data?.buys24h !== undefined ? formatNumber(data.buys24h) : t('common.notAvailable')}</strong>
+        </div>
+        <div className="market-metric">
+          <span>{m.sells24h}</span>
+          <strong>{data?.sells24h !== null && data?.sells24h !== undefined ? formatNumber(data.sells24h) : t('common.notAvailable')}</strong>
+        </div>
+        <div className="market-metric">
+          <span>{m.dex}</span>
+          <strong>{data?.dexId || t('common.notAvailable')}</strong>
+        </div>
+        <div className="market-metric">
+          <span>{m.pair}</span>
+          <strong>{data?.baseSymbol && data?.quoteSymbol ? `${data.baseSymbol} / ${data.quoteSymbol}` : t('common.notAvailable')}</strong>
+        </div>
+        <div className="market-metric market-metric-wide">
+          <span>{m.pairAddress}</span>
+          <strong>{data?.pairAddress ? <code>{data.pairAddress}</code> : t('common.notAvailable')}</strong>
+        </div>
+      </div>
+      {data?.pairUrl && (
+        <a className="data-link" href={data.pairUrl} target="_blank" rel="noreferrer">
+          {t('profileSections.viewMarketPair')} <ExternalLink size={16} />
+        </a>
+      )}
+    </section>
+  );
 }
 
 const CATEGORY_ICONS = {

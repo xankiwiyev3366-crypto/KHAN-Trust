@@ -196,6 +196,35 @@ function chainLabelFor(chainId) {
   return CHAIN_LABELS[chainId] || (chainId ? chainId.charAt(0).toUpperCase() + chainId.slice(1) : 'Unknown');
 }
 
+// Official $KHAN mint. Dexscreener's general search index doesn't always
+// pick up new tokens right away, so exact KHAN/GKHAN searches are resolved
+// to this address directly instead of depending on third-party indexing.
+const OFFICIAL_KHAN_CONTRACT = '6bSHkoMYqzyCZdWPQ45nUv73dvdfx4yEd4yEemefpump';
+const OFFICIAL_KHAN_EXACT_TERMS = ['khan', 'gkhan', '$khan'];
+const OFFICIAL_KHAN_MATCH = {
+  address: OFFICIAL_KHAN_CONTRACT,
+  chainId: 'solana',
+  chain: 'Solana',
+  name: 'KHAN',
+  symbol: 'KHAN',
+  marketCap: 0,
+  logoUrl: '',
+  verified: true,
+  isOfficial: true,
+};
+
+function normalizeSearchTerm(term) {
+  return term.trim().toLowerCase().replace(/^\$/, '');
+}
+
+function isExactOfficialKhanQuery(term) {
+  return OFFICIAL_KHAN_EXACT_TERMS.includes(normalizeSearchTerm(term));
+}
+
+function mentionsKhan(term) {
+  return normalizeSearchTerm(term).includes('khan');
+}
+
 const khanProject = {
   id: 'khan-solana',
   name: 'KHAN',
@@ -2267,11 +2296,23 @@ function App() {
       return;
     }
 
+    // An exact KHAN/GKHAN/$KHAN query always resolves straight to the
+    // official token - Dexscreener's index may not have it yet.
+    if (isExactOfficialKhanQuery(term)) {
+      await resolveSearchMatch(OFFICIAL_KHAN_MATCH);
+      return;
+    }
+
     // Not a Solana contract address - treat it as a name/ticker search
     // across chains (e.g. "Bonk", "SOL", a 0x... address on another chain).
     setSearchState({ status: 'loading', message: t('search.searchingMatches') });
     try {
       const matches = await fetchTokenSearchMatches(term);
+      if (mentionsKhan(term)) {
+        const withoutOfficial = matches.filter((match) => match.address.toLowerCase() !== OFFICIAL_KHAN_CONTRACT.toLowerCase());
+        matches.length = 0;
+        matches.push(OFFICIAL_KHAN_MATCH, ...withoutOfficial);
+      }
       if (!matches.length) {
         setSearchState({ status: 'idle', message: '' });
         navigate('explore');

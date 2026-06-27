@@ -6065,9 +6065,11 @@ function AdminAnalyticsPage() {
 
       <div className="analytics-stat-grid">
         <StatCard icon={Activity} label={t('adminAnalytics.totalScans')} value={formatNumber(summary.overview.totalScans)} />
-        <StatCard icon={Users} label={t('adminAnalytics.totalUsers')} value={formatNumber(summary.overview.totalUsers)} sublabel={t('adminAnalytics.uniqueVisitors')} />
         <StatCard icon={Layers3} label={t('adminAnalytics.totalProjects')} value={formatNumber(summary.overview.totalProjects)} />
         <StatCard icon={BadgeCheck} label={t('adminAnalytics.verifiedProjects')} value={formatNumber(summary.overview.verifiedProjects)} />
+        <StatCard icon={LineChart} label={t('adminAnalytics.averageTrustScore')} value={summary.trustScoreAnalytics.average ?? 'N/A'} sublabel={t('adminAnalytics.scoredProjects', { count: summary.trustScoreAnalytics.sampleSize })} />
+        <StatCard icon={Users} label={t('adminAnalytics.totalUsers')} value={formatNumber(summary.overview.totalUsers)} sublabel={t('adminAnalytics.uniqueVisitors')} />
+        <StatCard icon={Search} label={t('adminAnalytics.topSearches')} value={summary.popularSearches[0]?.query || 'N/A'} sublabel={summary.popularSearches[0] ? `${summary.popularSearches[0].count} ${t('adminAnalytics.columns').count}` : ''} />
         <StatCard icon={Clock3} label={t('adminAnalytics.pendingVerification')} value={formatNumber(summary.overview.pendingVerification)} />
         <StatCard icon={X} label={t('adminAnalytics.rejectedVerification')} value={formatNumber(summary.overview.rejectedVerification)} />
       </div>

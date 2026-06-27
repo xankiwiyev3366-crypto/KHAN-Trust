@@ -124,6 +124,26 @@ export async function payWithConnectedWallet({ connection, publicKey, sendTransa
         return { ok: false, status: 'failed', message: 'Invalid payment amount' };
       }
       transaction.add(SystemProgram.transfer({ fromPubkey: publicKey, toPubkey: receiver, lamports: amount }));
+
+      // SystemProgram.transfer's only realistic on-chain failure here (valid
+      // recipient, valid blockhash, valid fee payer) is the sender not
+      // having enough lamports to cover the transfer AND the network fee -
+      // the fee is paid by the same feePayer, on top of the transferred
+      // amount, and was never checked before. getFeeForMessage asks for the
+      // network's actual fee for this exact message rather than guessing,
+      // so this turns a doomed transaction into a precise, accurate reason
+      // instead of letting simulateTransaction fail generically.
+      const feeForMessage = await connection.getFeeForMessage(transaction.compileMessage(), 'confirmed');
+      const networkFee = feeForMessage.value ?? 5000;
+      const requiredLamports = amount + networkFee;
+      const balance = await connection.getBalance(publicKey, 'confirmed');
+      if (balance < requiredLamports) {
+        return {
+          ok: false,
+          status: 'insufficient_balance',
+          message: `Not enough SOL to cover this payment plus the network fee (need ~${(requiredLamports / LAMPORTS_PER_SOL).toFixed(6)} SOL)`,
+        };
+      }
     }
 
     // Temporary diagnostic logging (production debugging only - no secrets,

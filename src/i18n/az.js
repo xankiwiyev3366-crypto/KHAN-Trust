@@ -594,6 +594,7 @@ export default {
       socialScore: 'Sosial Xal',
       holderGrowthScore: 'Holder Artımı Xalı',
       supplyScore: 'Təklif Xalı',
+      securityScore: 'Təhlükəsizlik (Mint/Freeze Səlahiyyəti)',
       finalTrustScore: 'Son Trust Score',
     },
     realDataRows: {
@@ -1018,7 +1019,7 @@ export default {
 
       tokenAgeTitle: 'Token yaşı',
       tokenAgeUnavailableSignal: 'Token yaşı mövcud deyil',
-      tokenAgeUnavailableExplain: 'Token yaşı hovuz yaradılması və ya token indeksi məlumatından təsdiqlənə bilmədi.',
+      tokenAgeUnavailableExplain: 'Token yaşı mintin zəncirüstü yaradılma tarixçəsindən bu axtarış zamanı təsdiqlənə bilmədi.',
       tokenAgeHighSignal: 'Yeni token xəbərdarlığı',
       tokenAgeHighExplain: 'Bu token {{age}} yaşında görünür. Çox yeni tokenlərin adətən daha az ticarət tarixçəsi və icma sübutu olur.',
       tokenAgeMediumSignal: 'Yeni token xəbərdarlığı',
@@ -1051,6 +1052,17 @@ export default {
       presenceTelegramExplain: 'Telegram ümumi Solana icma kanalıdır. Telegram olmaması icma görünürlüyünü məhdudlaşdırır.',
       presenceDataUnavailable: 'KHAN Trust mövcud token metadata mənbələrindən {{title}}-ı təsdiqləyə bilmədi.',
       presenceFound: 'Mövcuddur: {{value}}',
+
+      mintAuthorityTitle: 'Mint səlahiyyəti',
+      freezeAuthorityTitle: 'Freeze səlahiyyəti',
+      authorityEnabledSignal: 'Səlahiyyət aktivdir',
+      authorityEnabledValue: 'Aktiv',
+      authorityDisabledSignal: 'Səlahiyyət ləğv edilib',
+      authorityDisabledValue: 'Deaktiv',
+      mintAuthorityEnabledExplain: 'Mint səlahiyyəti ləğv edilməyib, token emitenti istənilən vaxt yeni təklif yarada bilər.',
+      mintAuthorityDisabledExplain: 'Mint səlahiyyəti ləğv edilib. Yeni təklif yaradıla bilməz.',
+      freezeAuthorityEnabledExplain: 'Freeze səlahiyyəti ləğv edilməyib, token emitenti hələ də holder hesablarını dondura bilər.',
+      freezeAuthorityDisabledExplain: 'Freeze səlahiyyəti ləğv edilib. Holder hesabları dondurula bilməz.',
     },
     riskNotes: {
       lowLiquidity: 'aşağı likvidlik',
@@ -1120,6 +1132,7 @@ export default {
       socialScore: 'Sosial Xal',
       holderGrowthScore: 'Holder Artımı Xalı',
       supplyScore: 'Təklif Xalı',
+      securityScore: 'Təhlükəsizlik (Mint/Freeze Səlahiyyəti)',
       finalTrustScore: 'Son Trust Score',
     },
   },

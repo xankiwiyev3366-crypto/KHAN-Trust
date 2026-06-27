@@ -594,6 +594,7 @@ export default {
       socialScore: 'Sosyal Skor',
       holderGrowthScore: 'Holder Artış Skoru',
       supplyScore: 'Arz Skoru',
+      securityScore: 'Güvenlik (Mint/Freeze Yetkisi)',
       finalTrustScore: 'Nihai Trust Score',
     },
     realDataRows: {
@@ -1018,7 +1019,7 @@ export default {
 
       tokenAgeTitle: 'Token yaşı',
       tokenAgeUnavailableSignal: 'Token yaşı mevcut değil',
-      tokenAgeUnavailableExplain: 'Token yaşı, havuz oluşturma veya token indeks verilerinden doğrulanamadı.',
+      tokenAgeUnavailableExplain: 'Token yaşı, bu taramada mint hesabının zincir üstü oluşturulma geçmişinden doğrulanamadı.',
       tokenAgeHighSignal: 'Yeni token uyarısı',
       tokenAgeHighExplain: 'Bu token {{age}} yaşında görünüyor. Çok yeni tokenlerin genellikle daha az işlem geçmişi ve topluluk kanıtı vardır.',
       tokenAgeMediumSignal: 'Yeni token uyarısı',
@@ -1051,6 +1052,17 @@ export default {
       presenceTelegramExplain: 'Telegram yaygın bir Solana topluluk kanalıdır. Telegram eksikliği topluluk görünürlüğünü sınırlar.',
       presenceDataUnavailable: 'KHAN Trust, mevcut token meta veri kaynaklarından {{title}}\'ı doğrulayamadı.',
       presenceFound: 'Mevcut: {{value}}',
+
+      mintAuthorityTitle: 'Mint yetkisi',
+      freezeAuthorityTitle: 'Freeze yetkisi',
+      authorityEnabledSignal: 'Yetki aktif',
+      authorityEnabledValue: 'Aktif',
+      authorityDisabledSignal: 'Yetki iptal edildi',
+      authorityDisabledValue: 'Devre dışı',
+      mintAuthorityEnabledExplain: 'Mint yetkisi iptal edilmemiş, token ihraççısı istediği zaman yeni arz oluşturabilir.',
+      mintAuthorityDisabledExplain: 'Mint yetkisi iptal edildi. Yeni arz oluşturulamaz.',
+      freezeAuthorityEnabledExplain: 'Freeze yetkisi iptal edilmemiş, token ihraççısı holder hesaplarını dondurabilir.',
+      freezeAuthorityDisabledExplain: 'Freeze yetkisi iptal edildi. Holder hesapları dondurulamaz.',
     },
     riskNotes: {
       lowLiquidity: 'düşük likidite',
@@ -1120,6 +1132,7 @@ export default {
       socialScore: 'Sosyal Skor',
       holderGrowthScore: 'Holder Artış Skoru',
       supplyScore: 'Arz Skoru',
+      securityScore: 'Güvenlik (Mint/Freeze Yetkisi)',
       finalTrustScore: 'Nihai Trust Score',
     },
   },

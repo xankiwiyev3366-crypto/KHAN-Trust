@@ -190,6 +190,10 @@ const CHAIN_LABELS = {
   ethereum: 'Ethereum',
   bsc: 'BSC',
   base: 'Base',
+  arbitrum: 'Arbitrum',
+  polygon: 'Polygon',
+  avalanche: 'Avalanche',
+  optimism: 'Optimism',
 };
 
 function chainLabelFor(chainId) {
@@ -451,7 +455,12 @@ function normalizeProject(input) {
     twitter: firstPresent(input.twitter, realData?.twitterUrl) || 'Not provided',
     telegram: firstPresent(input.telegram, realData?.telegramUrl) || 'Not provided',
     github: firstPresent(input.github, realData?.githubUrl) || 'Not provided',
-    launchDate: input.launchDate || now,
+    // Live-scanned tokens with a confirmed real launch date use it. A
+    // live-scanned token whose real creation date is unknown must stay
+    // unknown - defaulting it to "today" would fabricate a "brand new
+    // token" age out of thin air. Only profiles with no live data at all
+    // (manual Add Project entries) default the launch date to today.
+    launchDate: input.launchDate || (rawRealData ? '' : now),
     description: input.description || 'No description provided yet.',
     mission: input.mission || '',
     status: input.status || 'User submitted',
@@ -549,6 +558,7 @@ function buildScoreBreakdown(project, holders, communitySize, score) {
       socialScore: liveScores.socialScore,
       holderGrowthScore: liveScores.holderGrowthScore,
       supplyScore: liveScores.supplyScore,
+      securityScore: liveScores.securityScore,
       finalTrustScore: liveScores.finalTrustScore,
     };
   }
@@ -582,6 +592,7 @@ function calculateLiveScores(project = {}, data = {}) {
     transparency: descriptionScore,
     holderGrowthScore: scoreHolderGrowth(data.holderGrowthPercent),
     supplyScore: scoreSupply(data.supply),
+    securityScore: scoreSecurity(data.mintAuthorityEnabled, data.freezeAuthorityEnabled),
   };
   const weighted = weightedAverage([
     [scores.holderScore, 16],
@@ -590,6 +601,7 @@ function calculateLiveScores(project = {}, data = {}) {
     [scores.tokenAgeScore, 10],
     [scores.liquidityScore, 16],
     [scores.marketCapScore, 6],
+    [scores.securityScore, 8],
     [scores.websiteScore, 7],
     [scores.twitterScore, 7],
     [scores.telegramScore, 6],
@@ -727,6 +739,14 @@ function scoreHolderGrowth(percent) {
   return 24;
 }
 
+function scoreSecurity(mintAuthorityEnabled, freezeAuthorityEnabled) {
+  if (mintAuthorityEnabled === null && freezeAuthorityEnabled === null) return null;
+  const enabledCount = [mintAuthorityEnabled, freezeAuthorityEnabled].filter((value) => value === true).length;
+  if (enabledCount === 0) return 92;
+  if (enabledCount === 1) return 52;
+  return 18;
+}
+
 function scoreSupply(value) {
   const supply = Number(value || 0);
   if (!supply) return null;
@@ -770,6 +790,8 @@ function riskPenalty(notes = '', { excludeLiveDataDupes = false } = {}) {
   const penalties = [
     ['anonymous', 10],
     ['no roadmap', 8],
+    ['mint authority enabled', 10],
+    ['freeze authority enabled', 10],
     ...(excludeLiveDataDupes ? [] : [
       ['low liquidity', 10],
       ['low holders', 7],
@@ -932,17 +954,21 @@ async function lookupSolanaToken(contractAddress) {
   const address = contractAddress.trim();
   if (!address) throw new Error('Enter a Solana contract address first.');
 
-  const [dexData, rpcData, holderAnalyticsData, jupiterData] = await Promise.allSettled([
+  const [dexData, rpcData, holderAnalyticsData, jupiterData, mintInfoData, mintCreationData] = await Promise.allSettled([
     fetchDexscreenerToken(address),
     fetchSolanaRpcToken(address),
     fetchSolanaHolderAnalytics(address),
     fetchJupiterTokenData(address),
+    fetchMintAccountInfo(address),
+    fetchMintCreationTimestamp(address),
   ]);
 
   const dex = dexData.status === 'fulfilled' ? dexData.value : null;
   const rpc = rpcData.status === 'fulfilled' ? rpcData.value : null;
   const holderAnalytics = holderAnalyticsData.status === 'fulfilled' ? holderAnalyticsData.value : null;
   const jupiter = jupiterData.status === 'fulfilled' ? jupiterData.value : null;
+  const mintInfo = mintInfoData.status === 'fulfilled' ? mintInfoData.value : null;
+  const mintCreatedAt = mintCreationData.status === 'fulfilled' ? mintCreationData.value : null;
 
   if (!dex?.primaryPair && !rpc && !jupiter) {
     throw new Error('No public Solana token data was found for this address.');
@@ -961,12 +987,22 @@ async function lookupSolanaToken(contractAddress) {
   const telegram = socialLinks.telegram || '';
   const github = socialLinks.github || '';
   const socialMetadataAvailable = Boolean(dex?.primaryPair || jupiter);
-  const createdAt = dex?.oldestPairCreatedAt || dex?.primaryPair?.pairCreatedAt || (jupiter?.createdAt ? new Date(jupiter.createdAt).getTime() : null);
+  // Real asset age = the mint's own genesis transaction, never a DEX pair's
+  // first-liquidity date or a "first pool" timestamp. If the genesis
+  // transaction couldn't be reached, the age is unknown - not estimated.
+  const createdAt = mintCreatedAt;
   const tokenAgeDays = createdAt ? daysSince(createdAt) : null;
-  const holderCount = holderAnalytics?.holderCount || jupiter?.holderCount || rpc?.holderCountEstimate || 0;
+  // Real indexed/on-chain holder counts only. getTokenLargestAccounts (rpc)
+  // never contributes here - it only returns the top 20 accounts.
+  const holderCount = holderAnalytics?.holderCount ?? jupiter?.holderCount ?? null;
   const liquidityUsd = Number(dex?.primaryPair?.liquidity?.usd || 0);
   const totalLiquidityUsd = Number(dex?.totalLiquidityUsd || liquidityUsd || jupiter?.liquidity || 0);
-  const marketCapUsd = Number(dex?.primaryPair?.marketCap || dex?.primaryPair?.fdv || jupiter?.mcap || jupiter?.fdv || 0);
+  const realMarketCapUsd = Number(dex?.primaryPair?.marketCap || jupiter?.mcap || 0);
+  const fdvUsd = Number(dex?.primaryPair?.fdv || jupiter?.fdv || 0);
+  const marketCapUsd = realMarketCapUsd || fdvUsd;
+  const marketCapIsFdv = !realMarketCapUsd && Boolean(fdvUsd);
+  const mintAuthorityEnabled = mintInfo?.mintAuthorityEnabled ?? jupiter?.mintAuthorityEnabled ?? null;
+  const freezeAuthorityEnabled = mintInfo?.freezeAuthorityEnabled ?? jupiter?.freezeAuthorityEnabled ?? null;
 
   return {
     id: `solana-${slugify(address)}`,
@@ -984,22 +1020,26 @@ async function lookupSolanaToken(contractAddress) {
       : 'Solana token profile enriched with public market and on-chain signals.',
     status: 'Live Solana data',
     lastUpdate: new Date().toISOString().slice(0, 10),
-    holderCount,
-    communitySize: holderCount,
-    riskNotes: buildRealDataRiskNotes({ liquidityUsd, holderCount, tokenAgeDays }),
+    holderCount: holderCount || 0,
+    communitySize: holderCount || 0,
+    riskNotes: buildRealDataRiskNotes({ liquidityUsd, holderCount, tokenAgeDays, mintAuthorityEnabled, freezeAuthorityEnabled }),
     realData: {
       source: 'Dexscreener pools + Solana RPC + Jupiter token index',
-      holderSource: holderAnalytics?.source || (jupiter?.holderCount ? 'Jupiter indexed Solana holder count' : rpc?.holderSource) || 'Best-effort public data',
+      holderSource: holderAnalytics?.source || (jupiter?.holderCount ? 'Jupiter indexed Solana holder count' : null),
       liquidityUsd,
       totalLiquidityUsd,
       marketCapUsd,
+      marketCapIsFdv,
       tokenAgeDays,
+      tokenAgeSource: createdAt ? 'Solana mint genesis transaction' : null,
       holderCount,
       topHolderPercent: holderAnalytics?.topHolderPercent ?? rpc?.topHolderPercent ?? null,
       topTenHolderPercent: holderAnalytics?.topTenHolderPercent ?? rpc?.topTenHolderPercent ?? jupiter?.topHoldersPercentage ?? null,
       holderGrowthPercent: jupiter?.holderGrowthPercent ?? null,
       supply: rpc?.supply || jupiter?.totalSupply || null,
       topAccountCount: rpc?.topAccountCount || null,
+      mintAuthorityEnabled,
+      freezeAuthorityEnabled,
       poolCount: dex?.poolCount || 0,
       websiteUrl: website,
       twitterUrl: twitter,
@@ -1061,11 +1101,17 @@ async function lookupGenericChainToken(chainId, address) {
   const twitter = socialLinks.twitter || '';
   const telegram = socialLinks.telegram || '';
   const github = socialLinks.github || '';
-  const createdAt = dex.oldestPairCreatedAt || dex.primaryPair.pairCreatedAt || null;
-  const tokenAgeDays = createdAt ? daysSince(createdAt) : null;
+  // KHAN Trust does not yet have a contract-deployment-timestamp source for
+  // this chain (that requires a per-chain explorer/indexer integration).
+  // Pair creation is NOT a valid proxy for asset age, so age is unknown
+  // here rather than estimated from the first liquidity pool.
+  const tokenAgeDays = null;
   const liquidityUsd = Number(dex.primaryPair.liquidity?.usd || 0);
   const totalLiquidityUsd = Number(dex.totalLiquidityUsd || liquidityUsd || 0);
-  const marketCapUsd = Number(dex.primaryPair.marketCap || dex.primaryPair.fdv || 0);
+  const realMarketCapUsd = Number(dex.primaryPair.marketCap || 0);
+  const fdvUsd = Number(dex.primaryPair.fdv || 0);
+  const marketCapUsd = realMarketCapUsd || fdvUsd;
+  const marketCapIsFdv = !realMarketCapUsd && Boolean(fdvUsd);
   const chainLabel = chainLabelFor(chainId);
   const article = /^[aeiou]/i.test(chainLabel) ? 'an' : 'a';
 
@@ -1079,7 +1125,7 @@ async function lookupGenericChainToken(chainId, address) {
     twitter,
     telegram,
     github,
-    launchDate: createdAt ? new Date(createdAt).toISOString().slice(0, 10) : '',
+    launchDate: '',
     description: token.name
       ? `${token.name} is ${article} ${chainLabel} token profile enriched with public market signals.`
       : `${chainLabel} token profile enriched with public market signals.`,
@@ -1087,20 +1133,24 @@ async function lookupGenericChainToken(chainId, address) {
     lastUpdate: new Date().toISOString().slice(0, 10),
     holderCount: 0,
     communitySize: 0,
-    riskNotes: buildRealDataRiskNotes({ liquidityUsd, holderCount: 0, tokenAgeDays }),
+    riskNotes: buildRealDataRiskNotes({ liquidityUsd, holderCount: null, tokenAgeDays }),
     realData: {
       source: 'Dexscreener pools',
-      holderSource: 'Not available for this chain yet',
+      holderSource: null,
       liquidityUsd,
       totalLiquidityUsd,
       marketCapUsd,
+      marketCapIsFdv,
       tokenAgeDays,
-      holderCount: 0,
+      tokenAgeSource: null,
+      holderCount: null,
       topHolderPercent: null,
       topTenHolderPercent: null,
       holderGrowthPercent: null,
       supply: null,
       topAccountCount: null,
+      mintAuthorityEnabled: null,
+      freezeAuthorityEnabled: null,
       poolCount: dex.poolCount || 0,
       websiteUrl: website,
       twitterUrl: twitter,
@@ -1285,16 +1335,19 @@ async function fetchJupiterTokenData(address) {
   return {
     name: token.name,
     symbol: token.symbol,
-    holderCount: Number(token.holderCount || 0),
+    holderCount: token.holderCount === undefined || token.holderCount === null ? null : Number(token.holderCount),
     holderGrowthPercent: token.stats24h?.holderChange ?? null,
     liquidity: Number(token.liquidity || 0),
     mcap: Number(token.mcap || 0),
     fdv: Number(token.fdv || 0),
     totalSupply: Number(token.totalSupply || token.circSupply || 0),
     topHoldersPercentage: token.audit?.topHoldersPercentage ?? null,
+    // Jupiter's audit flags are "disabled" booleans - invert to the
+    // "enabled" framing used throughout the rest of the risk engine.
+    mintAuthorityEnabled: typeof token.audit?.mintAuthorityDisabled === 'boolean' ? !token.audit.mintAuthorityDisabled : null,
+    freezeAuthorityEnabled: typeof token.audit?.freezeAuthorityDisabled === 'boolean' ? !token.audit.freezeAuthorityDisabled : null,
     tokenProgram: token.tokenProgram,
     launchpad: token.launchpad,
-    createdAt: token.createdAt || token.firstPool?.createdAt || null,
     socialLinks: extractSocialLinksFromMetadata(token),
     rawToken: token,
   };
@@ -1308,12 +1361,13 @@ async function fetchSolanaRpcToken(address) {
   const topAccounts = largestResult?.value || [];
   const supply = Number(supplyResult?.value?.uiAmount || 0);
   const topBalances = topAccounts.map((account) => Number(account.uiAmount || 0));
+  // getTokenLargestAccounts only returns up to the top 20 accounts, so it is a
+  // real source for largest-holder concentration but NEVER a valid holder
+  // count - there is no "holderCountEstimate" here on purpose.
   const topHolderPercent = supply ? roundPercent((topBalances[0] || 0) / supply) : null;
   const topTenHolderPercent = supply ? roundPercent(topBalances.slice(0, 10).reduce((total, value) => total + value, 0) / supply) : null;
   return {
     supply,
-    holderCountEstimate: topAccounts.length,
-    holderSource: 'Solana RPC top token accounts',
     topHolderPercent,
     topTenHolderPercent,
     topAccountCount: topAccounts.length,
@@ -1321,9 +1375,9 @@ async function fetchSolanaRpcToken(address) {
 }
 
 async function fetchSolanaHolderAnalytics(address) {
-  const tokenProgramId = await fetchMintOwnerProgram(address);
+  const mintInfo = await fetchMintAccountInfo(address);
   const result = await solanaRpc('getProgramAccounts', [
-    tokenProgramId,
+    mintInfo.programId,
     {
       encoding: 'jsonParsed',
       filters: [
@@ -1340,13 +1394,56 @@ async function fetchSolanaHolderAnalytics(address) {
     holderCount: balances.length,
     topHolderPercent: supply ? roundPercent((balances[0] || 0) / supply) : null,
     topTenHolderPercent: supply ? roundPercent(balances.slice(0, 10).reduce((total, value) => total + value, 0) / supply) : null,
-    source: `Solana RPC token-account scan (${tokenProgramId === 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb' ? 'Token-2022' : 'SPL Token'})`,
+    source: `Solana RPC token-account scan (${mintInfo.programId === 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb' ? 'Token-2022' : 'SPL Token'})`,
   };
 }
 
-async function fetchMintOwnerProgram(address) {
+async function fetchMintAccountInfo(address) {
   const accountInfo = await solanaRpc('getAccountInfo', [address, { encoding: 'jsonParsed' }]);
-  return accountInfo?.value?.owner || 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+  const info = accountInfo?.value?.data?.parsed?.info;
+  return {
+    programId: accountInfo?.value?.owner || 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+    // null mintAuthority/freezeAuthority means that authority has been
+    // revoked (disabled) - a genuine on-chain security signal.
+    mintAuthorityEnabled: info ? info.mintAuthority !== null && info.mintAuthority !== undefined : null,
+    freezeAuthorityEnabled: info ? info.freezeAuthority !== null && info.freezeAuthority !== undefined : null,
+  };
+}
+
+// Walks getSignaturesForAddress backwards to find the mint account's genesis
+// transaction (its real creation timestamp), instead of guessing from a DEX
+// pair's first-liquidity date. Bounded so it never hammers the public RPC
+// indefinitely for high-traffic mints (SOL, BONK, USDC, ...) - if the mint's
+// full history can't be reached within the cap, the real age is unknown and
+// must be reported as such rather than estimated.
+const MINT_CREATION_LOOKUP_MAX_PAGES = 6;
+const MINT_CREATION_LOOKUP_PAGE_SIZE = 1000;
+
+async function fetchMintCreationTimestamp(address) {
+  let before;
+  let oldestBatch = null;
+  for (let page = 0; page < MINT_CREATION_LOOKUP_MAX_PAGES; page += 1) {
+    const params = before
+      ? [address, { limit: MINT_CREATION_LOOKUP_PAGE_SIZE, before }]
+      : [address, { limit: MINT_CREATION_LOOKUP_PAGE_SIZE }];
+    const batch = await solanaRpc('getSignaturesForAddress', params);
+    if (!Array.isArray(batch) || !batch.length) {
+      return oldestBatch ? signatureTimestamp(oldestBatch[oldestBatch.length - 1]) : null;
+    }
+    oldestBatch = batch;
+    if (batch.length < MINT_CREATION_LOOKUP_PAGE_SIZE) {
+      // Reached the start of this mint's history within the page - the last
+      // entry is the genesis (mint creation) transaction.
+      return signatureTimestamp(batch[batch.length - 1]);
+    }
+    before = batch[batch.length - 1].signature;
+  }
+  // Hit the page cap without reaching genesis - real creation date unknown.
+  return null;
+}
+
+function signatureTimestamp(entry) {
+  return entry?.blockTime ? entry.blockTime * 1000 : null;
 }
 
 async function solanaRpc(method, params) {
@@ -1361,11 +1458,15 @@ async function solanaRpc(method, params) {
   return payload.result;
 }
 
-function buildRealDataRiskNotes({ liquidityUsd, holderCount, tokenAgeDays }) {
+function buildRealDataRiskNotes({ liquidityUsd, holderCount, tokenAgeDays, mintAuthorityEnabled, freezeAuthorityEnabled }) {
   const notes = [];
   if (liquidityUsd > 0 && liquidityUsd < 5000) notes.push('low liquidity');
   if (holderCount > 0 && holderCount < 500) notes.push('low holders');
-  if (tokenAgeDays !== null && tokenAgeDays < 14) notes.push('very new project');
+  if (tokenAgeDays !== null && tokenAgeDays !== undefined && tokenAgeDays < 14) notes.push('very new project');
+  // Only flagged when explicitly known true from on-chain/indexed data -
+  // never inferred when the authority status is unknown.
+  if (mintAuthorityEnabled === true) notes.push('mint authority enabled');
+  if (freezeAuthorityEnabled === true) notes.push('freeze authority enabled');
   return notes.length ? notes.join(', ') : translate('scoring.riskNotes.liveDataAvailable');
 }
 
@@ -1374,6 +1475,8 @@ function buildCanonicalRiskNotes(data = {}) {
     liquidityUsd: Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0),
     holderCount: Number(data.holderCount || 0),
     tokenAgeDays: data.tokenAgeDays,
+    mintAuthorityEnabled: data.mintAuthorityEnabled,
+    freezeAuthorityEnabled: data.freezeAuthorityEnabled,
   });
 }
 
@@ -1701,7 +1804,36 @@ function riskFactors(project = {}) {
     presenceFactor('telegram', telegram),
   ];
 
+  // Only shown when the authority status is actually known - unknown chains
+  // or stale profiles never get a fabricated security verdict.
+  if (data.mintAuthorityEnabled !== null && data.mintAuthorityEnabled !== undefined) {
+    factors.push(authorityFactor('mint', data.mintAuthorityEnabled));
+  }
+  if (data.freezeAuthorityEnabled !== null && data.freezeAuthorityEnabled !== undefined) {
+    factors.push(authorityFactor('freeze', data.freezeAuthorityEnabled));
+  }
+
   return factors.sort((a, b) => riskSeverityRank(b.severity) - riskSeverityRank(a.severity));
+}
+
+function authorityFactor(kind, enabled) {
+  const title = translate(kind === 'mint' ? 'scoring.factors.mintAuthorityTitle' : 'scoring.factors.freezeAuthorityTitle');
+  if (enabled) {
+    return {
+      title,
+      severity: 'High',
+      signal: translate('scoring.factors.authorityEnabledSignal'),
+      value: translate('scoring.factors.authorityEnabledValue'),
+      explanation: translate(kind === 'mint' ? 'scoring.factors.mintAuthorityEnabledExplain' : 'scoring.factors.freezeAuthorityEnabledExplain'),
+    };
+  }
+  return {
+    title,
+    severity: 'Low',
+    signal: translate('scoring.factors.authorityDisabledSignal'),
+    value: translate('scoring.factors.authorityDisabledValue'),
+    explanation: translate(kind === 'mint' ? 'scoring.factors.mintAuthorityDisabledExplain' : 'scoring.factors.freezeAuthorityDisabledExplain'),
+  };
 }
 
 function holderCountFactor(holders, source = '') {
@@ -4056,14 +4188,18 @@ function Timeline({ items }) {
   );
 }
 
+function marketCapLabel(baseLabel, data) {
+  return data?.marketCapIsFdv ? `${baseLabel} (FDV)` : baseLabel;
+}
+
 function CommunityProof({ project }) {
   const { t } = useTranslation();
   const s = t('profileSections.communityProofStats');
   const stats = [
-    [s.holderCount, project.holders.toLocaleString(), WalletCards],
+    [s.holderCount, formatNumber(project.holders), WalletCards],
     [s.topHolder, project.realData ? formatPercent(project.realData.topHolderPercent) : t('common.notConnected'), Shield],
     [s.liquidity, project.realData ? formatCurrency(project.realData.totalLiquidityUsd ?? project.realData.liquidityUsd) : t('common.notConnected'), BarChart3],
-    [s.marketCap, project.realData ? formatCurrency(project.realData.marketCapUsd) : t('common.notConnected'), LineChart],
+    [marketCapLabel(s.marketCap, project.realData), project.realData ? formatCurrency(project.realData.marketCapUsd) : t('common.notConnected'), LineChart],
     [s.tokenAge, project.realData ? formatAge(project.realData.tokenAgeDays) : t('common.notConnected'), CalendarDays],
     [s.trustScore, `${project.trustScore}/100`, BadgeCheck],
     [s.lastUpdateDate, project.lastUpdate, Clock3],
@@ -4088,13 +4224,13 @@ function RealDataSection({ project, data }) {
   const { t } = useTranslation();
   const r = t('profileSections.realDataRows');
   const rows = [
-    [r.holderCount, `${formatNumber(data.holderCount)} (${data.holderSource})`, Users],
+    [r.holderCount, data.holderSource ? `${formatNumber(data.holderCount)} (${data.holderSource})` : formatNumber(data.holderCount), Users],
     [r.largestHolder, formatPercent(data.topHolderPercent), WalletCards],
     [r.topTenHolders, formatPercent(data.topTenHolderPercent), Shield],
     [r.holderRiskLevel, holderRiskLevel(data), AlertTriangle],
     [r.concentrationStatus, holderConcentrationStatus(data), FileWarning],
     [r.liquidityUsd, formatCurrency(data.totalLiquidityUsd ?? data.liquidityUsd), BarChart3],
-    [r.marketCapUsd, formatCurrency(data.marketCapUsd), LineChart],
+    [marketCapLabel(r.marketCapUsd, data), formatCurrency(data.marketCapUsd), LineChart],
     [r.tokenAge, formatAge(data.tokenAgeDays), CalendarDays],
     [r.trustScore, `${project.trustScore}/100`, BadgeCheck],
     [r.website, socialPresenceState('website', project, data), Globe2],
@@ -4133,9 +4269,9 @@ function RealDataPreview({ data }) {
     <div className="real-data-preview wide">
       <strong>{t('liveDataPreview.title')}</strong>
       <span>{t('liveDataPreview.liquidity', { value: formatCurrency(data.liquidityUsd) })}</span>
-      <span>{t('liveDataPreview.marketCap', { value: formatCurrency(data.marketCapUsd) })}</span>
+      <span>{t('liveDataPreview.marketCap', { value: `${formatCurrency(data.marketCapUsd)}${data.marketCapIsFdv ? ' (FDV)' : ''}` })}</span>
       <span>{t('liveDataPreview.tokenAge', { value: formatAge(data.tokenAgeDays) })}</span>
-      <span>{t('liveDataPreview.holderSignal', { count: formatNumber(data.holderCount), source: data.holderSource })}</span>
+      <span>{t('liveDataPreview.holderSignal', { count: formatNumber(data.holderCount), source: data.holderSource || t('common.notAvailable') })}</span>
     </div>
   );
 }

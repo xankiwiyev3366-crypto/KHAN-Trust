@@ -651,6 +651,7 @@ export default {
       socialScore: 'Social Score',
       holderGrowthScore: 'Holder Growth Score',
       supplyScore: 'Supply Score',
+      securityScore: 'Security (Mint/Freeze Authority)',
       finalTrustScore: 'Final Trust Score',
     },
     realDataRows: {
@@ -1113,7 +1114,7 @@ export default {
 
       tokenAgeTitle: 'Token age',
       tokenAgeUnavailableSignal: 'Token age unavailable',
-      tokenAgeUnavailableExplain: 'Token age could not be confirmed from pool creation or token index data.',
+      tokenAgeUnavailableExplain: "Token age could not be confirmed from the mint's on-chain creation history within this scan.",
       tokenAgeHighSignal: 'New token warning',
       tokenAgeHighExplain: 'This token appears to be {{age}} old. Very new tokens usually have less trading history and less community proof.',
       tokenAgeMediumSignal: 'New token warning',
@@ -1146,6 +1147,17 @@ export default {
       presenceTelegramExplain: 'Telegram is a common Solana community channel. Missing Telegram limits community visibility.',
       presenceDataUnavailable: 'KHAN Trust could not confirm {{title}} from the available token metadata sources.',
       presenceFound: 'Present: {{value}}',
+
+      mintAuthorityTitle: 'Mint authority',
+      freezeAuthorityTitle: 'Freeze authority',
+      authorityEnabledSignal: 'Authority enabled',
+      authorityEnabledValue: 'Enabled',
+      authorityDisabledSignal: 'Authority revoked',
+      authorityDisabledValue: 'Disabled',
+      mintAuthorityEnabledExplain: 'The mint authority has not been revoked, so the token issuer can still create new supply at any time.',
+      mintAuthorityDisabledExplain: 'The mint authority has been revoked. No new supply can be created.',
+      freezeAuthorityEnabledExplain: 'The freeze authority has not been revoked, so the token issuer can still freeze holder accounts.',
+      freezeAuthorityDisabledExplain: 'The freeze authority has been revoked. Holder accounts cannot be frozen.',
     },
     riskNotes: {
       lowLiquidity: 'low liquidity',
@@ -1215,6 +1227,7 @@ export default {
       socialScore: 'Social Score',
       holderGrowthScore: 'Holder Growth Score',
       supplyScore: 'Supply Score',
+      securityScore: 'Security (Mint/Freeze Authority)',
       finalTrustScore: 'Final Trust Score',
     },
   },

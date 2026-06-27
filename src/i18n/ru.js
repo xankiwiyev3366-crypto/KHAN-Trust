@@ -594,6 +594,7 @@ export default {
       socialScore: 'Социальная оценка',
       holderGrowthScore: 'Оценка роста холдеров',
       supplyScore: 'Оценка предложения',
+      securityScore: 'Безопасность (Mint/Freeze права)',
       finalTrustScore: 'Итоговый Trust Score',
     },
     realDataRows: {
@@ -1018,7 +1019,7 @@ export default {
 
       tokenAgeTitle: 'Возраст токена',
       tokenAgeUnavailableSignal: 'Возраст токена недоступен',
-      tokenAgeUnavailableExplain: 'Возраст токена не удалось подтвердить по данным создания пула или индекса токенов.',
+      tokenAgeUnavailableExplain: 'Возраст токена не удалось подтвердить по истории создания минта on-chain в рамках этого сканирования.',
       tokenAgeHighSignal: 'Предупреждение о новом токене',
       tokenAgeHighExplain: 'Этому токену, по-видимому, {{age}}. У очень новых токенов обычно меньше истории торгов и доказательств сообщества.',
       tokenAgeMediumSignal: 'Предупреждение о новом токене',
@@ -1051,6 +1052,17 @@ export default {
       presenceTelegramExplain: 'Telegram — распространённый канал сообщества Solana. Отсутствие Telegram ограничивает видимость сообщества.',
       presenceDataUnavailable: 'KHAN Trust не смог подтвердить {{title}} из доступных источников метаданных токена.',
       presenceFound: 'Есть: {{value}}',
+
+      mintAuthorityTitle: 'Право на эмиссию (mint)',
+      freezeAuthorityTitle: 'Право на заморозку (freeze)',
+      authorityEnabledSignal: 'Право активно',
+      authorityEnabledValue: 'Активно',
+      authorityDisabledSignal: 'Право отозвано',
+      authorityDisabledValue: 'Отключено',
+      mintAuthorityEnabledExplain: 'Право на эмиссию не отозвано, эмитент токена может создать новое предложение в любой момент.',
+      mintAuthorityDisabledExplain: 'Право на эмиссию отозвано. Новое предложение токена создать нельзя.',
+      freezeAuthorityEnabledExplain: 'Право на заморозку не отозвано, эмитент токена может заморозить счета холдеров.',
+      freezeAuthorityDisabledExplain: 'Право на заморозку отозвано. Счета холдеров заморозить нельзя.',
     },
     riskNotes: {
       lowLiquidity: 'низкая ликвидность',
@@ -1120,6 +1132,7 @@ export default {
       socialScore: 'Социальная оценка',
       holderGrowthScore: 'Оценка роста холдеров',
       supplyScore: 'Оценка предложения',
+      securityScore: 'Безопасность (Mint/Freeze права)',
       finalTrustScore: 'Итоговый Trust Score',
     },
   },

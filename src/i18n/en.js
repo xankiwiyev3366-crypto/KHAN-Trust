@@ -140,8 +140,11 @@ export default {
   search: {
     placeholder: 'Search coin, token, project, chain, or contract address',
     fetching: 'Fetching live Solana token data...',
+    searchingMatches: 'Searching tokens by name and ticker...',
+    multipleMatches: 'Multiple tokens matched "{{term}}". Choose one to continue:',
     successOpened: 'Opened live profile for {{name}}.',
     errorNone: 'No live Solana token data was found.',
+    verified: 'Verified',
   },
   explore: {
     eyebrow: 'Explore',

@@ -137,8 +137,11 @@ export default {
   search: {
     placeholder: 'Coin, token, layihə, şəbəkə və ya kontrakt ünvanı axtar',
     fetching: 'Canlı Solana token məlumatı yüklənir...',
+    searchingMatches: 'Token adı və ya tikeri üzrə axtarış aparılır...',
+    multipleMatches: '"{{term}}" üçün bir neçə token tapıldı. Davam etmək üçün birini seçin:',
     successOpened: '{{name}} üçün canlı profil açıldı.',
     errorNone: 'Heç bir canlı Solana token məlumatı tapılmadı.',
+    verified: 'Təsdiqlənmiş',
   },
   explore: {
     eyebrow: 'Kəşf et',

@@ -182,8 +182,19 @@ const LAUNCHPAD_PAYMENT_MODEL = {
 };
 const SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com';
 const SOLANA_DEVNET_RPC_URL = clusterApiUrl('devnet');
-const DEXSCREENER_SOLANA_TOKEN_URL = 'https://api.dexscreener.com/token-pairs/v1/solana';
+const DEXSCREENER_TOKEN_PAIRS_BASE_URL = 'https://api.dexscreener.com/token-pairs/v1';
+const DEXSCREENER_SEARCH_URL = 'https://api.dexscreener.com/latest/dex/search';
 const JUPITER_TOKEN_SEARCH_URL = 'https://lite-api.jup.ag/tokens/v2/search';
+const CHAIN_LABELS = {
+  solana: 'Solana',
+  ethereum: 'Ethereum',
+  bsc: 'BSC',
+  base: 'Base',
+};
+
+function chainLabelFor(chainId) {
+  return CHAIN_LABELS[chainId] || (chainId ? chainId.charAt(0).toUpperCase() + chainId.slice(1) : 'Unknown');
+}
 
 const khanProject = {
   id: 'khan-solana',
@@ -975,6 +986,110 @@ async function lookupSolanaToken(contractAddress) {
   };
 }
 
+async function fetchTokenSearchMatches(term) {
+  const response = await fetch(`${DEXSCREENER_SEARCH_URL}?q=${encodeURIComponent(term)}`);
+  if (!response.ok) throw new Error('Token search failed.');
+  const data = await response.json();
+  const pairs = Array.isArray(data?.pairs) ? data.pairs : [];
+  const byKey = new Map();
+  pairs.forEach((pair) => {
+    const address = pair.baseToken?.address;
+    const chainId = pair.chainId;
+    if (!address || !chainId) return;
+    const key = `${chainId}-${address.toLowerCase()}`;
+    const marketCap = Number(pair.marketCap || pair.fdv || 0);
+    const existing = byKey.get(key);
+    if (existing && existing.marketCap >= marketCap) return;
+    byKey.set(key, {
+      address,
+      chainId,
+      chain: chainLabelFor(chainId),
+      name: pair.baseToken?.name || '',
+      symbol: pair.baseToken?.symbol ? pair.baseToken.symbol.toUpperCase() : '',
+      marketCap,
+      logoUrl: pair.info?.imageUrl || '',
+      // Dexscreener doesn't expose an explicit "verified" flag for search
+      // results; a curated profile image is the closest available signal.
+      verified: Boolean(pair.info?.imageUrl),
+    });
+  });
+  return Array.from(byKey.values())
+    .sort((a, b) => b.marketCap - a.marketCap)
+    .slice(0, 8);
+}
+
+async function lookupGenericChainToken(chainId, address) {
+  const dex = await fetchDexscreenerToken(address, chainId);
+  if (!dex?.primaryPair) throw new Error('No public token data was found for this address.');
+
+  const token = getDexTokenForAddress(dex.primaryPair, address);
+  const info = dex.primaryPair.info || {};
+  const socialLinks = mergeSocialLinks(
+    extractSocialLinksFromDexInfo(info),
+    extractSocialLinksFromMetadata(dex.primaryPair)
+  );
+  const website = socialLinks.website || '';
+  const twitter = socialLinks.twitter || '';
+  const telegram = socialLinks.telegram || '';
+  const github = socialLinks.github || '';
+  const createdAt = dex.oldestPairCreatedAt || dex.primaryPair.pairCreatedAt || null;
+  const tokenAgeDays = createdAt ? daysSince(createdAt) : null;
+  const liquidityUsd = Number(dex.primaryPair.liquidity?.usd || 0);
+  const totalLiquidityUsd = Number(dex.totalLiquidityUsd || liquidityUsd || 0);
+  const marketCapUsd = Number(dex.primaryPair.marketCap || dex.primaryPair.fdv || 0);
+  const chainLabel = chainLabelFor(chainId);
+  const article = /^[aeiou]/i.test(chainLabel) ? 'an' : 'a';
+
+  return {
+    id: `${chainId}-${slugify(address)}`,
+    name: token.name || '',
+    ticker: token.symbol ? token.symbol.toUpperCase() : '',
+    chain: chainLabel,
+    contract: address,
+    website,
+    twitter,
+    telegram,
+    github,
+    launchDate: createdAt ? new Date(createdAt).toISOString().slice(0, 10) : '',
+    description: token.name
+      ? `${token.name} is ${article} ${chainLabel} token profile enriched with public market signals.`
+      : `${chainLabel} token profile enriched with public market signals.`,
+    status: 'Live market data',
+    lastUpdate: new Date().toISOString().slice(0, 10),
+    holderCount: 0,
+    communitySize: 0,
+    riskNotes: buildRealDataRiskNotes({ liquidityUsd, holderCount: 0, tokenAgeDays }),
+    realData: {
+      source: 'Dexscreener pools',
+      holderSource: 'Not available for this chain yet',
+      liquidityUsd,
+      totalLiquidityUsd,
+      marketCapUsd,
+      tokenAgeDays,
+      holderCount: 0,
+      topHolderPercent: null,
+      topTenHolderPercent: null,
+      holderGrowthPercent: null,
+      supply: null,
+      topAccountCount: null,
+      poolCount: dex.poolCount || 0,
+      websiteUrl: website,
+      twitterUrl: twitter,
+      telegramUrl: telegram,
+      githubUrl: github,
+      socialMetadataAvailable: Boolean(dex.primaryPair),
+      pairUrl: dex.primaryPair.url || '',
+      pairAddress: dex.primaryPair.pairAddress || '',
+      fetchedAt: new Date().toISOString(),
+    },
+  };
+}
+
+async function lookupTokenMatch(match) {
+  if (match.chainId === 'solana') return lookupSolanaToken(match.address);
+  return lookupGenericChainToken(match.chainId, match.address);
+}
+
 function createDemoRiskProject(contractAddress, reason = '') {
   const address = contractAddress.trim();
   const signal = address.split('').reduce((total, char) => total + char.charCodeAt(0), 0);
@@ -1034,13 +1149,13 @@ function createDemoRiskProject(contractAddress, reason = '') {
   };
 }
 
-async function fetchDexscreenerToken(address) {
-  const response = await fetch(`${DEXSCREENER_SOLANA_TOKEN_URL}/${address}`);
+async function fetchDexscreenerToken(address, chainId = 'solana') {
+  const response = await fetch(`${DEXSCREENER_TOKEN_PAIRS_BASE_URL}/${chainId}/${address}`);
   if (!response.ok) throw new Error('Dexscreener lookup failed.');
   const pairs = await response.json();
   if (!Array.isArray(pairs) || !pairs.length) return null;
   const solanaPairs = pairs
-    .filter((pair) => pair.chainId === 'solana')
+    .filter((pair) => pair.chainId === chainId)
     .filter((pair) => {
       const normalized = address.toLowerCase();
       return pair.baseToken?.address?.toLowerCase() === normalized || pair.quoteToken?.address?.toLowerCase() === normalized;
@@ -2106,6 +2221,25 @@ function App() {
     setEditingProject(null);
   };
 
+  const resolveSearchMatch = async (match) => {
+    setSearchState({ status: 'loading', message: t('search.fetching') });
+    trackTokenScanStarted(match.address);
+    trackSearchEvent(match.address);
+    try {
+      const liveLookup = await lookupTokenMatch(match);
+      const liveProject = normalizeProject(mergeStoredMetadata(liveLookup, findStoredProject(userProjects, liveLookup)));
+      setUserProjects((items) => upsertProject(items, liveProject));
+      setSearchState({ status: 'success', message: t('search.successOpened', { name: liveProject.name || liveProject.ticker }) });
+      trackTokenScanCompleted(match.address, 'success');
+      trackTokenScanEvent(liveProject);
+      navigate(`project/${liveProject.id}`);
+    } catch (error) {
+      setSearchState({ status: 'error', message: error.message || t('search.errorNone') });
+      trackTokenScanCompleted(match.address, 'error');
+      navigate('explore');
+    }
+  };
+
   const handleSearch = async () => {
     const term = query.trim();
     if (!term) {
@@ -2113,26 +2247,43 @@ function App() {
       return;
     }
 
-    if (!looksLikeSolanaAddress(term)) {
-      setSearchState({ status: 'idle', message: '' });
-      navigate('explore');
+    if (looksLikeSolanaAddress(term)) {
+      setSearchState({ status: 'loading', message: t('search.fetching') });
+      trackTokenScanStarted(term);
+      trackSearchEvent(term);
+      try {
+        const liveLookup = await lookupSolanaToken(term);
+        const liveProject = normalizeProject(mergeStoredMetadata(liveLookup, findStoredProject(userProjects, liveLookup)));
+        setUserProjects((items) => upsertProject(items, liveProject));
+        setSearchState({ status: 'success', message: t('search.successOpened', { name: liveProject.name || liveProject.ticker }) });
+        trackTokenScanCompleted(term, 'success');
+        trackTokenScanEvent(liveProject);
+        navigate(`project/${liveProject.id}`);
+      } catch (error) {
+        setSearchState({ status: 'error', message: error.message || t('search.errorNone') });
+        trackTokenScanCompleted(term, 'error');
+        navigate('explore');
+      }
       return;
     }
 
-    setSearchState({ status: 'loading', message: t('search.fetching') });
-    trackTokenScanStarted(term);
-    trackSearchEvent(term);
+    // Not a Solana contract address - treat it as a name/ticker search
+    // across chains (e.g. "Bonk", "SOL", a 0x... address on another chain).
+    setSearchState({ status: 'loading', message: t('search.searchingMatches') });
     try {
-      const liveLookup = await lookupSolanaToken(term);
-      const liveProject = normalizeProject(mergeStoredMetadata(liveLookup, findStoredProject(userProjects, liveLookup)));
-      setUserProjects((items) => upsertProject(items, liveProject));
-      setSearchState({ status: 'success', message: t('search.successOpened', { name: liveProject.name || liveProject.ticker }) });
-      trackTokenScanCompleted(term, 'success');
-      trackTokenScanEvent(liveProject);
-      navigate(`project/${liveProject.id}`);
+      const matches = await fetchTokenSearchMatches(term);
+      if (!matches.length) {
+        setSearchState({ status: 'idle', message: '' });
+        navigate('explore');
+        return;
+      }
+      if (matches.length === 1) {
+        await resolveSearchMatch(matches[0]);
+        return;
+      }
+      setSearchState({ status: 'choices', message: t('search.multipleMatches', { term }), matches });
     } catch (error) {
-      setSearchState({ status: 'error', message: error.message || t('search.errorNone') });
-      trackTokenScanCompleted(term, 'error');
+      setSearchState({ status: 'idle', message: '' });
       navigate('explore');
     }
   };
@@ -2193,6 +2344,7 @@ function App() {
             setQuery={setQuery}
             searchState={searchState}
             onSearch={handleSearch}
+            onSelectMatch={resolveSearchMatch}
             onTokenCheck={handleTokenCheck}
             navigate={navigate}
             openMethodology={() => setMethodologyOpen(true)}
@@ -2205,6 +2357,7 @@ function App() {
             setQuery={setQuery}
             searchState={searchState}
             onSearch={handleSearch}
+            onSelectMatch={resolveSearchMatch}
             activeFilter={activeFilter}
             setActiveFilter={setActiveFilter}
             navigate={navigate}
@@ -2338,7 +2491,7 @@ function isActive(page, id) {
   return page === id;
 }
 
-function HomePage({ projects, query, setQuery, searchState, onSearch, onTokenCheck, navigate, openMethodology }) {
+function HomePage({ projects, query, setQuery, searchState, onSearch, onSelectMatch, onTokenCheck, navigate, openMethodology }) {
   const { t } = useTranslation();
   const featured = projects.slice(0, 4);
   const heroProject = featured[0];
@@ -2353,6 +2506,7 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, onTokenChe
             <p className="hero-explainer">{t('home.explainer')}</p>
             <SearchBox value={query} onChange={setQuery} onSubmit={onSearch} loading={searchState.status === 'loading'} />
             <SearchStatus state={searchState} />
+            <SearchMatches state={searchState} onSelect={onSelectMatch} />
             <div className="flow-steps" aria-label={t('home.flowAriaLabel')}>
               {t('home.flowSteps').map((step, index) => (
                 <div className="flow-step" key={step}>
@@ -2468,7 +2622,7 @@ function CheckAnyTokenSection({ onTokenCheck, navigate }) {
   );
 }
 
-function ExplorePage({ projects, query, setQuery, searchState, onSearch, activeFilter, setActiveFilter, navigate }) {
+function ExplorePage({ projects, query, setQuery, searchState, onSearch, onSelectMatch, activeFilter, setActiveFilter, navigate }) {
   const { t } = useTranslation();
   const filtered = projects.filter((project) => {
     const text = `${project.name} ${project.ticker} ${project.chain} ${project.contract}`.toLowerCase();
@@ -2487,6 +2641,7 @@ function ExplorePage({ projects, query, setQuery, searchState, onSearch, activeF
       <SectionTitle icon={ListFilter} eyebrow={t('explore.eyebrow')} title={t('explore.title')} />
       <SearchBox value={query} onChange={setQuery} onSubmit={onSearch} loading={searchState.status === 'loading'} />
       <SearchStatus state={searchState} />
+      <SearchMatches state={searchState} onSelect={onSelectMatch} />
       <div className="filter-row">
         {filters.map((filter) => (
           <button key={filter} className={activeFilter === filter ? 'active' : ''} onClick={() => setActiveFilter(filter)}>
@@ -5431,6 +5586,35 @@ function SearchBox({ value, onChange, onSubmit, loading = false }) {
 function SearchStatus({ state }) {
   if (!state.message) return null;
   return <p className={`search-status ${state.status}`}>{state.message}</p>;
+}
+
+function SearchMatches({ state, onSelect }) {
+  const { t } = useTranslation();
+  if (state.status !== 'choices' || !state.matches?.length) return null;
+  return (
+    <div className="search-matches">
+      {state.matches.map((match) => (
+        <button
+          key={`${match.chainId}-${match.address}`}
+          type="button"
+          className="search-match-row"
+          onClick={() => onSelect(match)}
+        >
+          {match.logoUrl ? (
+            <img src={match.logoUrl} alt="" className="search-match-logo" />
+          ) : (
+            <span className="search-match-logo search-match-logo-placeholder">{(match.symbol || '?').slice(0, 1)}</span>
+          )}
+          <span className="search-match-info">
+            <strong>{match.name || match.symbol}</strong>
+            <small>{match.symbol} · {match.chain}</small>
+          </span>
+          {match.marketCap > 0 && <span className="search-match-mcap">{formatCurrency(match.marketCap)}</span>}
+          {match.verified && <BadgeCheck size={16} className="search-match-verified" aria-label={t('search.verified')} />}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function ScoreCircle({ score, size = 'normal' }) {

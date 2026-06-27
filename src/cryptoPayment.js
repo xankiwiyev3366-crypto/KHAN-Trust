@@ -62,11 +62,17 @@ export async function payWithConnectedWallet({ connection, publicKey, sendTransa
   }
 
   const requiredUsd = PLAN_USD_AMOUNT[plan] || PLAN_USD_AMOUNT.premium;
-  const receiver = new PublicKey(PAYMENT_WALLET);
   const transaction = new Transaction();
   transaction.feePayer = publicKey;
 
   try {
+    let receiver;
+    try {
+      receiver = new PublicKey(PAYMENT_WALLET);
+    } catch {
+      return { ok: false, status: 'failed', message: 'Payment wallet is misconfigured' };
+    }
+
     // Phantom simulates the transaction (via its own simulateTransaction
     // call) before showing the approval popup, and that simulation requires
     // a valid recentBlockhash already bound into the message. Without it
@@ -80,25 +86,71 @@ export async function payWithConnectedWallet({ connection, publicKey, sendTransa
     const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
     transaction.recentBlockhash = blockhash;
 
+    let amount = 0;
     if (currency === 'USDC') {
       const mint = new PublicKey(USDC_MINT);
       const senderAta = await getAssociatedTokenAddress(mint, publicKey);
       const receiverAta = await getAssociatedTokenAddress(mint, receiver);
+
+      // The sender's USDC token account was never checked before. If the
+      // connected wallet has never held USDC, senderAta does not exist
+      // on-chain yet - a Transfer instruction pointing at a source account
+      // that doesn't exist can't be resolved by Phantom's simulator, which
+      // is consistent with "Unable to simulate the result of this request"
+      // appearing only for the USDC path. Fail fast with a clear message
+      // instead of building a transaction that can never succeed.
+      const senderAtaInfo = await connection.getAccountInfo(senderAta);
+      if (!senderAtaInfo) {
+        return { ok: false, status: 'no_usdc_account', message: 'This wallet has no USDC token account yet - pay with SOL or send USDC to it first' };
+      }
 
       const receiverAtaInfo = await connection.getAccountInfo(receiverAta);
       if (!receiverAtaInfo) {
         transaction.add(createAssociatedTokenAccountInstruction(publicKey, receiverAta, receiver, mint));
       }
 
-      const amount = Math.ceil(requiredUsd * AMOUNT_BUFFER * 10 ** USDC_DECIMALS);
+      amount = Math.ceil(requiredUsd * AMOUNT_BUFFER * 10 ** USDC_DECIMALS);
+      if (!amount) {
+        return { ok: false, status: 'failed', message: 'Invalid payment amount' };
+      }
       transaction.add(createTransferInstruction(senderAta, receiverAta, publicKey, amount, [], TOKEN_PROGRAM_ID));
     } else {
       const solPrice = await getSolUsdPrice();
       if (!solPrice) {
         return { ok: false, status: 'price_unavailable', message: 'Could not fetch the current SOL price, try USDC or the manual method' };
       }
-      const lamports = Math.ceil(((requiredUsd * AMOUNT_BUFFER) / solPrice) * LAMPORTS_PER_SOL);
-      transaction.add(SystemProgram.transfer({ fromPubkey: publicKey, toPubkey: receiver, lamports }));
+      amount = Math.ceil(((requiredUsd * AMOUNT_BUFFER) / solPrice) * LAMPORTS_PER_SOL);
+      if (!amount) {
+        return { ok: false, status: 'failed', message: 'Invalid payment amount' };
+      }
+      transaction.add(SystemProgram.transfer({ fromPubkey: publicKey, toPubkey: receiver, lamports: amount }));
+    }
+
+    // Temporary diagnostic logging (production debugging only - no secrets,
+    // every value here is already public on-chain data). Safe to remove
+    // once the "Unable to simulate" report is confirmed resolved.
+    console.log('[KHAN Trust] payment tx preflight', {
+      currency,
+      amount,
+      feePayer: transaction.feePayer?.toBase58(),
+      receiver: receiver.toBase58(),
+      recentBlockhash: transaction.recentBlockhash,
+      instructionCount: transaction.instructions.length,
+      programIds: transaction.instructions.map((ix) => ix.programId.toBase58()),
+    });
+
+    // Run the same simulateTransaction call Phantom runs internally before
+    // it opens its approval popup. If this fails, we know definitively the
+    // transaction itself (not Phantom, not Blowfish, not domain reputation)
+    // is the problem, and exactly which instruction/account caused it -
+    // surfaced here instead of as Phantom's generic, undiagnosable message.
+    const preflight = await connection.simulateTransaction(transaction);
+    if (preflight.value.err) {
+      console.error('[KHAN Trust] payment tx simulation failed', {
+        err: preflight.value.err,
+        logs: preflight.value.logs,
+      });
+      return { ok: false, status: 'simulation_failed', message: 'This transaction would fail on-chain. Please try again or use a different payment method.' };
     }
 
     const signature = await sendTransaction(transaction, connection);

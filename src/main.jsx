@@ -4028,6 +4028,7 @@ function WalletPaymentSection({ onEntitlementChange }) {
             <span>{t('pricing.payment.currencyLabel')}</span>
             <select value={currency} onChange={(event) => setCurrency(event.target.value)}>
               <option value="USDC">{t('pricing.payment.currencyUsdc')}</option>
+              <option value="USDT">{t('pricing.payment.currencyUsdt')}</option>
               <option value="SOL">{t('pricing.payment.currencySol')}</option>
             </select>
           </label>

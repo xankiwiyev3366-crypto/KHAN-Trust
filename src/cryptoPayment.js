@@ -19,8 +19,22 @@ import {
 import { verifySolanaPayment } from './solanaVerify.js';
 
 const PAYMENT_WALLET = import.meta.env.VITE_KHAN_PAYMENT_WALLET || '';
-const USDC_MINT = import.meta.env.VITE_USDC_MINT || 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
-const USDC_DECIMALS = 6;
+
+// Solana SPL tokens accepted for Wallet Connect payments. Both are 6-decimal
+// stablecoins, so the same ATA-check / balance-check / transfer-instruction
+// branch below (SPL_TOKEN_CONFIG[currency]) handles either one - adding a
+// future SPL token only needs an entry here, not a new code path.
+const SPL_TOKEN_CONFIG = {
+  USDC: {
+    mint: import.meta.env.VITE_USDC_MINT || 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+    decimals: 6,
+  },
+  USDT: {
+    mint: import.meta.env.VITE_USDT_MINT || 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+    decimals: 6,
+  },
+};
+
 const LAMPORTS_PER_SOL = 1_000_000_000;
 const AMOUNT_BUFFER = 1.02; // pay slightly above the USD price to clear the backend's tolerance check
 
@@ -87,21 +101,38 @@ export async function payWithConnectedWallet({ connection, publicKey, sendTransa
     transaction.recentBlockhash = blockhash;
 
     let amount = 0;
-    if (currency === 'USDC') {
-      const mint = new PublicKey(USDC_MINT);
+    if (SPL_TOKEN_CONFIG[currency]) {
+      const { mint: mintAddress, decimals } = SPL_TOKEN_CONFIG[currency];
+      const mint = new PublicKey(mintAddress);
       const senderAta = await getAssociatedTokenAddress(mint, publicKey);
       const receiverAta = await getAssociatedTokenAddress(mint, receiver);
 
-      // The sender's USDC token account was never checked before. If the
-      // connected wallet has never held USDC, senderAta does not exist
-      // on-chain yet - a Transfer instruction pointing at a source account
-      // that doesn't exist can't be resolved by Phantom's simulator, which
-      // is consistent with "Unable to simulate the result of this request"
-      // appearing only for the USDC path. Fail fast with a clear message
-      // instead of building a transaction that can never succeed.
+      // If the connected wallet has never held this token, senderAta does
+      // not exist on-chain yet - a Transfer instruction pointing at a
+      // source account that doesn't exist can't be resolved by Phantom's
+      // simulator (this produced "Unable to simulate the result of this
+      // request" for USDC before this check existed). Fail fast with a
+      // clear message instead of building a transaction that can never
+      // succeed, and pre-validate the actual balance too so an
+      // underfunded wallet never reaches Phantom either.
       const senderAtaInfo = await connection.getAccountInfo(senderAta);
       if (!senderAtaInfo) {
-        return { ok: false, status: 'no_usdc_account', message: 'This wallet has no USDC token account yet - pay with SOL or send USDC to it first' };
+        return {
+          ok: false,
+          status: 'no_token_account',
+          message: `This wallet has no ${currency} token account yet — send ${currency} to it first or use SOL/Manual Payment.`,
+        };
+      }
+
+      amount = Math.ceil(requiredUsd * AMOUNT_BUFFER * 10 ** decimals);
+      if (!amount) {
+        return { ok: false, status: 'failed', message: 'Invalid payment amount' };
+      }
+
+      const senderBalance = await connection.getTokenAccountBalance(senderAta, 'confirmed');
+      const senderRawBalance = BigInt(senderBalance.value.amount || '0');
+      if (senderRawBalance < BigInt(amount)) {
+        return { ok: false, status: 'insufficient_balance', message: `Not enough ${currency} for this payment.` };
       }
 
       const receiverAtaInfo = await connection.getAccountInfo(receiverAta);
@@ -109,10 +140,6 @@ export async function payWithConnectedWallet({ connection, publicKey, sendTransa
         transaction.add(createAssociatedTokenAccountInstruction(publicKey, receiverAta, receiver, mint));
       }
 
-      amount = Math.ceil(requiredUsd * AMOUNT_BUFFER * 10 ** USDC_DECIMALS);
-      if (!amount) {
-        return { ok: false, status: 'failed', message: 'Invalid payment amount' };
-      }
       transaction.add(createTransferInstruction(senderAta, receiverAta, publicKey, amount, [], TOKEN_PROGRAM_ID));
     } else {
       const solPrice = await getSolUsdPrice();

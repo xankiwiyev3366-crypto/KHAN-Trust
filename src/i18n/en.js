@@ -316,6 +316,7 @@ export default {
       installWalletCta: 'Install {{name}}',
       currencyLabel: 'Pay with',
       currencyUsdc: 'USDC (recommended)',
+      currencyUsdt: 'USDT',
       currencySol: 'SOL',
       payNow: 'Pay Now (${{price}})',
       payingNow: 'Waiting for wallet approval...',

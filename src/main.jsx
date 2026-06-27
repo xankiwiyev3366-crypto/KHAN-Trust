@@ -5214,13 +5214,34 @@ function LiveMarketChart({ project, data }) {
         // this modal would render relative to that tall page element
         // instead of the viewport (the "dark overlay, no visible chart"
         // bug: the real content was rendering far down the page, off-screen).
-        <div className="modal-backdrop market-fullscreen-modal" role="dialog" aria-modal="true" aria-label={m.title}>
+        <div
+          className="modal-backdrop market-fullscreen-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label={m.title}
+          onClick={(event) => {
+            // Only the backdrop itself, not the panel/chart inside it -
+            // clicking the chart or any control must never close the modal.
+            if (event.target === event.currentTarget) setFullscreen(false);
+          }}
+        >
           <div className="modal-panel market-fullscreen-panel">
-            <button className="close-button" onClick={() => setFullscreen(false)} aria-label={t('common.close')}><X size={20} /></button>
             <div className="market-chart-frame market-chart-frame-large">
               <ChartEmbed provider={provider} data={data} retryKey={retryKey} widgetReady={widgetReady} title={m.title} onLoad={() => {}} />
             </div>
           </div>
+          {/* position:fixed on the backdrop (not the scrollable panel), so
+              this never scrolls out of view and always renders above the
+              chart iframe - a 44x44 minimum touch target per mobile a11y
+              guidance, always visible regardless of chart content. */}
+          <button
+            type="button"
+            className="market-fullscreen-close"
+            onClick={() => setFullscreen(false)}
+            aria-label={t('common.close')}
+          >
+            <X size={20} />
+          </button>
         </div>,
         document.body
       )}

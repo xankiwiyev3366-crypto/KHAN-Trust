@@ -2114,6 +2114,35 @@ main {
   padding: 14px;
 }
 
+/* Fixed to the viewport (not the scrollable modal panel) so it can never
+   scroll out of view, and sits above the chart iframe via z-index - an
+   iframe's own content can otherwise paint over same-stacking-context
+   siblings in some browsers, so this is intentionally set higher than the
+   modal backdrop's z-index (100) rather than relying on DOM order alone. */
+.market-fullscreen-close {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top, 0px));
+  right: max(16px, env(safe-area-inset-right, 0px));
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  background: rgba(15, 14, 11, 0.92);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+}
+
+.market-fullscreen-close:hover {
+  background: var(--gold-soft);
+  border-color: rgba(244, 216, 137, 0.55);
+  transform: scale(1.05);
+}
+
 .market-chart-frame-large {
   aspect-ratio: 16 / 9;
   margin-bottom: 0;

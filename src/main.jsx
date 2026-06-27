@@ -59,6 +59,7 @@ import {
   MessageCircle,
   Paperclip,
   Plus,
+  RefreshCw,
   Search,
   Scale,
   Send,
@@ -1337,6 +1338,7 @@ async function lookupSolanaTokenUncached(address) {
       pairAddress: dex?.primaryPair?.pairAddress || '',
       dexChainId: dex?.primaryPair ? 'solana' : null,
       dexId: dex?.primaryPair?.dexId || '',
+      coingeckoId: coingecko?.coingeckoId || null,
       baseSymbol: token.symbol ? token.symbol.toUpperCase() : '',
       quoteSymbol: dex?.primaryPair?.quoteToken?.symbol || '',
       fetchedAt: new Date().toISOString(),
@@ -1567,6 +1569,7 @@ async function lookupGenericChainTokenUncached(chainId, address) {
       pairAddress: dex?.primaryPair?.pairAddress || '',
       dexChainId: dex?.primaryPair ? chainId : null,
       dexId: dex?.primaryPair?.dexId || '',
+      coingeckoId: coingecko?.coingeckoId || null,
       baseSymbol: token.symbol ? token.symbol.toUpperCase() : '',
       quoteSymbol: dex?.primaryPair?.quoteToken?.symbol || '',
       fetchedAt: new Date().toISOString(),
@@ -1660,6 +1663,7 @@ async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel) {
       githubUrl: socialLinks.github || '',
       socialMetadataAvailable: true,
       isNativeAsset: true,
+      coingeckoId,
       fetchedAt: new Date().toISOString(),
     },
   };
@@ -5038,34 +5042,146 @@ function PriceChangeStat({ label, value }) {
 // The chart's presence/absence never feeds into Trust Score: this
 // component only reads `project`/`data` for display and calls no scoring
 // function.
+// Module-level so the CoinGecko widget script is only ever injected once
+// per page session, no matter how many project profiles get viewed.
+let coingeckoWidgetScriptPromise = null;
+function loadCoingeckoWidgetScript() {
+  if (typeof document === 'undefined') return Promise.resolve(false);
+  if (coingeckoWidgetScriptPromise) return coingeckoWidgetScriptPromise;
+  coingeckoWidgetScriptPromise = new Promise((resolve) => {
+    const existing = document.querySelector('script[data-khan-coingecko-widget]');
+    if (existing) {
+      resolve(true);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://widgets.coingecko.com/gecko-coin-price-chart-widget.js';
+    script.async = true;
+    script.dataset.khanCoingeckoWidget = 'true';
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+  return coingeckoWidgetScriptPromise;
+}
+
+const CHART_LOAD_TIMEOUT_MS = 8000;
+
+// Lazy + resilient chart loading:
+// - Never mounts the iframe/widget until the chart section actually
+//   scrolls into view (IntersectionObserver) - the rest of the page
+//   (Trust Score, Risk Analysis, metrics) renders and is interactive
+//   immediately regardless of chart state.
+// - Primary provider is Dexscreener (real pair required). If no
+//   Dexscreener pair exists but the asset is CoinGecko-listed (covers
+//   native assets and delisted-from-Dexscreener tokens), falls back to
+//   CoinGecko's official embeddable widget - still real market data,
+//   never fabricated.
+// - An 8s watchdog flips to the fallback state with a Retry button if
+//   neither provider's onload fires in time, instead of leaving a
+//   perpetual "Loading pair..." iframe.
 function LiveMarketChart({ project, data }) {
   const { t } = useTranslation();
   const m = t('profileSections.marketChart');
   const hasPair = Boolean(data?.dexChainId && data?.pairAddress);
+  const hasCoingeckoFallback = Boolean(data?.coingeckoId);
+  const provider = hasPair ? 'dexscreener' : (hasCoingeckoFallback ? 'coingecko' : 'none');
+
+  const sectionRef = useRef(null);
+  const timeoutRef = useRef(null);
+  const [inView, setInView] = useState(false);
+  const [chartStatus, setChartStatus] = useState('loading'); // loading | loaded | timeout
+  const [retryKey, setRetryKey] = useState(0);
+  const [widgetReady, setWidgetReady] = useState(false);
+
+  useEffect(() => {
+    if (provider === 'none' || typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+    const node = sectionRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setInView(true);
+        observer.disconnect();
+      }
+    }, { threshold: 0.1, rootMargin: '200px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [provider]);
+
+  useEffect(() => {
+    if (!inView || provider === 'none') return;
+    setChartStatus('loading');
+    clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => setChartStatus((status) => (status === 'loaded' ? status : 'timeout')), CHART_LOAD_TIMEOUT_MS);
+    if (provider === 'coingecko') {
+      setWidgetReady(false);
+      loadCoingeckoWidgetScript().then((ok) => {
+        setWidgetReady(ok);
+        // The custom element doesn't reliably emit a React-visible "load"
+        // event, but a successfully loaded widget script is itself a real
+        // signal the provider is available - the watchdog timeout above
+        // still catches a genuinely broken/blocked script load.
+        setChartStatus(ok ? 'loaded' : 'timeout');
+      });
+    }
+    return () => clearTimeout(timeoutRef.current);
+  }, [inView, provider, retryKey]);
+
+  const retryChart = () => {
+    clearTimeout(timeoutRef.current);
+    setRetryKey((value) => value + 1);
+  };
+
+  const showSkeleton = provider !== 'none' && inView && chartStatus === 'loading';
+  const showChart = provider !== 'none' && inView && chartStatus !== 'timeout';
+  const showFallback = provider === 'none' || chartStatus === 'timeout';
 
   return (
-    <section className="detail-section">
+    <section className="detail-section" ref={sectionRef}>
       <SectionTitle icon={LineChart} eyebrow={m.eyebrow} title={m.title} />
       <div className="market-status-row">
-        <span className={`status-badge ${hasPair ? 'market-live' : 'market-unavailable'}`}>
-          {hasPair ? m.statusLive : m.statusUnavailable}
+        <span className={`status-badge ${provider !== 'none' && chartStatus !== 'timeout' ? 'market-live' : 'market-unavailable'}`}>
+          {provider === 'dexscreener' ? m.statusLive : provider === 'coingecko' ? m.statusFallback : m.statusUnavailable}
         </span>
         {data?.dexId && <span className="chain-badge">{data.dexId}</span>}
       </div>
 
-      {hasPair ? (
-        <div className="market-chart-frame">
+      <div className="market-chart-frame" style={{ display: showChart ? 'block' : 'none' }}>
+        {showSkeleton && <div className="skeleton-block market-chart-skeleton" />}
+        {provider === 'dexscreener' && (
           <iframe
-            key={data.pairAddress}
+            key={`${data.pairAddress}-${retryKey}`}
             title={m.title}
             src={`https://dexscreener.com/${data.dexChainId}/${data.pairAddress}?embed=1&theme=dark&trades=0&info=0`}
             loading="lazy"
+            onLoad={() => setChartStatus('loaded')}
+            style={{ visibility: showSkeleton ? 'hidden' : 'visible' }}
           />
-        </div>
-      ) : (
+        )}
+        {provider === 'coingecko' && widgetReady && (
+          <gecko-coin-price-chart-widget
+            key={`${data.coingeckoId}-${retryKey}`}
+            locale="en"
+            transparent-background="true"
+            coin-id={data.coingeckoId}
+            initial-currency="usd"
+            onLoad={() => setChartStatus('loaded')}
+          />
+        )}
+      </div>
+
+      {showFallback && (
         <div className="market-chart-fallback">
           <LineChart size={28} />
-          <p>{m.fallback}</p>
+          <p>{chartStatus === 'timeout' ? m.timeout : m.fallback}</p>
+          {provider !== 'none' && (
+            <button type="button" className="secondary-button" onClick={retryChart}>
+              <RefreshCw size={15} /> {m.retry}
+            </button>
+          )}
         </div>
       )}
 

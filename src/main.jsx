@@ -180,11 +180,22 @@ const LAUNCHPAD_PAYMENT_MODEL = {
   mainnetPriceLabel: '$9',
   note: 'Launchpad payments are separate from KHAN Trust Premium plans.',
 };
-const SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com';
+// The public RPC is heavily rate-limited and frequently rejects requests
+// from browser-origin traffic. Setting VITE_SOLANA_RPC_URL to a dedicated
+// provider (Helius, QuickNode, Alchemy, ...) makes holder counts, mint
+// authority checks, and mint-creation lookups dramatically more reliable.
+const SOLANA_RPC_URL = import.meta.env?.VITE_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const SOLANA_DEVNET_RPC_URL = clusterApiUrl('devnet');
 const DEXSCREENER_TOKEN_PAIRS_BASE_URL = 'https://api.dexscreener.com/token-pairs/v1';
 const DEXSCREENER_SEARCH_URL = 'https://api.dexscreener.com/latest/dex/search';
 const JUPITER_TOKEN_SEARCH_URL = 'https://lite-api.jup.ag/tokens/v2/search';
+// Free, no-key public APIs used to widen coverage beyond Dexscreener/Jupiter:
+// CoinGecko's contract lookup gives an authoritative circulating market cap,
+// a real genesis_date for established assets, and curated social links.
+// GeckoTerminal fills in pool/liquidity data for chains or pairs Dexscreener
+// hasn't indexed yet. Both are read-only public endpoints with no API key.
+const COINGECKO_API_BASE = 'https://api.coingecko.com/api/v3';
+const GECKOTERMINAL_API_BASE = 'https://api.geckoterminal.com/api/v2';
 const CHAIN_LABELS = {
   solana: 'Solana',
   ethereum: 'Ethereum',
@@ -194,7 +205,48 @@ const CHAIN_LABELS = {
   polygon: 'Polygon',
   avalanche: 'Avalanche',
   optimism: 'Optimism',
+  sui: 'Sui',
 };
+
+const CHAIN_TO_COINGECKO_PLATFORM = {
+  solana: 'solana',
+  ethereum: 'ethereum',
+  bsc: 'binance-smart-chain',
+  base: 'base',
+  arbitrum: 'arbitrum-one',
+  polygon: 'polygon-pos',
+  avalanche: 'avalanche',
+  optimism: 'optimistic-ethereum',
+};
+
+const CHAIN_TO_GECKOTERMINAL_NETWORK = {
+  solana: 'solana',
+  ethereum: 'eth',
+  bsc: 'bsc',
+  base: 'base',
+  arbitrum: 'arbitrum',
+  polygon: 'polygon_pos',
+  avalanche: 'avax',
+  optimism: 'optimism',
+  sui: 'sui',
+};
+
+// Block-explorer "contract creation timestamp" + "is proxy/upgradeable"
+// lookups. These need a free API key per chain (Etherscan/BscScan/
+// BaseScan/PolygonScan all offer one at no cost) - set the matching env var
+// to enable real EVM token age and upgradeable-contract detection. Without
+// a key the chain simply falls back to "Unknown" rather than guessing.
+const EXPLORER_CONFIG = {
+  ethereum: { base: 'https://api.etherscan.io/api', envKey: 'VITE_ETHERSCAN_API_KEY' },
+  bsc: { base: 'https://api.bscscan.com/api', envKey: 'VITE_BSCSCAN_API_KEY' },
+  base: { base: 'https://api.basescan.org/api', envKey: 'VITE_BASESCAN_API_KEY' },
+  polygon: { base: 'https://api.polygonscan.com/api', envKey: 'VITE_POLYGONSCAN_API_KEY' },
+};
+
+function explorerApiKeyFor(chainId) {
+  const envKey = EXPLORER_CONFIG[chainId]?.envKey;
+  return envKey ? import.meta.env?.[envKey] : '';
+}
 
 function chainLabelFor(chainId) {
   return CHAIN_LABELS[chainId] || (chainId ? chainId.charAt(0).toUpperCase() + chainId.slice(1) : 'Unknown');
@@ -555,6 +607,8 @@ function buildScoreBreakdown(project, holders, communitySize, score) {
       websiteScore: liveScores.websiteScore,
       twitterScore: liveScores.twitterScore,
       telegramScore: liveScores.telegramScore,
+      githubScore: liveScores.githubScore,
+      coingeckoScore: liveScores.coingeckoScore,
       socialScore: liveScores.socialScore,
       holderGrowthScore: liveScores.holderGrowthScore,
       supplyScore: liveScores.supplyScore,
@@ -571,10 +625,16 @@ function calculateLiveScores(project = {}, data = {}) {
   const websiteScore = scorePresence(socialPresenceState('website', project, data));
   const twitterScore = scorePresence(socialPresenceState('twitter', project, data));
   const telegramScore = scorePresence(socialPresenceState('telegram', project, data));
+  const githubScore = scorePresence(socialPresenceState('github', project, data));
+  // Listing on a major independent research platform (CoinGecko) is a real,
+  // checkable signal of project legitimacy - only awarded when actually
+  // confirmed listed, never assumed.
+  const coingeckoScore = data.coingeckoListed ? 85 : null;
   const founderScore = scoreFounder(project.founderStatus);
   const roadmapScore = hasRoadmap(project) ? 68 : null;
   const communityScoreValue = scoreHolders(project.communitySize);
   const descriptionScore = hasValue(project.description) ? 58 : null;
+  const socialScoreInputs = [websiteScore, twitterScore, telegramScore, githubScore].filter((value) => value !== null && value !== undefined);
   const scores = {
     marketCapScore: scoreMarketCap(data.marketCapUsd),
     liquidityScore: scoreLiquidity(data.totalLiquidityUsd ?? data.liquidityUsd),
@@ -585,14 +645,16 @@ function calculateLiveScores(project = {}, data = {}) {
     websiteScore,
     twitterScore,
     telegramScore,
-    socialScore: Math.round((websiteScore + twitterScore + telegramScore) / 3),
+    githubScore,
+    coingeckoScore,
+    socialScore: socialScoreInputs.length ? Math.round(socialScoreInputs.reduce((total, value) => total + value, 0) / socialScoreInputs.length) : null,
     founderActivity: founderScore,
     roadmapClarity: roadmapScore,
     communityActivity: communityScoreValue,
     transparency: descriptionScore,
     holderGrowthScore: scoreHolderGrowth(data.holderGrowthPercent),
     supplyScore: scoreSupply(data.supply),
-    securityScore: scoreSecurity(data.mintAuthorityEnabled, data.freezeAuthorityEnabled),
+    securityScore: scoreSecurity(data.mintAuthorityEnabled, data.freezeAuthorityEnabled, data.upgradeable),
   };
   const weighted = weightedAverage([
     [scores.holderScore, 16],
@@ -602,9 +664,11 @@ function calculateLiveScores(project = {}, data = {}) {
     [scores.liquidityScore, 16],
     [scores.marketCapScore, 6],
     [scores.securityScore, 8],
-    [scores.websiteScore, 7],
-    [scores.twitterScore, 7],
-    [scores.telegramScore, 6],
+    [scores.websiteScore, 6],
+    [scores.twitterScore, 6],
+    [scores.telegramScore, 5],
+    [scores.githubScore, 3],
+    [scores.coingeckoScore, 4],
     [scores.founderActivity, 7],
     [scores.roadmapClarity, 6],
     [scores.communityActivity, 5],
@@ -739,9 +803,10 @@ function scoreHolderGrowth(percent) {
   return 24;
 }
 
-function scoreSecurity(mintAuthorityEnabled, freezeAuthorityEnabled) {
-  if (mintAuthorityEnabled === null && freezeAuthorityEnabled === null) return null;
-  const enabledCount = [mintAuthorityEnabled, freezeAuthorityEnabled].filter((value) => value === true).length;
+function scoreSecurity(mintAuthorityEnabled, freezeAuthorityEnabled, upgradeable) {
+  const flags = [mintAuthorityEnabled, freezeAuthorityEnabled, upgradeable];
+  if (flags.every((value) => value === null || value === undefined)) return null;
+  const enabledCount = flags.filter((value) => value === true).length;
   if (enabledCount === 0) return 92;
   if (enabledCount === 1) return 52;
   return 18;
@@ -792,6 +857,7 @@ function riskPenalty(notes = '', { excludeLiveDataDupes = false } = {}) {
     ['no roadmap', 8],
     ['mint authority enabled', 10],
     ['freeze authority enabled', 10],
+    ['upgradeable contract', 8],
     ...(excludeLiveDataDupes ? [] : [
       ['low liquidity', 10],
       ['low holders', 7],
@@ -827,6 +893,7 @@ function socialPresenceState(kind, project = {}, data = {}) {
     website: ['website', 'websiteUrl'],
     twitter: ['twitter', 'twitterUrl', 'xUrl'],
     telegram: ['telegram', 'telegramUrl'],
+    github: ['github', 'githubUrl'],
   };
   const value = firstPresent(...fieldMap[kind].flatMap((field) => [project[field], data[field]]));
   if (value) return { state: 'Present', value };
@@ -954,13 +1021,15 @@ async function lookupSolanaToken(contractAddress) {
   const address = contractAddress.trim();
   if (!address) throw new Error('Enter a Solana contract address first.');
 
-  const [dexData, rpcData, holderAnalyticsData, jupiterData, mintInfoData, mintCreationData] = await Promise.allSettled([
+  const [dexData, rpcData, holderAnalyticsData, jupiterData, mintInfoData, mintCreationData, coingeckoData, geckoTerminalData] = await Promise.allSettled([
     fetchDexscreenerToken(address),
     fetchSolanaRpcToken(address),
     fetchSolanaHolderAnalytics(address),
     fetchJupiterTokenData(address),
     fetchMintAccountInfo(address),
     fetchMintCreationTimestamp(address),
+    fetchCoinGeckoTokenData('solana', address),
+    fetchGeckoTerminalToken('solana', address),
   ]);
 
   const dex = dexData.status === 'fulfilled' ? dexData.value : null;
@@ -969,8 +1038,10 @@ async function lookupSolanaToken(contractAddress) {
   const jupiter = jupiterData.status === 'fulfilled' ? jupiterData.value : null;
   const mintInfo = mintInfoData.status === 'fulfilled' ? mintInfoData.value : null;
   const mintCreatedAt = mintCreationData.status === 'fulfilled' ? mintCreationData.value : null;
+  const coingecko = coingeckoData.status === 'fulfilled' ? coingeckoData.value : null;
+  const geckoTerminal = geckoTerminalData.status === 'fulfilled' ? geckoTerminalData.value : null;
 
-  if (!dex?.primaryPair && !rpc && !jupiter) {
+  if (!dex?.primaryPair && !rpc && !jupiter && !coingecko && !geckoTerminal) {
     throw new Error('No public Solana token data was found for this address.');
   }
 
@@ -980,34 +1051,45 @@ async function lookupSolanaToken(contractAddress) {
     extractSocialLinksFromDexInfo(info),
     jupiter?.socialLinks,
     extractSocialLinksFromMetadata(dex?.primaryPair),
-    extractSocialLinksFromMetadata(jupiter?.rawToken)
+    extractSocialLinksFromMetadata(jupiter?.rawToken),
+    { website: coingecko?.website, twitter: coingecko?.twitter, telegram: coingecko?.telegram, github: coingecko?.github }
   );
   const website = socialLinks.website || '';
   const twitter = socialLinks.twitter || '';
   const telegram = socialLinks.telegram || '';
   const github = socialLinks.github || '';
-  const socialMetadataAvailable = Boolean(dex?.primaryPair || jupiter);
-  // Real asset age = the mint's own genesis transaction, never a DEX pair's
-  // first-liquidity date or a "first pool" timestamp. If the genesis
-  // transaction couldn't be reached, the age is unknown - not estimated.
-  const createdAt = mintCreatedAt;
+  const socialMetadataAvailable = Boolean(dex?.primaryPair || jupiter || coingecko);
+  // Real asset age priority: CoinGecko's genesis_date (authoritative for
+  // listed assets, no RPC dependency) first, then the mint's own genesis
+  // transaction on-chain. A DEX pair's first-liquidity date is never used -
+  // if neither real source resolves, age is unknown, not estimated.
+  const createdAt = coingecko?.genesisDate ? new Date(coingecko.genesisDate).getTime() : mintCreatedAt;
+  const tokenAgeSource = coingecko?.genesisDate ? 'CoinGecko genesis date' : (mintCreatedAt ? 'Solana mint genesis transaction' : null);
   const tokenAgeDays = createdAt ? daysSince(createdAt) : null;
   // Real indexed/on-chain holder counts only. getTokenLargestAccounts (rpc)
   // never contributes here - it only returns the top 20 accounts.
   const holderCount = holderAnalytics?.holderCount ?? jupiter?.holderCount ?? null;
   const liquidityUsd = Number(dex?.primaryPair?.liquidity?.usd || 0);
   const totalLiquidityUsd = Number(dex?.totalLiquidityUsd || liquidityUsd || jupiter?.liquidity || 0);
-  const realMarketCapUsd = Number(dex?.primaryPair?.marketCap || jupiter?.mcap || 0);
-  const fdvUsd = Number(dex?.primaryPair?.fdv || jupiter?.fdv || 0);
+  const realMarketCapUsd = Number(coingecko?.realMarketCapUsd || dex?.primaryPair?.marketCap || jupiter?.mcap || geckoTerminal?.marketCapUsd || 0);
+  const fdvUsd = Number(coingecko?.fdvUsd || dex?.primaryPair?.fdv || jupiter?.fdv || geckoTerminal?.fdvUsd || 0);
   const marketCapUsd = realMarketCapUsd || fdvUsd;
   const marketCapIsFdv = !realMarketCapUsd && Boolean(fdvUsd);
   const mintAuthorityEnabled = mintInfo?.mintAuthorityEnabled ?? jupiter?.mintAuthorityEnabled ?? null;
   const freezeAuthorityEnabled = mintInfo?.freezeAuthorityEnabled ?? jupiter?.freezeAuthorityEnabled ?? null;
+  const coingeckoListed = Boolean(coingecko?.listed);
+  const sources = [
+    'Dexscreener pools',
+    geckoTerminal ? 'GeckoTerminal' : null,
+    'Solana RPC',
+    'Jupiter token index',
+    coingecko ? 'CoinGecko' : null,
+  ].filter(Boolean).join(' + ');
 
   return {
     id: `solana-${slugify(address)}`,
-    name: token.name || jupiter?.name || '',
-    ticker: token.symbol ? token.symbol.toUpperCase() : jupiter?.symbol?.toUpperCase() || '',
+    name: token.name || jupiter?.name || geckoTerminal?.name || '',
+    ticker: token.symbol ? token.symbol.toUpperCase() : (jupiter?.symbol?.toUpperCase() || geckoTerminal?.symbol?.toUpperCase() || ''),
     chain: 'Solana',
     contract: address,
     website,
@@ -1024,22 +1106,26 @@ async function lookupSolanaToken(contractAddress) {
     communitySize: holderCount || 0,
     riskNotes: buildRealDataRiskNotes({ liquidityUsd, holderCount, tokenAgeDays, mintAuthorityEnabled, freezeAuthorityEnabled }),
     realData: {
-      source: 'Dexscreener pools + Solana RPC + Jupiter token index',
+      source: sources,
       holderSource: holderAnalytics?.source || (jupiter?.holderCount ? 'Jupiter indexed Solana holder count' : null),
       liquidityUsd,
       totalLiquidityUsd,
       marketCapUsd,
       marketCapIsFdv,
       tokenAgeDays,
-      tokenAgeSource: createdAt ? 'Solana mint genesis transaction' : null,
+      tokenAgeSource,
       holderCount,
       topHolderPercent: holderAnalytics?.topHolderPercent ?? rpc?.topHolderPercent ?? null,
       topTenHolderPercent: holderAnalytics?.topTenHolderPercent ?? rpc?.topTenHolderPercent ?? jupiter?.topHoldersPercentage ?? null,
       holderGrowthPercent: jupiter?.holderGrowthPercent ?? null,
-      supply: rpc?.supply || jupiter?.totalSupply || null,
+      supply: rpc?.supply || jupiter?.totalSupply || geckoTerminal?.totalSupply || null,
       topAccountCount: rpc?.topAccountCount || null,
       mintAuthorityEnabled,
       freezeAuthorityEnabled,
+      upgradeable: null,
+      coingeckoListed,
+      twitterFollowers: coingecko?.twitterFollowers ?? null,
+      telegramUsers: coingecko?.telegramUsers ?? null,
       poolCount: dex?.poolCount || 0,
       websiteUrl: website,
       twitterUrl: twitter,
@@ -1088,77 +1174,113 @@ async function fetchTokenSearchMatches(term) {
 }
 
 async function lookupGenericChainToken(chainId, address) {
-  const dex = await fetchDexscreenerToken(address, chainId);
-  if (!dex?.primaryPair) throw new Error('No public token data was found for this address.');
+  const [dexResult, coingeckoResult, geckoTerminalResult, explorerCreationResult, explorerFlagsResult] = await Promise.allSettled([
+    fetchDexscreenerToken(address, chainId),
+    fetchCoinGeckoTokenData(chainId, address),
+    fetchGeckoTerminalToken(chainId, address),
+    fetchExplorerContractCreation(chainId, address),
+    fetchExplorerContractFlags(chainId, address),
+  ]);
+  const dex = dexResult.status === 'fulfilled' ? dexResult.value : null;
+  const coingecko = coingeckoResult.status === 'fulfilled' ? coingeckoResult.value : null;
+  const geckoTerminal = geckoTerminalResult.status === 'fulfilled' ? geckoTerminalResult.value : null;
+  const explorerCreatedAt = explorerCreationResult.status === 'fulfilled' ? explorerCreationResult.value : null;
+  const explorerFlags = explorerFlagsResult.status === 'fulfilled' ? explorerFlagsResult.value : null;
 
-  const token = getDexTokenForAddress(dex.primaryPair, address);
-  const info = dex.primaryPair.info || {};
+  if (!dex?.primaryPair && !coingecko && !geckoTerminal) {
+    throw new Error('No public token data was found for this address.');
+  }
+
+  const token = dex?.primaryPair ? getDexTokenForAddress(dex.primaryPair, address) : {};
+  const info = dex?.primaryPair?.info || {};
   const socialLinks = mergeSocialLinks(
     extractSocialLinksFromDexInfo(info),
-    extractSocialLinksFromMetadata(dex.primaryPair)
+    extractSocialLinksFromMetadata(dex?.primaryPair),
+    { website: coingecko?.website, twitter: coingecko?.twitter, telegram: coingecko?.telegram, github: coingecko?.github }
   );
   const website = socialLinks.website || '';
   const twitter = socialLinks.twitter || '';
   const telegram = socialLinks.telegram || '';
   const github = socialLinks.github || '';
-  // KHAN Trust does not yet have a contract-deployment-timestamp source for
-  // this chain (that requires a per-chain explorer/indexer integration).
-  // Pair creation is NOT a valid proxy for asset age, so age is unknown
-  // here rather than estimated from the first liquidity pool.
-  const tokenAgeDays = null;
-  const liquidityUsd = Number(dex.primaryPair.liquidity?.usd || 0);
-  const totalLiquidityUsd = Number(dex.totalLiquidityUsd || liquidityUsd || 0);
-  const realMarketCapUsd = Number(dex.primaryPair.marketCap || 0);
-  const fdvUsd = Number(dex.primaryPair.fdv || 0);
+  // Real asset age priority: CoinGecko's genesis_date, then the chain's
+  // own contract-deployment timestamp (requires a free explorer API key -
+  // see EXPLORER_CONFIG). A DEX pair's first-liquidity date is never used.
+  // If neither real source resolves, age stays unknown.
+  const createdAt = coingecko?.genesisDate ? new Date(coingecko.genesisDate).getTime() : explorerCreatedAt;
+  const tokenAgeSource = coingecko?.genesisDate
+    ? 'CoinGecko genesis date'
+    : (explorerCreatedAt ? `${chainLabelFor(chainId)} block explorer contract creation` : null);
+  const tokenAgeDays = createdAt ? daysSince(createdAt) : null;
+  const liquidityUsd = Number(dex?.primaryPair?.liquidity?.usd || 0);
+  const totalLiquidityUsd = Number(dex?.totalLiquidityUsd || liquidityUsd || 0);
+  const realMarketCapUsd = Number(coingecko?.realMarketCapUsd || dex?.primaryPair?.marketCap || geckoTerminal?.marketCapUsd || 0);
+  const fdvUsd = Number(coingecko?.fdvUsd || dex?.primaryPair?.fdv || geckoTerminal?.fdvUsd || 0);
   const marketCapUsd = realMarketCapUsd || fdvUsd;
   const marketCapIsFdv = !realMarketCapUsd && Boolean(fdvUsd);
   const chainLabel = chainLabelFor(chainId);
   const article = /^[aeiou]/i.test(chainLabel) ? 'an' : 'a';
+  const name = token.name || geckoTerminal?.name || '';
+  const sources = [
+    dex?.primaryPair ? 'Dexscreener pools' : null,
+    geckoTerminal ? 'GeckoTerminal' : null,
+    coingecko ? 'CoinGecko' : null,
+    explorerCreatedAt || explorerFlags ? `${chainLabel} block explorer` : null,
+  ].filter(Boolean).join(' + ') || 'No public data source available';
 
   return {
     id: `${chainId}-${slugify(address)}`,
-    name: token.name || '',
-    ticker: token.symbol ? token.symbol.toUpperCase() : '',
+    name,
+    ticker: token.symbol ? token.symbol.toUpperCase() : (geckoTerminal?.symbol?.toUpperCase() || ''),
     chain: chainLabel,
     contract: address,
     website,
     twitter,
     telegram,
     github,
-    launchDate: '',
-    description: token.name
-      ? `${token.name} is ${article} ${chainLabel} token profile enriched with public market signals.`
+    launchDate: createdAt ? new Date(createdAt).toISOString().slice(0, 10) : '',
+    description: name
+      ? `${name} is ${article} ${chainLabel} token profile enriched with public market signals.`
       : `${chainLabel} token profile enriched with public market signals.`,
     status: 'Live market data',
     lastUpdate: new Date().toISOString().slice(0, 10),
     holderCount: 0,
     communitySize: 0,
-    riskNotes: buildRealDataRiskNotes({ liquidityUsd, holderCount: null, tokenAgeDays }),
+    riskNotes: buildRealDataRiskNotes({
+      liquidityUsd,
+      holderCount: null,
+      tokenAgeDays,
+      upgradeable: explorerFlags?.upgradeable ?? null,
+    }),
     realData: {
-      source: 'Dexscreener pools',
+      source: sources,
       holderSource: null,
       liquidityUsd,
       totalLiquidityUsd,
       marketCapUsd,
       marketCapIsFdv,
       tokenAgeDays,
-      tokenAgeSource: null,
+      tokenAgeSource,
       holderCount: null,
       topHolderPercent: null,
       topTenHolderPercent: null,
       holderGrowthPercent: null,
-      supply: null,
+      supply: geckoTerminal?.totalSupply || null,
       topAccountCount: null,
       mintAuthorityEnabled: null,
       freezeAuthorityEnabled: null,
-      poolCount: dex.poolCount || 0,
+      upgradeable: explorerFlags?.upgradeable ?? null,
+      verifiedSource: explorerFlags?.verifiedSource ?? null,
+      coingeckoListed: Boolean(coingecko?.listed),
+      twitterFollowers: coingecko?.twitterFollowers ?? null,
+      telegramUsers: coingecko?.telegramUsers ?? null,
+      poolCount: dex?.poolCount || 0,
       websiteUrl: website,
       twitterUrl: twitter,
       telegramUrl: telegram,
       githubUrl: github,
-      socialMetadataAvailable: Boolean(dex.primaryPair),
-      pairUrl: dex.primaryPair.url || '',
-      pairAddress: dex.primaryPair.pairAddress || '',
+      socialMetadataAvailable: Boolean(dex?.primaryPair || coingecko),
+      pairUrl: dex?.primaryPair?.url || '',
+      pairAddress: dex?.primaryPair?.pairAddress || '',
       fetchedAt: new Date().toISOString(),
     },
   };
@@ -1257,6 +1379,105 @@ function getDexTokenForAddress(pair, address) {
   if (pair?.baseToken?.address?.toLowerCase() === normalized) return pair.baseToken;
   if (pair?.quoteToken?.address?.toLowerCase() === normalized) return pair.quoteToken;
   return pair?.baseToken || {};
+}
+
+// CoinGecko's free contract-lookup endpoint. Most reliable source for real
+// circulating market cap (vs. FDV) and, for established assets, a genuine
+// genesis_date - the most trustworthy "real asset age" signal available
+// without depending on a chain RPC. Not every token is listed, so a 404 is
+// a normal "not found" result, not an error worth surfacing.
+async function fetchCoinGeckoTokenData(chainId, address) {
+  const platform = CHAIN_TO_COINGECKO_PLATFORM[chainId];
+  if (!platform) return null;
+  const response = await fetch(`${COINGECKO_API_BASE}/coins/${platform}/contract/${address}`);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error('CoinGecko lookup failed.');
+  const data = await response.json();
+  const links = data.links || {};
+  const community = data.community_data || {};
+  const market = data.market_data || {};
+  const telegramHandle = links.telegram_channel_identifier;
+  return {
+    listed: true,
+    realMarketCapUsd: Number(market.market_cap?.usd || 0),
+    fdvUsd: Number(market.fully_diluted_valuation?.usd || 0),
+    genesisDate: data.genesis_date || null,
+    website: cleanLink(links.homepage?.find(hasValue)),
+    twitter: links.twitter_screen_name ? `https://twitter.com/${links.twitter_screen_name}` : '',
+    telegram: telegramHandle ? `https://t.me/${telegramHandle}` : '',
+    github: cleanLink(links.repos_url?.github?.find(hasValue)),
+    twitterFollowers: Number(community.twitter_followers || 0) || null,
+    telegramUsers: Number(community.telegram_channel_user_count || 0) || null,
+  };
+}
+
+// GeckoTerminal covers the same DEX pool universe as Dexscreener but
+// indexes some pairs/chains independently - used only to fill gaps when
+// Dexscreener has no pair for a token, never to override it.
+async function fetchGeckoTerminalToken(chainId, address) {
+  const network = CHAIN_TO_GECKOTERMINAL_NETWORK[chainId];
+  if (!network) return null;
+  const response = await fetch(`${GECKOTERMINAL_API_BASE}/networks/${network}/tokens/${address}`);
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error('GeckoTerminal lookup failed.');
+  const data = await response.json();
+  const attrs = data?.data?.attributes;
+  if (!attrs) return null;
+  // GeckoTerminal returns total_supply in raw base units, not decimal-
+  // adjusted - dividing by 10^decimals avoids displaying an inflated
+  // "fake-looking" supply (e.g. 10^27 instead of the real token count).
+  const decimals = Number(attrs.decimals || 0);
+  const rawSupply = Number(attrs.total_supply || 0);
+  const totalSupply = decimals > 0 && rawSupply ? rawSupply / 10 ** decimals : rawSupply;
+  return {
+    name: attrs.name,
+    symbol: attrs.symbol,
+    marketCapUsd: Number(attrs.market_cap_usd || 0),
+    fdvUsd: Number(attrs.fdv_usd || 0),
+    totalSupply,
+    priceUsd: Number(attrs.price_usd || 0),
+  };
+}
+
+// EVM contract creation timestamp via the chain's block explorer (Etherscan-
+// family APIs). Requires a free API key set as an env var - see
+// EXPLORER_CONFIG. Without a key this resolves to null (Unknown), never a
+// guess. Two-hop lookup: contract creation tx hash -> tx's block -> block
+// timestamp, all on the same explorer API.
+async function fetchExplorerContractCreation(chainId, address) {
+  const config = EXPLORER_CONFIG[chainId];
+  const apiKey = explorerApiKeyFor(chainId);
+  if (!config || !apiKey) return null;
+  const creationResponse = await fetch(`${config.base}?module=contract&action=getcontractcreation&contractaddresses=${address}&apikey=${apiKey}`);
+  if (!creationResponse.ok) throw new Error('Explorer contract-creation lookup failed.');
+  const creationData = await creationResponse.json();
+  const txHash = creationData?.result?.[0]?.txHash;
+  if (!txHash) return null;
+  const txResponse = await fetch(`${config.base}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}&apikey=${apiKey}`);
+  const txData = await txResponse.json();
+  const blockNumber = txData?.result?.blockNumber;
+  if (!blockNumber) return null;
+  const blockResponse = await fetch(`${config.base}?module=proxy&action=eth_getBlockByNumber&tag=${blockNumber}&boolean=false&apikey=${apiKey}`);
+  const blockData = await blockResponse.json();
+  const timestampHex = blockData?.result?.timestamp;
+  return timestampHex ? Number(timestampHex) * 1000 : null;
+}
+
+// Real contract-security signal for EVM chains: is this a proxy
+// (upgradeable) contract? Same explorer API, same free key requirement.
+async function fetchExplorerContractFlags(chainId, address) {
+  const config = EXPLORER_CONFIG[chainId];
+  const apiKey = explorerApiKeyFor(chainId);
+  if (!config || !apiKey) return null;
+  const response = await fetch(`${config.base}?module=contract&action=getsourcecode&address=${address}&apikey=${apiKey}`);
+  if (!response.ok) throw new Error('Explorer source-code lookup failed.');
+  const data = await response.json();
+  const result = data?.result?.[0];
+  if (!result) return null;
+  return {
+    upgradeable: result.Proxy === '1',
+    verifiedSource: hasValue(result.SourceCode),
+  };
 }
 
 function extractSocialLinksFromDexInfo(info = {}) {
@@ -1458,15 +1679,16 @@ async function solanaRpc(method, params) {
   return payload.result;
 }
 
-function buildRealDataRiskNotes({ liquidityUsd, holderCount, tokenAgeDays, mintAuthorityEnabled, freezeAuthorityEnabled }) {
+function buildRealDataRiskNotes({ liquidityUsd, holderCount, tokenAgeDays, mintAuthorityEnabled, freezeAuthorityEnabled, upgradeable }) {
   const notes = [];
   if (liquidityUsd > 0 && liquidityUsd < 5000) notes.push('low liquidity');
   if (holderCount > 0 && holderCount < 500) notes.push('low holders');
   if (tokenAgeDays !== null && tokenAgeDays !== undefined && tokenAgeDays < 14) notes.push('very new project');
   // Only flagged when explicitly known true from on-chain/indexed data -
-  // never inferred when the authority status is unknown.
+  // never inferred when the authority/proxy status is unknown.
   if (mintAuthorityEnabled === true) notes.push('mint authority enabled');
   if (freezeAuthorityEnabled === true) notes.push('freeze authority enabled');
+  if (upgradeable === true) notes.push('upgradeable contract');
   return notes.length ? notes.join(', ') : translate('scoring.riskNotes.liveDataAvailable');
 }
 
@@ -1477,6 +1699,7 @@ function buildCanonicalRiskNotes(data = {}) {
     tokenAgeDays: data.tokenAgeDays,
     mintAuthorityEnabled: data.mintAuthorityEnabled,
     freezeAuthorityEnabled: data.freezeAuthorityEnabled,
+    upgradeable: data.upgradeable,
   });
 }
 
@@ -1754,6 +1977,17 @@ function holderRiskLevel(data = {}) {
   return translate('scoring.holderRiskLevel.low');
 }
 
+function contractSecuritySummary(data = {}) {
+  const flags = [];
+  if (data.mintAuthorityEnabled === true) flags.push(translate('scoring.factors.mintAuthorityTitle'));
+  if (data.freezeAuthorityEnabled === true) flags.push(translate('scoring.factors.freezeAuthorityTitle'));
+  if (data.upgradeable === true) flags.push(translate('scoring.factors.upgradeableTitle'));
+  if (flags.length) return flags.join(', ');
+  const known = [data.mintAuthorityEnabled, data.freezeAuthorityEnabled, data.upgradeable].some((value) => value === false);
+  if (known) return translate('scoring.contractSecurity.noKnownRisks');
+  return translate('common.notAvailable');
+}
+
 function riskBadge(score) {
   if (score >= 78) return translate('common.lowRisk');
   if (score >= 55) return translate('common.mediumRisk');
@@ -1792,6 +2026,7 @@ function riskFactors(project = {}) {
   const website = socialPresenceState('website', project, data);
   const twitter = socialPresenceState('twitter', project, data);
   const telegram = socialPresenceState('telegram', project, data);
+  const github = socialPresenceState('github', project, data);
 
   const factors = [
     holderCountFactor(holders, data.holderSource),
@@ -1802,15 +2037,19 @@ function riskFactors(project = {}) {
     presenceFactor('website', website),
     presenceFactor('twitter', twitter),
     presenceFactor('telegram', telegram),
+    presenceFactor('github', github),
   ];
 
-  // Only shown when the authority status is actually known - unknown chains
-  // or stale profiles never get a fabricated security verdict.
+  // Only shown when the authority/proxy status is actually known - unknown
+  // chains or stale profiles never get a fabricated security verdict.
   if (data.mintAuthorityEnabled !== null && data.mintAuthorityEnabled !== undefined) {
     factors.push(authorityFactor('mint', data.mintAuthorityEnabled));
   }
   if (data.freezeAuthorityEnabled !== null && data.freezeAuthorityEnabled !== undefined) {
     factors.push(authorityFactor('freeze', data.freezeAuthorityEnabled));
+  }
+  if (data.upgradeable !== null && data.upgradeable !== undefined) {
+    factors.push(upgradeableFactor(data.upgradeable));
   }
 
   return factors.sort((a, b) => riskSeverityRank(b.severity) - riskSeverityRank(a.severity));
@@ -1833,6 +2072,26 @@ function authorityFactor(kind, enabled) {
     signal: translate('scoring.factors.authorityDisabledSignal'),
     value: translate('scoring.factors.authorityDisabledValue'),
     explanation: translate(kind === 'mint' ? 'scoring.factors.mintAuthorityDisabledExplain' : 'scoring.factors.freezeAuthorityDisabledExplain'),
+  };
+}
+
+function upgradeableFactor(upgradeable) {
+  const title = translate('scoring.factors.upgradeableTitle');
+  if (upgradeable) {
+    return {
+      title,
+      severity: 'High',
+      signal: translate('scoring.factors.upgradeableYesSignal'),
+      value: translate('scoring.factors.authorityEnabledValue'),
+      explanation: translate('scoring.factors.upgradeableYesExplain'),
+    };
+  }
+  return {
+    title,
+    severity: 'Low',
+    signal: translate('scoring.factors.upgradeableNoSignal'),
+    value: translate('scoring.factors.authorityDisabledValue'),
+    explanation: translate('scoring.factors.upgradeableNoExplain'),
   };
 }
 
@@ -2032,6 +2291,7 @@ const PRESENCE_FACTOR_KEYS = {
   website: { title: 'presenceWebsiteTitle', ok: 'presenceWebsiteOk', missing: 'presenceWebsiteMissing', explain: 'presenceWebsiteExplain' },
   twitter: { title: 'presenceTwitterTitle', ok: 'presenceTwitterOk', missing: 'presenceTwitterMissing', explain: 'presenceTwitterExplain' },
   telegram: { title: 'presenceTelegramTitle', ok: 'presenceTelegramOk', missing: 'presenceTelegramMissing', explain: 'presenceTelegramExplain' },
+  github: { title: 'presenceGithubTitle', ok: 'presenceGithubOk', missing: 'presenceGithubMissing', explain: 'presenceGithubExplain' },
 };
 
 function presenceFactor(kind, presence) {
@@ -4231,14 +4491,17 @@ function RealDataSection({ project, data }) {
     [r.concentrationStatus, holderConcentrationStatus(data), FileWarning],
     [r.liquidityUsd, formatCurrency(data.totalLiquidityUsd ?? data.liquidityUsd), BarChart3],
     [marketCapLabel(r.marketCapUsd, data), formatCurrency(data.marketCapUsd), LineChart],
-    [r.tokenAge, formatAge(data.tokenAgeDays), CalendarDays],
+    [r.tokenAge, data.tokenAgeSource ? `${formatAge(data.tokenAgeDays)} (${data.tokenAgeSource})` : formatAge(data.tokenAgeDays), CalendarDays],
     [r.trustScore, `${project.trustScore}/100`, BadgeCheck],
     [r.website, socialPresenceState('website', project, data), Globe2],
     [r.twitter, socialPresenceState('twitter', project, data), ExternalLink],
     [r.telegram, socialPresenceState('telegram', project, data), MessageCircle],
+    [r.github, socialPresenceState('github', project, data), Github],
     [r.supply, data.supply ? formatNumber(data.supply) : t('common.notAvailable'), WalletCards],
     [r.holderGrowth, data.holderGrowthPercent === null ? t('profileSections.holderGrowthNeedsLookup') : formatPercent(data.holderGrowthPercent), TrendingUp],
     [r.poolsFound, formatNumber(data.poolCount), Layers3],
+    [r.coingeckoListed, data.coingeckoListed ? t('common.yes') : (data.coingeckoListed === false ? t('common.no') : t('common.notAvailable')), BadgeCheck],
+    [r.contractSecurity, contractSecuritySummary(data), Lock],
     [r.dataSource, data.source, BadgeCheck],
   ];
 

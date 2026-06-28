@@ -5,6 +5,8 @@
 // throttled to once per key per day. Mirrors the fetch +
 // localStorage-fallback pattern in userData.js so this also works against a
 // plain `vite dev` server with no Netlify Functions running.
+import { useEffect, useState } from 'react';
+
 const FALLBACK_KEY = 'khan-trust-score-history-fallback-v1';
 const LAST_RECORDED_KEY = 'khan-trust-score-history-lastrecorded-v1';
 const MAX_ENTRIES = 180;
@@ -76,7 +78,9 @@ export async function fetchScoreHistory(key) {
 // Throttled to once/day/key on the client, so opening the same report
 // repeatedly in a session doesn't fire repeated network calls - the server
 // would collapse them into one entry/day anyway (see appendSnapshot), this
-// just avoids the wasted calls.
+// just avoids the wasted calls. Also captures top-holder concentration and
+// liquidity alongside the score (when known) - Phase 3's risk-change alerts
+// need day-over-day deltas on those, not just the score.
 export async function recordScoreSnapshot(project, score, riskLevel) {
   const key = historyKeyFor(project);
   if (!key || typeof score !== 'number' || !Number.isFinite(score)) return;
@@ -84,7 +88,12 @@ export async function recordScoreSnapshot(project, score, riskLevel) {
   const lastRecorded = readJson(LAST_RECORDED_KEY, {});
   if (lastRecorded[key] === today) return;
 
-  const snapshot = { date: today, score: Math.round(score), riskLevel: riskLevel || 'Medium' };
+  const realData = project.realData || {};
+  const topHolderPercent = typeof realData.topHolderPercent === 'number' ? realData.topHolderPercent : null;
+  const liquidityRaw = realData.totalLiquidityUsd ?? realData.liquidityUsd;
+  const liquidityUsd = typeof liquidityRaw === 'number' ? liquidityRaw : null;
+
+  const snapshot = { date: today, score: Math.round(score), riskLevel: riskLevel || 'Medium', topHolderPercent, liquidityUsd };
   try {
     await callFunction('score-history-record', {
       method: 'POST',
@@ -116,4 +125,31 @@ export function computeScoreDelta(history, currentScore) {
   }
   const earliest = byDateDesc[byDateDesc.length - 1];
   return { delta: Math.round(currentScore - earliest.score), label: 'sinceLaunch' };
+}
+
+// Single shared hook for the Token Report page: records today's snapshot
+// (throttled, see above) and loads the stored history once, so the trend
+// strip, the Ask KHAN analyst, and anything else on the page that needs
+// history all read the same fetched data instead of each firing their own
+// network call.
+export function useScoreHistory(project) {
+  const [history, setHistory] = useState([]);
+  const key = historyKeyFor(project);
+
+  useEffect(() => {
+    if (!key) return;
+    let cancelled = false;
+    recordScoreSnapshot(project, project.trustScore, project.riskLevel).catch(() => {});
+    fetchScoreHistory(key)
+      .then((entries) => {
+        if (!cancelled) setHistory(entries);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, project.trustScore, project.riskLevel]);
+
+  return history;
 }

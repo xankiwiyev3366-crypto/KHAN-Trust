@@ -54,6 +54,7 @@ export default {
     explore: 'Explore',
     pricing: 'Pricing',
     compare: 'Compare',
+    watchlist: 'Watchlist',
     add: 'Add Project',
     launchpad: 'Launchpad',
     whitepaper: 'Whitepaper',
@@ -564,10 +565,34 @@ export default {
     title: 'Simple Risk Summary',
     trustScore: 'Trust Score',
     confidenceScore: 'Confidence Score',
+    peerBenchmark: 'Ranked {{comparison}} median for {{peerCount}} tracked {{category}}.',
+    peerComparison: {
+      above: 'above',
+      below: 'below',
+      at: 'at',
+    },
   },
   scoreHistory: {
     thisWeek: 'this week',
     sinceLaunch: 'since first scan',
+  },
+  askKhan: {
+    eyebrow: 'AI Analyst',
+    title: 'Ask KHAN',
+    prompt: 'Pick a question below for a plain-language answer grounded in this token\'s own data.',
+    questions: {
+      whyRisky: 'Why is this risky?',
+      whatChanged: 'What changed recently?',
+      howCompare: 'How does this compare to similar assets?',
+      whatToWatch: 'What should I watch going forward?',
+    },
+  },
+  watchlist: {
+    eyebrow: 'Tracked',
+    title: 'Watchlist',
+    emptyTitle: 'Nothing watched yet',
+    emptyText: 'Open any token\'s report and tap "Watch Project" to track its Trust Score and get risk-change alerts here.',
+    remove: 'Remove from Watchlist',
   },
   shareReady: {
     eyebrow: 'Share',

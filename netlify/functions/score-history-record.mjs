@@ -44,7 +44,18 @@ export async function handler(event) {
     }
     const riskLevel = VALID_RISK_LEVELS.has(snapshot.riskLevel) ? snapshot.riskLevel : 'Medium';
 
-    const history = await appendSnapshot(key, { date, score: Math.round(score), riskLevel });
+    // Optional (Phase 3): top-holder concentration + liquidity alongside the
+    // score, so risk-change alerts can compare day-over-day on those too.
+    // Missing/invalid values are stored as null rather than rejected - older
+    // snapshots and tokens with unknown holder/liquidity data still work.
+    const topHolderPercentRaw = Number(snapshot.topHolderPercent);
+    const topHolderPercent = Number.isFinite(topHolderPercentRaw) && topHolderPercentRaw >= 0 && topHolderPercentRaw <= 100
+      ? topHolderPercentRaw
+      : null;
+    const liquidityUsdRaw = Number(snapshot.liquidityUsd);
+    const liquidityUsd = Number.isFinite(liquidityUsdRaw) && liquidityUsdRaw >= 0 ? liquidityUsdRaw : null;
+
+    const history = await appendSnapshot(key, { date, score: Math.round(score), riskLevel, topHolderPercent, liquidityUsd });
     return jsonResponse(200, { ok: true, history });
   } catch (error) {
     return jsonResponse(500, { message: `score-history-record crashed: ${error.message}` });

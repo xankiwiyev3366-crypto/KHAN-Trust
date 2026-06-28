@@ -81,7 +81,10 @@ import {
 import './styles.css';
 import { WHITEPAPER } from './whitepaperConfig.js';
 import { runRiskAnalysis, classifyAsset, applyAssetTypeRiskModifier } from './scoringEngine.js';
-import { historyKeyFor, fetchScoreHistory, recordScoreSnapshot, computeScoreDelta } from './scoreHistory.js';
+import { historyKeyFor, fetchScoreHistory, computeScoreDelta, useScoreHistory } from './scoreHistory.js';
+import { ANALYST_QUESTIONS, answerQuestion } from './khanAnalyst.js';
+import { detectRiskAlerts } from './riskAlerts.js';
+import { computePeerBenchmark, peerLabelFor } from './peerBenchmark.js';
 import { I18nProvider, useTranslation } from './i18n/I18nContext.jsx';
 import { translate, getLanguage } from './i18n/index.js';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
@@ -530,6 +533,7 @@ const navItems = [
   { id: 'explore', label: 'Explore', icon: Layers3 },
   { id: 'pricing', label: 'Pricing', icon: WalletCards },
   { id: 'compare', label: 'Compare', icon: Scale },
+  { id: 'watchlist', label: 'Watchlist', icon: Bell },
   { id: 'add', label: 'Add Project', icon: Plus },
   { id: 'launchpad', label: 'Launchpad', icon: Sparkles },
   { id: 'whitepaper', label: 'Whitepaper', icon: BookOpen },
@@ -3446,6 +3450,9 @@ function App() {
         {page === 'pricing' && <PricingPage navigate={navigate} />}
         {page === 'whitepaper' && <WhitepaperPage navigate={navigate} />}
         {page === 'compare' && <ComparePage projects={projects} navigate={navigate} />}
+        {page === 'watchlist' && (
+          <WatchlistPage projects={projects} watchlist={watchlist} toggleWatch={toggleWatch} navigate={navigate} />
+        )}
         {page.startsWith('report/') && reportProject && (
           <RiskReportPage project={reportProject} navigate={navigate} />
         )}
@@ -3457,6 +3464,7 @@ function App() {
         {(page.startsWith('project/') || page === 'khan') && selectedProject && (
           <ProjectProfile
             project={selectedProject}
+            projects={projects}
             navigate={navigate}
             watched={watchlist.includes(selectedProject.id)}
             toggleWatch={() => toggleWatch(selectedProject.id)}
@@ -3733,6 +3741,56 @@ function ExplorePage({ projects, query, setQuery, searchState, onSearch, onSelec
         ))}
       </div>
       {!filtered.length && <EmptyState title={t('explore.emptyNoMatchTitle')} text={t('explore.emptyNoMatchText')} />}
+    </section>
+  );
+}
+
+// Phase 3 — Analyst Attention: the one new page this roadmap adds. Reuses
+// the existing ProjectCard/empty-state visual language rather than
+// inventing new layout, and only adds a risk-change alert strip (Phase 1
+// history compared day-over-day, see riskAlerts.js) under each watched
+// token - no separate "alerts" surface to maintain.
+function WatchlistPage({ projects, watchlist, toggleWatch, navigate }) {
+  const { t } = useTranslation();
+  const watchedProjects = projects.filter((project) => watchlist.includes(project.id));
+  const [alertsByProjectId, setAlertsByProjectId] = useState({});
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      watchedProjects.map(async (project) => {
+        const key = historyKeyFor(project);
+        const history = key ? await fetchScoreHistory(key).catch(() => []) : [];
+        return [project.id, detectRiskAlerts(history)];
+      })
+    ).then((entries) => {
+      if (!cancelled) setAlertsByProjectId(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchlist.join(',')]);
+
+  return (
+    <section className="page-section">
+      <SectionTitle icon={Bell} eyebrow={t('watchlist.eyebrow')} title={t('watchlist.title')} />
+      {!watchedProjects.length && <EmptyState title={t('watchlist.emptyTitle')} text={t('watchlist.emptyText')} />}
+      <div className="project-grid">
+        {watchedProjects.map((project) => (
+          <div className="watchlist-item" key={project.id}>
+            <ProjectCard project={project} navigate={navigate} />
+            {(alertsByProjectId[project.id] || []).map((alert) => (
+              <div className={`watchlist-alert ${alert.severity}`} key={alert.type}>
+                <AlertTriangle size={15} /> <span>{alert.message}</span>
+              </div>
+            ))}
+            <button className="ghost-button" type="button" onClick={() => toggleWatch(project.id)}>
+              {t('watchlist.remove')}
+            </button>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -4711,7 +4769,7 @@ function ProjectCard({ project, navigate }) {
   );
 }
 
-function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openMethodology, onRequestVerification }) {
+function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch, onEdit, openMethodology, onRequestVerification }) {
   const { t } = useTranslation();
   const confidence = confidenceScore(project);
   const canRequestVerification =
@@ -4722,6 +4780,12 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
     if (!result?.ok) alert(result?.message || stripeUnavailableMessage());
   };
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  // Shared by the Phase 1 trend strip and the Phase 2 Ask KHAN analyst below,
+  // so both read the same fetched history instead of each fetching its own.
+  const history = useScoreHistory(project);
+  // Phase 4 — null until at least a handful of same-category peers are
+  // tracked; both RiskSummary and Ask KHAN treat null as "not enough data".
+  const peerBenchmark = computePeerBenchmark(project, projects);
 
   return (
     <section className="profile-page">
@@ -4773,7 +4837,7 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
         </div>
         <div className="profile-score-card">
           <ScoreCircle score={project.trustScore} size="large" />
-          <ScoreHistoryStrip project={project} />
+          <ScoreHistoryStrip project={project} history={history} />
           <RiskPill level={project.riskLevel} />
           <span className="confidence-badge">{confidence.label}</span>
           <strong>{riskBadge(project.trustScore)}</strong>
@@ -4783,7 +4847,8 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
 
       <div className="profile-layout">
         <div className="main-column">
-          <RiskSummary project={project} />
+          <RiskSummary project={project} peerBenchmark={peerBenchmark} />
+          <AskKhanCard project={project} history={history} peerBenchmark={peerBenchmark} />
           <InfoGrid project={project} />
           <LiveMarketChart project={project} data={project.realData} />
           <CategoryScoreCards project={project} />
@@ -4936,7 +5001,7 @@ function ReportSuggestModal({ project, wallet, onClose }) {
   );
 }
 
-function RiskSummary({ project }) {
+function RiskSummary({ project, peerBenchmark }) {
   const { t } = useTranslation();
   const confidence = confidenceScore(project);
   return (
@@ -4963,6 +5028,54 @@ function RiskSummary({ project }) {
         ))}
       </div>
       <p className="plain-explanation">{plainRiskExplanation(project)}</p>
+      {peerBenchmark && (
+        <div className="peer-benchmark">
+          <div className="peer-benchmark-track">
+            <div className="peer-benchmark-fill" style={{ width: `${peerBenchmark.percentile}%` }} />
+            <div className="peer-benchmark-median-marker" />
+          </div>
+          <p className="peer-benchmark-label">
+            {t('riskSummary.peerBenchmark', {
+              comparison: t(`riskSummary.peerComparison.${peerBenchmark.comparison}`),
+              category: peerLabelFor(peerBenchmark.category),
+              peerCount: peerBenchmark.peerCount,
+            })}
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// Phase 2 — Score Voice: a small fixed set of preset questions, each
+// answered deterministically from data already computed on this project
+// (see khanAnalyst.js). Intentionally not a free-text chatbot - there's
+// nothing to type, just a handful of buttons, so it can never say anything
+// ungrounded.
+function AskKhanCard({ project, history, peerBenchmark }) {
+  const { t } = useTranslation();
+  const [activeQuestion, setActiveQuestion] = useState(null);
+
+  return (
+    <section className="detail-section ask-khan-card">
+      <SectionTitle icon={Sparkles} eyebrow={t('askKhan.eyebrow')} title={t('askKhan.title')} />
+      <div className="filter-row">
+        {ANALYST_QUESTIONS.map((question) => (
+          <button
+            key={question.id}
+            type="button"
+            className={activeQuestion === question.id ? 'active' : ''}
+            onClick={() => setActiveQuestion(question.id)}
+          >
+            {t(question.labelKey)}
+          </button>
+        ))}
+      </div>
+      {activeQuestion ? (
+        <p className="plain-explanation">{answerQuestion(activeQuestion, project, history, peerBenchmark)}</p>
+      ) : (
+        <p className="inline-note">{t('askKhan.prompt')}</p>
+      )}
     </section>
   );
 }
@@ -7279,32 +7392,15 @@ function ScoreCircle({ score, size = 'normal' }) {
 }
 
 // Phase 1 — Score Memory: small trend line + one-line delta under the score
-// on the main Token Report page. Records today's snapshot (throttled to
-// once/day/key) and renders nothing until there's at least two days of real
-// history to compare - a single dot isn't a trend, so it stays silent
-// rather than showing a misleading flat line.
-function ScoreHistoryStrip({ project }) {
+// on the main Token Report page. Renders nothing until there's at least two
+// days of real history to compare - a single dot isn't a trend, so it stays
+// silent rather than showing a misleading flat line. `history` is fetched
+// once at the page level (see useScoreHistory) and shared with the Ask KHAN
+// analyst below, rather than each component fetching its own copy.
+function ScoreHistoryStrip({ project, history }) {
   const { t } = useTranslation();
-  const [history, setHistory] = useState([]);
-  const key = historyKeyFor(project);
-
-  useEffect(() => {
-    if (!key) return;
-    let cancelled = false;
-    recordScoreSnapshot(project, project.trustScore, project.riskLevel).catch(() => {});
-    fetchScoreHistory(key)
-      .then((entries) => {
-        if (!cancelled) setHistory(entries);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, project.trustScore, project.riskLevel]);
-
   const delta = computeScoreDelta(history, project.trustScore);
-  const sparkData = history.length >= 2 ? history.map((entry) => ({ count: entry.score })) : null;
+  const sparkData = history?.length >= 2 ? history.map((entry) => ({ count: entry.score })) : null;
 
   if (!sparkData && !delta) return null;
 

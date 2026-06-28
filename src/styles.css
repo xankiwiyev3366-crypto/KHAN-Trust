@@ -1650,6 +1650,70 @@ main {
   color: var(--danger);
 }
 
+/* Phase 4 — peer/category percentile bar inside the Risk Summary card. */
+.peer-benchmark {
+  margin-top: 14px;
+}
+
+.peer-benchmark-track {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.peer-benchmark-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--gold);
+}
+
+.peer-benchmark-median-marker {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  width: 2px;
+  height: 12px;
+  background: var(--muted);
+}
+
+.peer-benchmark-label {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* Phase 3 — Watchlist risk-change alert strip under each watched card. */
+.watchlist-item {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.watchlist-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+}
+
+.watchlist-alert.high {
+  color: var(--danger);
+  background: rgba(255, 117, 110, 0.1);
+  border-color: rgba(255, 117, 110, 0.3);
+}
+
+.watchlist-alert.medium {
+  color: var(--warning);
+  background: rgba(247, 190, 82, 0.1);
+  border-color: rgba(247, 190, 82, 0.3);
+}
+
 .profile-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 330px;

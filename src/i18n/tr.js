@@ -60,6 +60,18 @@ export default {
     about: 'Hakkımızda',
     khan: '$KHAN',
   },
+  sidebar: {
+    dashboard: 'Pano',
+    explore: 'Keşfet',
+    watchlist: 'İzleme Listesi',
+    alerts: 'Uyarılar',
+    comparison: 'Karşılaştırma',
+    topProjects: 'En İyi Projeler',
+    categories: 'Kategoriler',
+    promoTitle: "KHAN Ekosistemine Katıl",
+    promoText: '$KHAN tutarak premium özelliklerin kilidini açın.',
+    promoCta: 'Daha Fazla Bilgi',
+  },
   header: {
     tagline: 'Hype\'tan önce güven',
     goHome: 'Ana sayfaya git',

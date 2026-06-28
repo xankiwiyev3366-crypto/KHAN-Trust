@@ -3457,7 +3457,7 @@ function App() {
         {page === 'pricing' && <PricingPage navigate={navigate} />}
         {page === 'whitepaper' && <WhitepaperPage navigate={navigate} />}
         {page === 'compare' && <ComparePage projects={projects} navigate={navigate} />}
-        {page === 'watchlist' && (
+        {(page === 'watchlist' || page === 'alerts') && (
           <WatchlistPage projects={projects} watchlist={watchlist} toggleWatch={toggleWatch} navigate={navigate} />
         )}
         {page.startsWith('report/') && reportProject && (
@@ -3598,17 +3598,33 @@ function isActive(page, id) {
 // through the same `navigate(target)` the top Header already uses, so
 // every existing page/route continues to work exactly as before; this is
 // a second way to reach them, not a replacement for the routing itself.
+// "Alerts" is a dedicated nav entry/route, but it renders the exact same
+// WatchlistPage and risk-change alerts (see detectRiskAlerts) rather than
+// duplicating that page - only the route id differs, so it can have its
+// own exact active state independent of "Watchlist" (see isSidebarActive).
 const SIDEBAR_ITEMS = [
-  { id: 'home', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'explore', label: 'Explore', icon: Layers3 },
-  { id: 'watchlist', label: 'Watchlist', icon: Eye },
-  { id: 'alerts', label: 'Alerts', icon: Bell, badgeFrom: 'alertCount' },
-  { id: 'compare', label: 'Comparison', icon: Scale },
-  { id: 'top-projects', label: 'Top Projects', icon: Trophy },
-  { id: 'categories', label: 'Categories', icon: Tags },
+  { id: 'home', labelKey: 'sidebar.dashboard', icon: LayoutDashboard },
+  { id: 'explore', labelKey: 'sidebar.explore', icon: Layers3 },
+  { id: 'watchlist', labelKey: 'sidebar.watchlist', icon: Eye },
+  { id: 'alerts', labelKey: 'sidebar.alerts', icon: Bell, badgeFrom: 'alertCount' },
+  { id: 'compare', labelKey: 'sidebar.comparison', icon: Scale },
+  { id: 'top-projects', labelKey: 'sidebar.topProjects', icon: Trophy },
+  { id: 'categories', labelKey: 'sidebar.categories', icon: Tags },
 ];
 
+// Exact route matching for the sidebar only - intentionally separate from
+// the top Header's isActive(), which also has to light up "Explore" while
+// viewing a project/report page. Sidebar items are one-to-one with routes,
+// so each one matches only its own page id (plus the explicit "/dashboard"
+// and "/comparison" aliases called out in the spec) - never two at once.
+function isSidebarActive(page, id) {
+  if (id === 'home') return page === 'home' || page === 'dashboard';
+  if (id === 'compare') return page === 'compare' || page === 'comparison';
+  return page === id;
+}
+
 function Sidebar({ page, navigate, alertCount }) {
+  const { t } = useTranslation();
   // No brand/logo here - the top Header already renders the one KHAN
   // Trust logo (sticky, full-width, visible at every breakpoint including
   // when this sidebar is hidden on tablet/mobile). Rendering a second one
@@ -3618,17 +3634,12 @@ function Sidebar({ page, navigate, alertCount }) {
       <nav className="sidebar-nav">
         {SIDEBAR_ITEMS.map((item) => {
           const Icon = item.icon;
-          // "Alerts" is a dedicated nav entry, but it surfaces the exact
-          // same risk-change alerts the Watchlist page already computes
-          // (see detectRiskAlerts) - it routes there rather than
-          // duplicating that page.
-          const target = item.id === 'alerts' ? 'watchlist' : item.id;
-          const active = item.id === 'alerts' ? page === 'watchlist' : isActive(page, item.id);
+          const active = isSidebarActive(page, item.id);
           const badge = item.badgeFrom === 'alertCount' ? alertCount : 0;
           return (
-            <button key={item.id} className={active ? 'active' : ''} onClick={() => navigate(target)}>
+            <button key={item.id} className={active ? 'active' : ''} onClick={() => navigate(item.id)}>
               <Icon size={18} />
-              <span>{item.label}</span>
+              <span>{t(item.labelKey)}</span>
               {badge > 0 && <span className="sidebar-badge">{badge}</span>}
             </button>
           );
@@ -3636,10 +3647,10 @@ function Sidebar({ page, navigate, alertCount }) {
       </nav>
       <div className="sidebar-promo">
         <Crown size={28} />
-        <strong>Join the KHAN Ecosystem</strong>
-        <p>Hold $KHAN and unlock premium features.</p>
+        <strong>{t('sidebar.promoTitle')}</strong>
+        <p>{t('sidebar.promoText')}</p>
         <button className="sidebar-promo-cta" onClick={() => navigate('khan')}>
-          Learn More <ArrowRight size={14} />
+          {t('sidebar.promoCta')} <ArrowRight size={14} />
         </button>
       </div>
     </aside>

@@ -62,6 +62,18 @@ export default {
     khan: '$KHAN',
     support: 'Support',
   },
+  sidebar: {
+    dashboard: 'Dashboard',
+    explore: 'Explore',
+    watchlist: 'Watchlist',
+    alerts: 'Alerts',
+    comparison: 'Comparison',
+    topProjects: 'Top Projects',
+    categories: 'Categories',
+    promoTitle: 'Join the KHAN Ecosystem',
+    promoText: 'Hold $KHAN and unlock premium features.',
+    promoCta: 'Learn More',
+  },
   header: {
     tagline: 'Trust before hype',
     goHome: 'Go to home',

@@ -60,6 +60,18 @@ export default {
     about: 'О нас',
     khan: '$KHAN',
   },
+  sidebar: {
+    dashboard: 'Дашборд',
+    explore: 'Обзор',
+    watchlist: 'Список наблюдения',
+    alerts: 'Оповещения',
+    comparison: 'Сравнение',
+    topProjects: 'Лучшие проекты',
+    categories: 'Категории',
+    promoTitle: 'Присоединяйтесь к экосистеме KHAN',
+    promoText: 'Держите $KHAN и открывайте премиум-функции.',
+    promoCta: 'Узнать больше',
+  },
   header: {
     tagline: 'Доверие важнее хайпа',
     goHome: 'На главную',

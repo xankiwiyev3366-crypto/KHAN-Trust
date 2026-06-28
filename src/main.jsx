@@ -80,6 +80,7 @@ import {
 } from 'lucide-react';
 import './styles.css';
 import { WHITEPAPER } from './whitepaperConfig.js';
+import { runRiskAnalysis } from './scoringEngine.js';
 import { I18nProvider, useTranslation } from './i18n/I18nContext.jsx';
 import { translate, getLanguage } from './i18n/index.js';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
@@ -602,15 +603,18 @@ function normalizeProject(input) {
   const authoritativeCommunitySize = liveScoringProject?.communitySize ?? communitySize;
   const score = calculateTrustScore(authoritativeProject, rawRealData);
   const breakdown = buildScoreBreakdown(authoritativeProject, authoritativeHolders, authoritativeCommunitySize, score);
+  const riskLevel = scoreToRisk(score);
+  const deepAnalysis = runRiskAnalysis(authoritativeProject, rawRealData || {}, breakdown, riskLevel);
 
   return {
     ...scoringProject,
     trustScore: score,
-    riskLevel: scoreToRisk(score),
+    riskLevel,
     scoreBreakdown: breakdown,
     categoryBreakdown: buildCategoryBreakdown(breakdown),
     scamRisk: calculateScamRisk(authoritativeProject, rawRealData || {}),
     riskFlags: deriveRiskFlags(authoritativeProject, authoritativeHolders, authoritativeCommunitySize),
+    ...deepAnalysis,
   };
 }
 
@@ -1325,6 +1329,7 @@ async function lookupSolanaTokenUncached(address) {
       freezeAuthorityEnabled,
       upgradeable: null,
       coingeckoListed,
+      coingeckoCategory: coingecko?.category || null,
       twitterFollowers: coingecko?.twitterFollowers ?? null,
       telegramUsers: coingecko?.telegramUsers ?? null,
       poolCount: dex?.poolCount || 0,
@@ -2919,6 +2924,11 @@ function buildPdfReportData(project = {}) {
     verificationStatus: translatedVerificationStatusLabel(project.verificationStatus),
     isVerified: normalizeVerificationStatus(project.verificationStatus) === VERIFICATION_STATUS.VERIFIED,
     confidenceLabel: confidence.label,
+    assetCategory: project.assetCategory || 'Other',
+    deepConfidenceScore: project.confidenceScore ?? null,
+    hiddenRiskSignals: project.hiddenRiskSignals || [],
+    positiveSignals: project.positiveSignals || [],
+    aiRiskSummary: project.aiRiskSummary || '',
     riskReasons: riskSignals(project).slice(0, 3),
     riskNotes: project.riskNotes,
     socialLinks: {
@@ -4663,6 +4673,7 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
           <TrustBreakdown project={project} />
           {project.realData && <RealDataSection project={project} data={project.realData} />}
           <ScamRiskCard project={project} />
+          <DeepRiskAnalysisCard project={project} />
           <RiskFlags flags={project.riskFlags} />
           <Timeline items={project.timeline} />
           <Roadmap phases={project.roadmap} />
@@ -5372,6 +5383,45 @@ function ScamRiskCard({ project }) {
         <p className="inline-note">{t('profileSections.scamRiskNone')}</p>
       )}
       <p className="inline-note scam-risk-coverage">{t('profileSections.scamRiskCoverage')}</p>
+    </section>
+  );
+}
+
+function DeepRiskAnalysisCard({ project }) {
+  const { t } = useTranslation();
+  if (!project.assetCategory) return null;
+  const confidenceTone = project.confidenceLabel === 'High' ? 'good' : project.confidenceLabel === 'Medium' ? 'medium' : 'limited';
+  return (
+    <section className="detail-section">
+      <SectionTitle icon={Layers3} eyebrow={t('profileSections.deepAnalysisEyebrow') || 'Deep Risk Analysis'} title={t('profileSections.deepAnalysisTitle') || 'Intelligent Risk Breakdown'} />
+      <div className="result-score-row">
+        <span className="status-badge">{project.assetCategory}</span>
+        <span className={`risk-pill ${confidenceTone}`}>{project.confidenceLabel} confidence ({project.confidenceScore}%)</span>
+      </div>
+      {project.aiRiskSummary && <p className="inline-note">{project.aiRiskSummary}</p>}
+      {project.positiveSignals?.length > 0 && (
+        <>
+          <h4>{t('profileSections.positiveSignalsTitle') || 'Positive Signals'}</h4>
+          <ul className="scam-risk-reasons">
+            {project.positiveSignals.map((signal) => (
+              <li key={signal}><CheckCircle2 size={14} /> {signal}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      {project.hiddenRiskSignals?.length > 0 && (
+        <>
+          <h4>{t('profileSections.hiddenRiskSignalsTitle') || 'Hidden Risk Signals'}</h4>
+          <ul className="scam-risk-reasons">
+            {project.hiddenRiskSignals.map((signal) => (
+              <li key={signal}><AlertTriangle size={14} /> {signal}</li>
+            ))}
+          </ul>
+        </>
+      )}
+      {project.missingDataFields?.length > 0 && (
+        <p className="inline-note">{t('profileSections.missingDataNote') || 'Missing data points'}: {project.missingDataFields.join(', ')}</p>
+      )}
     </section>
   );
 }

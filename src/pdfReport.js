@@ -269,6 +269,24 @@ export function generatePdfReport(data = {}) {
   } else {
     bodyText(labels.noBreakdown, { color: COLORS.muted });
   }
+  y += 4;
+
+  sectionTitle(labels.deepAnalysisTitle || 'Deep Risk Analysis');
+  keyValueRow(labels.assetCategory || 'Asset Category', data.assetCategory || 'N/A');
+  keyValueRow(labels.confidenceScoreNumeric || 'Data Confidence', data.deepConfidenceScore !== null && data.deepConfidenceScore !== undefined ? `${data.deepConfidenceScore}%` : 'N/A');
+  if (data.positiveSignals?.length) {
+    bodyText(labels.positiveSignalsTitle || 'Positive Signals:', { bold: true, size: 9 });
+    data.positiveSignals.forEach((signal) => bodyText(`+ ${signal}`, { size: 8.8, color: COLORS.success }));
+  }
+  if (data.hiddenRiskSignals?.length) {
+    bodyText(labels.hiddenRiskSignalsTitle || 'Hidden Risk Signals:', { bold: true, size: 9 });
+    data.hiddenRiskSignals.forEach((signal) => bodyText(`- ${signal}`, { size: 8.8, color: COLORS.muted }));
+  }
+  if (data.aiRiskSummary) {
+    y += 2;
+    bodyText(labels.aiSummaryTitle || 'AI Risk Summary:', { bold: true, size: 9 });
+    bodyText(data.aiRiskSummary, { size: 8.8, color: COLORS.muted });
+  }
 
   const pageCount = doc.getNumberOfPages();
   for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {

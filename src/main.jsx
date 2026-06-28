@@ -80,7 +80,7 @@ import {
 } from 'lucide-react';
 import './styles.css';
 import { WHITEPAPER } from './whitepaperConfig.js';
-import { runRiskAnalysis } from './scoringEngine.js';
+import { runRiskAnalysis, classifyAsset, applyAssetTypeRiskModifier } from './scoringEngine.js';
 import { I18nProvider, useTranslation } from './i18n/I18nContext.jsx';
 import { translate, getLanguage } from './i18n/index.js';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
@@ -630,10 +630,17 @@ function normalizeProject(input) {
   const authoritativeProject = liveScoringProject || scoringProject;
   const authoritativeHolders = liveScoringProject?.holders ?? holders;
   const authoritativeCommunitySize = liveScoringProject?.communitySize ?? communitySize;
-  const score = calculateTrustScore(authoritativeProject, rawRealData);
+  const rawScore = calculateTrustScore(authoritativeProject, rawRealData);
+  // Asset Type Risk Modifier: caps the raw, data-driven score by asset class
+  // so a high market cap / community size memecoin can never read as close
+  // to a major Layer 1 (BTC/ETH/SOL/BNB) — see scoringEngine.getAssetTypeRiskModifier.
+  const assetCategoryInfo = classifyAsset(authoritativeProject, rawRealData || {});
+  const assetTypeRiskModifier = applyAssetTypeRiskModifier(assetCategoryInfo.category, authoritativeProject, rawRealData || {}, rawScore);
+  const score = assetTypeRiskModifier.adjustedScore;
   const breakdown = buildScoreBreakdown(authoritativeProject, authoritativeHolders, authoritativeCommunitySize, score);
+  breakdown.finalTrustScore = score;
   const riskLevel = scoreToRisk(score);
-  const deepAnalysis = runRiskAnalysis(authoritativeProject, rawRealData || {}, breakdown, riskLevel);
+  const deepAnalysis = runRiskAnalysis(authoritativeProject, rawRealData || {}, breakdown, riskLevel, { rawScore, adjustedScore: score });
 
   return {
     ...scoringProject,

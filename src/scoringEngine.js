@@ -255,9 +255,114 @@ export function detectPositiveSignals(project = {}, data = {}, scores = {}) {
   return positives;
 }
 
-function buildRiskSummary({ category, riskLevel, hiddenRisks, positiveSignals, confidence }) {
+// Memecoins are inherently sentiment-driven instruments — even with strong
+// liquidity, age, and holder counts, they lack the underlying network
+// utility, developer activity, and adoption that justify a Layer 1-grade
+// score. This cap stops high market cap / high community size alone from
+// disguising that speculative risk, per the "no near-parity with BTC/ETH/SOL"
+// requirement.
+function isEstablishedMemecoin(data = {}) {
+  const age = Number(data.tokenAgeDays || 0);
+  const liquidity = Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0);
+  const marketCap = Number(data.marketCapUsd || 0);
+  const holders = Number(data.holderCount || 0);
+  return age >= 365 && liquidity >= 1_000_000 && marketCap >= 100_000_000 && holders >= 10_000;
+}
+
+const MAJOR_BLUE_CHIP_KEYWORDS = ['bitcoin', 'btc', 'ethereum', 'eth', 'solana', 'sol', 'bnb', 'binance coin'];
+
+function isMajorBlueChip(project = {}, data = {}) {
+  const text = `${(project.name || '').toLowerCase()} ${(project.ticker || '').toLowerCase()}`;
+  return MAJOR_BLUE_CHIP_KEYWORDS.some((k) => text === k || text.includes(` ${k}`) || text.startsWith(`${k} `) || text.includes(k)) &&
+    Number(data.marketCapUsd || 0) >= 5_000_000_000;
+}
+
+// The "Asset Type Risk Modifier" — caps the final Trust Score by asset
+// category so popularity/market cap alone can never make a speculative
+// asset (a memecoin) read as safe as infrastructure-grade assets (BTC, ETH,
+// SOL, BNB). This is the only place a category is allowed to put a ceiling
+// on the score; it never lowers a score below what the underlying data
+// already produced, it only prevents the score from exceeding what that
+// asset class can credibly earn.
+export function getAssetTypeRiskModifier(category, project = {}, data = {}) {
+  if (category === 'Meme Token') {
+    const established = isEstablishedMemecoin(data);
+    const cap = established ? 70 : 35;
+    return {
+      cap,
+      isSpeculative: true,
+      label: established ? 'Established memecoin' : 'New / unproven memecoin',
+      explanation: established
+        ? `This is a memecoin with no underlying network utility — it is driven by sentiment and community attention rather than infrastructure or adoption fundamentals. Despite strong liquidity, age, or holder count, the Trust Score is capped at ${cap}/100 because high market cap alone does not reduce its speculative risk.`
+        : `This is a memecoin with limited trading history, liquidity, or verified fundamentals. Speculative risk is severe, so the Trust Score is capped at ${cap}/100 regardless of market cap, volume, or community size.`,
+    };
+  }
+  if (category === 'Layer 1' && isMajorBlueChip(project, data)) {
+    return {
+      cap: 95,
+      isSpeculative: false,
+      label: 'Major Layer 1 infrastructure',
+      explanation: 'This is a major Layer 1 blockchain with established infrastructure, deep liquidity, sustained developer activity, and real long-term network utility — evaluated against infrastructure-grade criteria, not speculative-asset criteria.',
+    };
+  }
+  if (['Layer 1', 'Layer 2', 'Infrastructure'].includes(category)) {
+    return {
+      cap: 92,
+      isSpeculative: false,
+      label: 'Infrastructure asset',
+      explanation: `Classified as ${category} infrastructure. The score reflects network utility, developer activity, and adoption rather than hype-driven demand.`,
+    };
+  }
+  if (['DeFi', 'Utility Token', 'AI', 'RWA', 'Privacy', 'Exchange Token'].includes(category)) {
+    return {
+      cap: 85,
+      isSpeculative: false,
+      label: 'Utility / DeFi asset',
+      explanation: `Classified as a ${category} project with real protocol utility. It is capped below the major infrastructure tier because its adoption and longevity are comparatively less proven than a top Layer 1.`,
+    };
+  }
+  if (category === 'Stablecoin') {
+    return {
+      cap: 95,
+      isSpeculative: false,
+      label: 'Stablecoin',
+      explanation: 'Classified as a stablecoin; evaluated on peg stability, reserve transparency, and redemption mechanics rather than price-speculation risk.',
+    };
+  }
+  if (category === 'Gaming') {
+    return {
+      cap: 80,
+      isSpeculative: true,
+      label: 'Gaming / metaverse token',
+      explanation: 'Classified as a gaming/metaverse token. These projects mix real product development with significant speculative hype, so the score is capped below established infrastructure assets.',
+    };
+  }
+  return {
+    cap: 90,
+    isSpeculative: false,
+    label: category,
+    explanation: `Classified as ${category}. No asset-type ceiling beyond standard scoring applies, but the score is still capped below blue-chip Layer 1 infrastructure.`,
+  };
+}
+
+// Applies the cap above to an already-computed weighted score. Never raises
+// a score — only prevents it from exceeding what its asset class can
+// credibly support.
+export function applyAssetTypeRiskModifier(category, project, data, rawScore) {
+  const modifier = getAssetTypeRiskModifier(category, project, data);
+  const adjustedScore = clamp(Math.min(rawScore, modifier.cap), 5, 100);
+  return { ...modifier, adjustedScore, rawScore, capApplied: adjustedScore < rawScore };
+}
+
+function buildRiskSummary({ category, riskLevel, hiddenRisks, positiveSignals, confidence, assetTypeModifier }) {
   const parts = [];
   parts.push(`Classified as a ${category} asset with an overall ${riskLevel.toLowerCase()} risk rating.`);
+  if (assetTypeModifier?.explanation) {
+    parts.push(assetTypeModifier.explanation);
+    if (assetTypeModifier.capApplied) {
+      parts.push(`The raw data-driven score of ${assetTypeModifier.rawScore} was capped to ${assetTypeModifier.adjustedScore} to reflect this asset-type risk ceiling.`);
+    }
+  }
   if (positiveSignals.length) {
     parts.push(`Strengths: ${positiveSignals.slice(0, 3).join('; ')}.`);
   }
@@ -274,7 +379,7 @@ function buildRiskSummary({ category, riskLevel, hiddenRisks, positiveSignals, c
 // breakdown + riskLevel (from the existing, untouched engine) plus raw
 // project/data, and returns extra fields to merge into the normalized
 // project. Never mutates or recomputes trustScore/riskLevel itself.
-export function runRiskAnalysis(project = {}, data = {}, scoreBreakdown = {}, riskLevel = 'Medium') {
+export function runRiskAnalysis(project = {}, data = {}, scoreBreakdown = {}, riskLevel = 'Medium', scoreInfo = null) {
   const { category, confidence: categoryConfidence } = classifyAsset(project, data);
   const liquidityUsd = data.totalLiquidityUsd ?? data.liquidityUsd;
 
@@ -289,11 +394,15 @@ export function runRiskAnalysis(project = {}, data = {}, scoreBreakdown = {}, ri
   const confidence = computeConfidence(data);
   const hiddenRiskSignals = detectHiddenRisks(project, data, extraScores, manipulationFlags);
   const positiveSignals = detectPositiveSignals(project, data, extraScores);
-  const aiRiskSummary = buildRiskSummary({ category, riskLevel, hiddenRisks: hiddenRiskSignals, positiveSignals, confidence });
+  const assetTypeModifier = scoreInfo
+    ? applyAssetTypeRiskModifier(category, project, data, scoreInfo.rawScore)
+    : getAssetTypeRiskModifier(category, project, data);
+  const aiRiskSummary = buildRiskSummary({ category, riskLevel, hiddenRisks: hiddenRiskSignals, positiveSignals, confidence, assetTypeModifier });
 
   return {
     assetCategory: category,
     assetCategoryConfidence: categoryConfidence,
+    assetTypeRiskModifier: assetTypeModifier,
     confidenceScore: confidence.confidenceScore,
     confidenceLabel: confidence.label,
     missingDataFields: confidence.missingFields,

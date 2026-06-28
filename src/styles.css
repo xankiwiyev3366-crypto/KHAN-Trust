@@ -4854,3 +4854,773 @@ button:disabled {
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------------- */
+/* Density and responsive polish pass                                      */
+/* ---------------------------------------------------------------------- */
+
+body {
+  font-size: 15px;
+}
+
+p {
+  line-height: 1.55;
+}
+
+main {
+  width: min(1220px, calc(100% - 28px));
+}
+
+.app-shell {
+  padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+}
+
+.site-header {
+  gap: 10px;
+  padding: 12px clamp(16px, 3vw, 44px);
+}
+
+.site-header-top {
+  gap: 16px;
+}
+
+.brand {
+  gap: 10px;
+}
+
+.brand-mark {
+  width: 38px;
+  height: 38px;
+  font-size: 16px;
+}
+
+.brand strong {
+  font-size: 15px;
+}
+
+.brand small {
+  font-size: 11px;
+}
+
+.language-switcher-trigger,
+.wallet-connect-trigger {
+  height: 36px;
+  padding: 0 11px;
+  font-size: 12.5px;
+}
+
+.desktop-nav button {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.hero-section,
+.page-section,
+.profile-page,
+.content-band {
+  padding: 48px 0;
+}
+
+.hero-grid {
+  gap: 36px;
+  grid-template-columns: minmax(0, 1.08fr) minmax(310px, 0.66fr);
+}
+
+.eyebrow,
+.section-title span,
+.tiny-label {
+  gap: 6px;
+  font-size: 11px;
+}
+
+.hero-copy h1,
+.profile-title-row h1 {
+  font-size: 68px;
+  line-height: 0.96;
+}
+
+.hero-subtitle {
+  margin-top: 14px;
+  font-size: 29px;
+  line-height: 1.12;
+}
+
+.hero-explainer {
+  margin: 16px 0 20px;
+  font-size: 15px;
+}
+
+.signal-header h2,
+.section-title h2 {
+  font-size: 30px;
+  line-height: 1.08;
+}
+
+.section-title {
+  margin-bottom: 16px;
+}
+
+.search-box {
+  margin: 18px 0;
+  padding: 7px;
+}
+
+.search-box button,
+.primary-button,
+.secondary-button,
+.ghost-button,
+.card-button,
+.method-button,
+.close-button {
+  gap: 7px;
+  min-height: 38px;
+  font-size: 13.5px;
+}
+
+.search-box button,
+.primary-button,
+.secondary-button,
+.ghost-button,
+.method-button {
+  padding-left: 15px;
+  padding-right: 15px;
+}
+
+.hero-panel,
+.detail-section,
+.about-panel,
+.modal-panel,
+.profile-score-card,
+.empty-state,
+.token-check-card,
+.pricing-card,
+.payment-method-card,
+.one-time-offer,
+.compare-panel,
+.launchpad-wallet-card,
+.launchpad-success-card,
+.launchpad-preview {
+  padding: 18px;
+}
+
+.project-card {
+  min-height: 258px;
+  padding: 16px;
+}
+
+.project-grid {
+  gap: 12px;
+}
+
+.project-card h3 {
+  margin: 10px 0 3px;
+  font-size: 20px;
+}
+
+.card-meta {
+  padding-top: 14px;
+}
+
+.card-button {
+  margin-top: 12px;
+}
+
+.card-signal-strip {
+  margin-top: 10px;
+}
+
+.card-signal-strip span,
+.status-badge,
+.ticker-pill,
+.warning-badge,
+.risk-pill,
+.roadmap-status,
+.security-check,
+.network-badge {
+  font-size: 11.5px;
+}
+
+.status-badge,
+.risk-pill,
+.warning-badge,
+.roadmap-status {
+  padding: 6px 8px;
+}
+
+.score-circle {
+  width: 64px;
+  height: 64px;
+}
+
+.score-circle span {
+  font-size: 19px;
+}
+
+.score-circle.large {
+  width: 132px;
+  height: 132px;
+}
+
+.score-circle.large span {
+  font-size: 38px;
+}
+
+.radar-score {
+  margin: 18px 0;
+  padding: 14px;
+}
+
+.radar-score strong {
+  font-size: 25px;
+}
+
+.signal-list,
+.risk-reason-list,
+.risk-factor-grid,
+.breakdown-list,
+.proof-list,
+.roadmap-list,
+.real-data-grid {
+  gap: 9px;
+}
+
+.signal-row,
+.flow-step,
+.risk-factor-card,
+.risk-summary-item,
+.share-card,
+.info-item,
+.proof-item,
+.real-data-item,
+.roadmap-item,
+.market-metric,
+.pricing-note,
+.plain-explanation,
+.profile-only-notice,
+.launchpad-warning-box,
+.launchpad-inline-warning {
+  padding: 11px;
+}
+
+.flow-steps,
+.filter-row,
+.payment-methods,
+.compare-selectors,
+.compare-grid,
+.analytics-stat-grid,
+.skeleton-stat-grid,
+.contact-grid,
+.whitepaper-topic-grid {
+  gap: 12px;
+}
+
+.flow-steps,
+.filter-row,
+.pricing-features,
+.payment-methods,
+.compare-selectors,
+.compare-grid,
+.analytics-stat-grid,
+.whitepaper-meta-row {
+  margin-top: 14px;
+  margin-bottom: 16px;
+}
+
+.profile-hero {
+  padding: 24px;
+}
+
+.profile-layout,
+.main-column,
+.side-column,
+.check-token-grid,
+.report-layout,
+.launchpad-layout {
+  gap: 16px;
+}
+
+.profile-score-card {
+  min-width: 210px;
+}
+
+.result-score-row {
+  margin-bottom: 12px;
+  padding: 12px;
+}
+
+.result-score-row strong {
+  font-size: 27px;
+}
+
+.report-hero {
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.report-hero h1 {
+  margin: 9px 0 4px;
+  font-size: 54px;
+  line-height: 1;
+}
+
+.report-metrics div,
+.risk-reason,
+.premium-feature,
+.ecosystem-card,
+.foundation-grid > div,
+.launchpad-payment-grid > div,
+.category-card,
+.analytics-stat-card,
+.contact-card,
+.whitepaper-topic-card,
+.my-ticket-card,
+.saved-reports-panel,
+.admin-request-card {
+  padding: 14px;
+}
+
+.report-metrics strong,
+.category-card strong,
+.launchpad-payment-grid strong {
+  font-size: 23px;
+}
+
+.risk-reason strong,
+.risk-summary-item strong,
+.ecosystem-card strong,
+.launchpad-payment-grid strong {
+  font-size: 18px;
+}
+
+.one-time-offer h3,
+.pricing-card h3,
+.payment-method-card h3,
+.compare-panel h3,
+.about-panel h3 {
+  font-size: 24px;
+}
+
+.pricing-card {
+  min-height: 320px;
+}
+
+.premium-value-strip {
+  margin-top: 14px;
+}
+
+.premium-value-strip span,
+.compare-metrics span,
+.crypto-price-grid span,
+.foundation-list span {
+  padding: 7px 9px;
+  font-size: 13px;
+}
+
+.launchpad-page {
+  gap: 16px;
+}
+
+.launchpad-card,
+.launchpad-network-panel,
+.launchpad-payment-panel,
+.launchpad-form {
+  padding: 16px;
+}
+
+.launchpad-card h3,
+.preview-token-top h3 {
+  font-size: 21px;
+}
+
+.preview-token-top img,
+.preview-logo-placeholder {
+  width: 58px;
+  height: 58px;
+}
+
+.form-field {
+  gap: 6px;
+}
+
+.form-field span {
+  font-size: 13px;
+}
+
+.form-field input,
+.form-field select,
+.form-field textarea,
+.currency-select-trigger {
+  min-height: 42px;
+  padding: 10px 11px;
+  font-size: 14px;
+}
+
+.form-field textarea {
+  min-height: 104px;
+}
+
+.add-form,
+.support-form-grid {
+  gap: 12px;
+}
+
+.section-subtitle {
+  margin-bottom: 16px;
+  font-size: 15px;
+}
+
+.modal-backdrop {
+  padding: 14px;
+}
+
+.modal-panel {
+  max-height: calc(100vh - 28px);
+}
+
+.empty-state {
+  padding: 28px;
+}
+
+.site-footer {
+  padding: 32px clamp(16px, 3vw, 44px) calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+.footer-grid {
+  gap: 22px;
+}
+
+.footer-bottom {
+  margin-top: 22px;
+  padding-top: 16px;
+}
+
+.analytics-section {
+  margin-top: 18px;
+}
+
+.analytics-stat-card {
+  gap: 7px;
+}
+
+.analytics-stat-card strong {
+  font-size: 24px;
+}
+
+.analytics-table {
+  font-size: 13px;
+}
+
+.analytics-table th,
+.analytics-table td {
+  padding: 10px 12px;
+}
+
+.whitepaper-preview-card {
+  gap: 18px;
+  padding: 22px;
+}
+
+.whitepaper-preview-icon {
+  width: 72px;
+  height: 72px;
+}
+
+.app-sidebar {
+  width: 244px;
+  flex-basis: 244px;
+  gap: 18px;
+  padding: 18px 14px;
+}
+
+.sidebar-nav button {
+  min-height: 38px;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.sidebar-promo {
+  padding: 14px;
+}
+
+.contract-security-row {
+  margin-top: 14px;
+  padding: 14px 18px;
+}
+
+.categories-browse-grid {
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.categories-browse-card {
+  padding: 15px;
+}
+
+@media (max-width: 1180px) {
+  .project-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1020px) {
+  body {
+    font-size: 14.5px;
+  }
+
+  main {
+    width: min(100% - 26px, 1180px);
+  }
+
+  .hero-section,
+  .page-section,
+  .profile-page,
+  .content-band {
+    padding: 38px 0;
+  }
+
+  .hero-grid {
+    gap: 24px;
+    grid-template-columns: 1fr;
+  }
+
+  .profile-layout,
+  .check-token-grid,
+  .report-layout,
+  .launchpad-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-copy h1,
+  .profile-title-row h1 {
+    font-size: 56px;
+  }
+
+  .hero-subtitle {
+    font-size: 25px;
+  }
+
+  .signal-header h2,
+  .section-title h2 {
+    font-size: 27px;
+  }
+
+  .project-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 741px) and (max-width: 1020px) {
+  .desktop-nav {
+    flex-wrap: wrap;
+    overflow: visible;
+    row-gap: 5px;
+  }
+
+  .desktop-nav button {
+    min-height: 34px;
+    padding: 7px 9px;
+    font-size: 12.5px;
+  }
+}
+
+@media (max-width: 740px) {
+  .app-shell {
+    padding-bottom: calc(98px + env(safe-area-inset-bottom, 0px));
+  }
+
+  main {
+    width: min(100% - 22px, 1180px);
+  }
+
+  .site-header {
+    padding: 10px 14px;
+  }
+
+  .hero-section,
+  .page-section,
+  .profile-page,
+  .content-band {
+    padding: 28px 0;
+  }
+
+  .hero-copy h1,
+  .profile-title-row h1 {
+    font-size: 42px;
+    line-height: 1;
+  }
+
+  .hero-subtitle {
+    font-size: 21px;
+  }
+
+  .hero-explainer {
+    margin: 14px 0 18px;
+  }
+
+  .signal-header h2,
+  .section-title h2 {
+    font-size: 24px;
+  }
+
+  .report-hero h1 {
+    font-size: 38px;
+  }
+
+  .hero-panel,
+  .detail-section,
+  .about-panel,
+  .modal-panel,
+  .profile-score-card,
+  .token-check-card,
+  .pricing-card,
+  .payment-method-card,
+  .one-time-offer,
+  .compare-panel,
+  .launchpad-wallet-card,
+  .launchpad-success-card,
+  .launchpad-preview,
+  .whitepaper-preview-card {
+    padding: 15px;
+  }
+
+  .project-card {
+    min-height: 0;
+    padding: 14px;
+  }
+
+  .search-box button,
+  .primary-button,
+  .secondary-button,
+  .ghost-button,
+  .card-button,
+  .method-button,
+  .close-button {
+    min-height: 42px;
+  }
+
+  .form-field input,
+  .form-field select,
+  .form-field textarea,
+  .currency-select-trigger {
+    min-height: 44px;
+  }
+
+  .mobile-nav {
+    left: max(8px, env(safe-area-inset-left, 0px));
+    right: max(8px, env(safe-area-inset-right, 0px));
+    bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    grid-auto-columns: minmax(58px, 1fr);
+    padding: 5px;
+  }
+
+  .mobile-nav button {
+    min-height: 44px;
+    padding: 3px 4px;
+  }
+
+  .mobile-nav span {
+    font-size: 9.5px;
+  }
+
+  .score-circle.large {
+    width: 118px;
+    height: 118px;
+  }
+
+  .score-circle.large span {
+    font-size: 34px;
+  }
+
+  .analytics-table-card,
+  .support-inbox-table {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  body {
+    font-size: 14px;
+  }
+
+  main {
+    width: min(100% - 20px, 1180px);
+  }
+
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+    font-size: 15px;
+  }
+
+  .brand strong {
+    font-size: 14px;
+  }
+
+  .language-switcher-trigger,
+  .wallet-connect-trigger {
+    height: 34px;
+  }
+
+  .hero-section,
+  .page-section,
+  .profile-page,
+  .content-band {
+    padding: 24px 0;
+  }
+
+  .hero-copy h1,
+  .profile-title-row h1 {
+    font-size: 37px;
+  }
+
+  .hero-subtitle {
+    font-size: 19px;
+  }
+
+  .report-hero h1 {
+    font-size: 34px;
+  }
+
+  .signal-header h2,
+  .section-title h2 {
+    font-size: 22px;
+  }
+
+  .one-time-offer h3,
+  .pricing-card h3,
+  .payment-method-card h3,
+  .compare-panel h3,
+  .about-panel h3 {
+    font-size: 21px;
+  }
+
+  .hero-panel,
+  .detail-section,
+  .about-panel,
+  .modal-panel,
+  .profile-score-card,
+  .token-check-card,
+  .pricing-card,
+  .payment-method-card,
+  .one-time-offer,
+  .compare-panel,
+  .launchpad-wallet-card,
+  .launchpad-success-card,
+  .launchpad-preview,
+  .whitepaper-preview-card {
+    padding: 14px;
+  }
+
+  .search-box {
+    margin: 16px 0;
+  }
+
+  .project-grid,
+  .categories-browse-grid {
+    gap: 10px;
+  }
+
+  .mobile-nav {
+    grid-auto-columns: minmax(54px, 1fr);
+  }
+}

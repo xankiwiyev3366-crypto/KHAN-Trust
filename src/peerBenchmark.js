@@ -3,6 +3,8 @@
 // category (see classifyAsset in scoringEngine.js). Pure and synchronous -
 // computed only from scores already held in memory (the app's existing
 // `projects` list), no new data source or network call.
+import { translate as t } from './i18n/index.js';
+
 const MIN_PEER_COUNT = 4;
 
 export function computePeerBenchmark(project, allProjects = []) {
@@ -23,22 +25,26 @@ export function computePeerBenchmark(project, allProjects = []) {
   return { category, percentile, peerCount: scores.length, median: Math.round(median), comparison };
 }
 
-const CATEGORY_PEER_LABEL = {
-  'Meme Token': 'memecoins',
-  Stablecoin: 'stablecoins',
-  'Layer 1': 'Layer 1 projects',
-  'Layer 2': 'Layer 2 projects',
-  DeFi: 'DeFi projects',
-  Infrastructure: 'infrastructure projects',
-  Gaming: 'gaming tokens',
-  AI: 'AI tokens',
-  'Exchange Token': 'exchange tokens',
-  RWA: 'RWA projects',
-  Privacy: 'privacy coins',
-  'Utility Token': 'utility tokens',
-  Other: 'tracked tokens',
+// Category string (from classifyAsset) -> translation key suffix under
+// `peerCategories` (see i18n/en.js and its az/tr/ru mirrors). This map is
+// just identifiers, not display text - the actual words come from the
+// dictionaries so this label is fully localized.
+const CATEGORY_KEY = {
+  'Meme Token': 'memeToken',
+  Stablecoin: 'stablecoin',
+  'Layer 1': 'layer1',
+  'Layer 2': 'layer2',
+  DeFi: 'defi',
+  Infrastructure: 'infrastructure',
+  Gaming: 'gaming',
+  AI: 'ai',
+  'Exchange Token': 'exchangeToken',
+  RWA: 'rwa',
+  Privacy: 'privacy',
+  'Utility Token': 'utilityToken',
+  Other: 'other',
 };
 
 export function peerLabelFor(category) {
-  return CATEGORY_PEER_LABEL[category] || 'tracked tokens';
+  return t(`peerCategories.${CATEGORY_KEY[category] || 'other'}`);
 }

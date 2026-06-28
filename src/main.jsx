@@ -3751,10 +3751,15 @@ function ExplorePage({ projects, query, setQuery, searchState, onSearch, onSelec
 // history compared day-over-day, see riskAlerts.js) under each watched
 // token - no separate "alerts" surface to maintain.
 function WatchlistPage({ projects, watchlist, toggleWatch, navigate }) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const watchedProjects = projects.filter((project) => watchlist.includes(project.id));
   const [alertsByProjectId, setAlertsByProjectId] = useState({});
 
+  // Re-runs on language change too, not just when the watchlist itself
+  // changes - detectRiskAlerts() renders its message text at the moment it
+  // runs (see riskAlerts.js), so a stale cached alert would otherwise keep
+  // showing the language it was first fetched in until the watchlist itself
+  // changed again.
   useEffect(() => {
     let cancelled = false;
     Promise.all(
@@ -3770,7 +3775,7 @@ function WatchlistPage({ projects, watchlist, toggleWatch, navigate }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watchlist.join(',')]);
+  }, [watchlist.join(','), language]);
 
   return (
     <section className="page-section">

@@ -5,6 +5,12 @@
 // asset-type risk modifier, Phase 1's score history, and Phase 4's peer
 // benchmark), so nothing here can say anything the underlying data doesn't
 // actually support.
+//
+// All templates are translated (see i18n/en.js `askKhan.answers` and its
+// az/tr/ru mirrors) via the standalone `translate()` mirror - the same
+// pattern the rest of the app uses for plain (non-component) modules - so
+// this module never needs `t` threaded through it from a component.
+import { translate as t } from './i18n/index.js';
 import { computeScoreDelta } from './scoreHistory.js';
 import { peerLabelFor } from './peerBenchmark.js';
 
@@ -18,49 +24,62 @@ function whyRisky(project) {
   if (modifier?.explanation) parts.push(modifier.explanation);
   const risks = project.hiddenRiskSignals || [];
   if (risks.length) {
-    parts.push(`The main concerns right now: ${joinSignals(risks, 3)}.`);
+    parts.push(t('askKhan.answers.whyRiskyConcerns', { signals: joinSignals(risks, 3) }));
   } else {
-    parts.push('No major hidden risk patterns were detected in the available data.');
+    parts.push(t('askKhan.answers.whyRiskyNoConcerns'));
   }
   const positives = project.positiveSignals || [];
   if (positives.length) {
-    parts.push(`On the positive side: ${joinSignals(positives, 2)}.`);
+    parts.push(t('askKhan.answers.whyRiskyPositives', { signals: joinSignals(positives, 2) }));
   }
-  parts.push(`This puts it at a ${(project.riskLevel || 'medium').toLowerCase()} risk rating with ${(project.confidenceLabel || 'medium').toLowerCase()} confidence in the data behind it.`);
+  parts.push(t('askKhan.answers.whyRiskySummary', {
+    riskLevel: t(`common.${(project.riskLevel || 'medium').toLowerCase()}`),
+    confidence: t(`common.${(project.confidenceLabel || 'medium').toLowerCase()}`),
+  }));
   return parts.join(' ');
 }
 
 function whatChanged(project, history) {
   const delta = computeScoreDelta(history, project.trustScore);
   if (!delta) {
-    return "There isn't enough tracked history yet to show a trend for this token - check back in a few days as KHAN Trust keeps watching it.";
+    return t('askKhan.answers.notEnoughHistory');
   }
-  const direction = delta.delta > 0 ? 'improved' : delta.delta < 0 ? 'declined' : 'held steady';
-  const periodLabel = delta.label === 'thisWeek' ? 'over the past week' : 'since it was first scanned';
-  const driver = delta.delta < 0
-    ? (project.hiddenRiskSignals?.[0] || 'increased risk signals in the underlying data')
-    : (project.positiveSignals?.[0] || 'stable or improving fundamentals in the underlying data');
-  return `The Trust Score has ${direction} by ${Math.abs(delta.delta)} point(s) ${periodLabel}, now at ${project.trustScore}/100. The main driver: ${driver}.`;
+  const direction = delta.delta > 0 ? 'improved' : delta.delta < 0 ? 'declined' : 'steady';
+  const period = delta.label === 'thisWeek' ? 'thisWeek' : 'sinceLaunch';
+  const driverFallbackKey = delta.delta < 0 ? 'driverRiskFallback' : 'driverPositiveFallback';
+  const driver = (delta.delta < 0 ? project.hiddenRiskSignals?.[0] : project.positiveSignals?.[0])
+    || t(`askKhan.answers.${driverFallbackKey}`);
+  return t('askKhan.answers.whatChangedSummary', {
+    direction: t(`askKhan.answers.direction.${direction}`),
+    points: Math.abs(delta.delta),
+    period: t(`askKhan.answers.period.${period}`),
+    score: project.trustScore,
+    driver,
+  });
 }
 
 function howCompare(project, peerBenchmark) {
   if (peerBenchmark) {
     const { comparison, peerCount, category } = peerBenchmark;
-    const modifierNote = project.assetTypeRiskModifier?.explanation || '';
-    return `Against ${peerCount} other tracked ${peerLabelFor(category)}, this token ranks ${comparison} the median Trust Score. ${modifierNote}`.trim();
+    return t('askKhan.answers.compareWithPeers', {
+      peerCount,
+      category: peerLabelFor(category),
+      comparison: t(`riskSummary.peerComparison.${comparison}`),
+      modifierNote: project.assetTypeRiskModifier?.explanation || '',
+    }).trim();
   }
   if (project.assetTypeRiskModifier?.explanation) {
-    return `${project.assetTypeRiskModifier.explanation} Not enough peer data is tracked yet for a direct ranking.`;
+    return t('askKhan.answers.compareNoPeersWithModifier', { explanation: project.assetTypeRiskModifier.explanation });
   }
-  return 'Not enough peer data is tracked yet to rank this token against similar assets.';
+  return t('askKhan.answers.compareNoPeers');
 }
 
 function whatToWatch(project) {
   const risks = project.hiddenRiskSignals || [];
   if (risks.length) {
-    return `Keep an eye on: ${joinSignals(risks, 3)}. Add this token to your Watchlist to get notified here in KHAN Trust if any of these get meaningfully worse.`;
+    return t('askKhan.answers.watchWithRisks', { signals: joinSignals(risks, 3) });
   }
-  return 'No specific red flags stand out right now, but liquidity and holder concentration can change quickly. Add this token to your Watchlist to get notified if that happens.';
+  return t('askKhan.answers.watchNoRisks');
 }
 
 export const ANALYST_QUESTIONS = [

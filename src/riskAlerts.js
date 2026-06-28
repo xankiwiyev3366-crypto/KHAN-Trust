@@ -3,7 +3,10 @@
 // scoreHistory.js / Phase 1). Purely a read of already-stored data - no
 // extra network calls beyond fetching that history, and no thresholds tuned
 // to be alarming, just the same plain-language voice as the rest of the
-// analyst layer.
+// analyst layer. Messages are translated via the standalone `translate()`
+// mirror (see i18n/en.js `watchlist.alerts` and its az/tr/ru mirrors).
+import { translate as t } from './i18n/index.js';
+
 const SCORE_DROP_THRESHOLD = 8;
 const HOLDER_CONCENTRATION_INCREASE_THRESHOLD = 5; // percentage points
 const LIQUIDITY_DROP_RATIO_THRESHOLD = 0.25; // 25% drop
@@ -20,7 +23,7 @@ export function detectRiskAlerts(history) {
     alerts.push({
       type: 'score_drop',
       severity: 'high',
-      message: `Trust Score dropped ${scoreDrop} points (from ${previous.score} to ${latest.score}) since the last check.`,
+      message: t('watchlist.alerts.scoreDrop', { points: scoreDrop, previous: previous.score, latest: latest.score }),
     });
   }
 
@@ -30,7 +33,7 @@ export function detectRiskAlerts(history) {
       alerts.push({
         type: 'holder_concentration',
         severity: 'medium',
-        message: `The largest holder's share of supply grew by ${increase.toFixed(1)} percentage points - concentration risk is increasing.`,
+        message: t('watchlist.alerts.holderConcentration', { points: increase.toFixed(1) }),
       });
     }
   }
@@ -41,7 +44,7 @@ export function detectRiskAlerts(history) {
       alerts.push({
         type: 'liquidity_drop',
         severity: 'high',
-        message: `Public liquidity fell by ${Math.round(Math.abs(ratio) * 100)}% since the last check - exits could move the price more than before.`,
+        message: t('watchlist.alerts.liquidityDrop', { percent: Math.round(Math.abs(ratio) * 100) }),
       });
     }
   }

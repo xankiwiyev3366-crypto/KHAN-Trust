@@ -202,6 +202,20 @@ const JUPITER_TOKEN_SEARCH_URL = 'https://lite-api.jup.ag/tokens/v2/search';
 // hasn't indexed yet. Both are read-only public endpoints with no API key.
 const COINGECKO_API_BASE = 'https://api.coingecko.com/api/v3';
 const GECKOTERMINAL_API_BASE = 'https://api.geckoterminal.com/api/v2';
+// GoPlus Security - free, no-key public token-security API. Used only as a
+// fallback for holder count / concentration when our existing sources
+// (Solana RPC scan, Jupiter index, EVM block explorers) have nothing, so it
+// never overrides a real on-chain/indexed measurement that's already present.
+const GOPLUS_API_BASE = 'https://api.gopluslabs.io/api/v1';
+const GOPLUS_EVM_CHAIN_IDS = {
+  ethereum: '1',
+  bsc: '56',
+  polygon: '137',
+  base: '8453',
+  arbitrum: '42161',
+  avalanche: '43114',
+  optimism: '10',
+};
 const CHAIN_LABELS = {
   solana: 'Solana',
   ethereum: 'Ethereum',
@@ -259,6 +273,21 @@ const NATIVE_ASSET_COINGECKO_IDS = {
   TRX: 'tron',
   ADA: 'cardano',
   DOT: 'polkadot',
+};
+
+// A native chain coin (ETH, BNB, SOL, AVAX, SUI) has no contract of its own,
+// but it does trade on its own chain's DEXs via a canonical 1:1 wrapped/native
+// representation - WETH, WBNB, wSOL, WAVAX, and Sui's own native coin type
+// are the SAME asset for liquidity purposes, not an estimate or a different
+// token. Used only to source real DEX liquidity depth for the native asset;
+// never used for holder count/concentration, since wrapped-token holders are
+// a small DeFi subset and would misrepresent true native-asset distribution.
+const NATIVE_LIQUIDITY_PROXY = {
+  ethereum: { chainId: 'ethereum', address: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2' },
+  binancecoin: { chainId: 'bsc', address: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c' },
+  solana: { chainId: 'solana', address: 'So11111111111111111111111111111111111111112' },
+  'avalanche-2': { chainId: 'avalanche', address: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7' },
+  sui: { chainId: 'sui', address: '0x2::sui::SUI' },
 };
 
 // Block-explorer "contract creation timestamp" + "is proxy/upgradeable"
@@ -1205,7 +1234,7 @@ async function lookupSolanaToken(contractAddress) {
 }
 
 async function lookupSolanaTokenUncached(address) {
-  const [dexData, rpcData, holderAnalyticsData, jupiterData, mintInfoData, mintCreationData, coingeckoData, geckoTerminalData] = await Promise.allSettled([
+  const [dexData, rpcData, holderAnalyticsData, jupiterData, mintInfoData, mintCreationData, coingeckoData, geckoTerminalData, goPlusData] = await Promise.allSettled([
     fetchDexscreenerToken(address),
     fetchSolanaRpcToken(address),
     fetchSolanaHolderAnalytics(address),
@@ -1214,6 +1243,7 @@ async function lookupSolanaTokenUncached(address) {
     fetchMintCreationTimestamp(address),
     fetchCoinGeckoTokenData('solana', address),
     fetchGeckoTerminalToken('solana', address),
+    fetchGoPlusSolanaTokenSecurity(address),
   ]);
 
   const dex = dexData.status === 'fulfilled' ? dexData.value : null;
@@ -1224,6 +1254,7 @@ async function lookupSolanaTokenUncached(address) {
   const mintCreatedAt = mintCreationData.status === 'fulfilled' ? mintCreationData.value : null;
   const coingecko = coingeckoData.status === 'fulfilled' ? coingeckoData.value : null;
   const geckoTerminal = geckoTerminalData.status === 'fulfilled' ? geckoTerminalData.value : null;
+  const goPlus = goPlusData.status === 'fulfilled' ? goPlusData.value : null;
 
   if (!dex?.primaryPair && !rpc && !jupiter && !coingecko && !geckoTerminal) {
     throw new Error('No public Solana token data was found for this address.');
@@ -1252,8 +1283,9 @@ async function lookupSolanaTokenUncached(address) {
   const tokenAgeSource = coingecko?.genesisDate ? 'CoinGecko genesis date' : (mintCreatedAt ? 'Solana mint genesis transaction' : null);
   const tokenAgeDays = createdAt ? daysSince(createdAt) : null;
   // Real indexed/on-chain holder counts only. getTokenLargestAccounts (rpc)
-  // never contributes here - it only returns the top 20 accounts.
-  const holderCount = holderAnalytics?.holderCount ?? jupiter?.holderCount ?? null;
+  // never contributes here - it only returns the top 20 accounts. GoPlus is
+  // a last-resort fallback, only used when RPC and Jupiter both have nothing.
+  const holderCount = holderAnalytics?.holderCount ?? jupiter?.holderCount ?? goPlus?.holderCount ?? null;
   const liquidityUsd = Number(dex?.primaryPair?.liquidity?.usd || 0);
   const totalLiquidityUsd = Number(dex?.totalLiquidityUsd || liquidityUsd || jupiter?.liquidity || 0);
   const realMarketCapUsd = Number(coingecko?.realMarketCapUsd || dex?.primaryPair?.marketCap || jupiter?.mcap || geckoTerminal?.marketCapUsd || 0);
@@ -1273,6 +1305,7 @@ async function lookupSolanaTokenUncached(address) {
     'Solana RPC',
     'Jupiter token index',
     coingecko ? 'CoinGecko' : null,
+    (!holderAnalytics && goPlus) ? 'GoPlus Security' : null,
   ].filter(Boolean).join(' + ');
 
   return {
@@ -1297,7 +1330,7 @@ async function lookupSolanaTokenUncached(address) {
     riskNotes: buildRealDataRiskNotes({ liquidityUsd, holderCount, tokenAgeDays, mintAuthorityEnabled, freezeAuthorityEnabled }),
     realData: {
       source: sources,
-      holderSource: holderAnalytics?.source || (jupiter?.holderCount ? 'Jupiter indexed Solana holder count' : null),
+      holderSource: holderAnalytics?.source || (jupiter?.holderCount ? 'Jupiter indexed Solana holder count' : null) || goPlus?.source || null,
       liquidityUsd,
       totalLiquidityUsd,
       marketCapUsd,
@@ -1305,8 +1338,8 @@ async function lookupSolanaTokenUncached(address) {
       tokenAgeDays,
       tokenAgeSource,
       holderCount,
-      topHolderPercent: holderAnalytics?.topHolderPercent ?? rpc?.topHolderPercent ?? null,
-      topTenHolderPercent: holderAnalytics?.topTenHolderPercent ?? rpc?.topTenHolderPercent ?? jupiter?.topHoldersPercentage ?? null,
+      topHolderPercent: holderAnalytics?.topHolderPercent ?? rpc?.topHolderPercent ?? goPlus?.topHolderPercent ?? null,
+      topTenHolderPercent: holderAnalytics?.topTenHolderPercent ?? rpc?.topTenHolderPercent ?? jupiter?.topHoldersPercentage ?? goPlus?.topTenHolderPercent ?? null,
       holderGrowthPercent: jupiter?.holderGrowthPercent ?? null,
       supply: rpc?.supply || jupiter?.totalSupply || geckoTerminal?.totalSupply || coingecko?.circulatingSupply || null,
       maxSupply: coingecko?.maxSupply ?? null,
@@ -1447,18 +1480,20 @@ async function lookupGenericChainToken(chainId, address) {
 }
 
 async function lookupGenericChainTokenUncached(chainId, address) {
-  const [dexResult, coingeckoResult, geckoTerminalResult, explorerCreationResult, explorerFlagsResult] = await Promise.allSettled([
+  const [dexResult, coingeckoResult, geckoTerminalResult, explorerCreationResult, explorerFlagsResult, goPlusResult] = await Promise.allSettled([
     fetchDexscreenerToken(address, chainId),
     fetchCoinGeckoTokenData(chainId, address),
     fetchGeckoTerminalToken(chainId, address),
     fetchExplorerContractCreation(chainId, address),
     fetchExplorerContractFlags(chainId, address),
+    fetchGoPlusEvmTokenSecurity(chainId, address),
   ]);
   const dex = dexResult.status === 'fulfilled' ? dexResult.value : null;
   const coingecko = coingeckoResult.status === 'fulfilled' ? coingeckoResult.value : null;
   const geckoTerminal = geckoTerminalResult.status === 'fulfilled' ? geckoTerminalResult.value : null;
   const explorerCreatedAt = explorerCreationResult.status === 'fulfilled' ? explorerCreationResult.value : null;
   const explorerFlags = explorerFlagsResult.status === 'fulfilled' ? explorerFlagsResult.value : null;
+  const goPlus = goPlusResult.status === 'fulfilled' ? goPlusResult.value : null;
 
   if (!dex?.primaryPair && !coingecko && !geckoTerminal) {
     throw new Error('No public token data was found for this address.');
@@ -1501,6 +1536,7 @@ async function lookupGenericChainTokenUncached(chainId, address) {
     geckoTerminal ? 'GeckoTerminal' : null,
     coingecko ? 'CoinGecko' : null,
     explorerCreatedAt || explorerFlags ? `${chainLabel} block explorer` : null,
+    goPlus ? 'GoPlus Security' : null,
   ].filter(Boolean).join(' + ') || 'No public data source available';
 
   return {
@@ -1520,26 +1556,26 @@ async function lookupGenericChainTokenUncached(chainId, address) {
       : `${chainLabel} token profile enriched with public market signals.`),
     status: 'Live market data',
     lastUpdate: new Date().toISOString().slice(0, 10),
-    holderCount: 0,
-    communitySize: 0,
+    holderCount: goPlus?.holderCount || 0,
+    communitySize: goPlus?.holderCount || 0,
     riskNotes: buildRealDataRiskNotes({
       liquidityUsd,
-      holderCount: null,
+      holderCount: goPlus?.holderCount ?? null,
       tokenAgeDays,
       upgradeable: explorerFlags?.upgradeable ?? null,
     }),
     realData: {
       source: sources,
-      holderSource: null,
+      holderSource: goPlus?.source ?? null,
       liquidityUsd,
       totalLiquidityUsd,
       marketCapUsd,
       marketCapIsFdv,
       tokenAgeDays,
       tokenAgeSource,
-      holderCount: null,
-      topHolderPercent: null,
-      topTenHolderPercent: null,
+      holderCount: goPlus?.holderCount ?? null,
+      topHolderPercent: goPlus?.topHolderPercent ?? null,
+      topTenHolderPercent: goPlus?.topTenHolderPercent ?? null,
       holderGrowthPercent: null,
       supply: geckoTerminal?.totalSupply || coingecko?.circulatingSupply || null,
       maxSupply: coingecko?.maxSupply ?? null,
@@ -1605,15 +1641,27 @@ async function lookupTokenMatch(match) {
 }
 
 // Native chain coins (BTC, ETH, BNB, SOL, ...) have no contract to look up -
-// the only real source is CoinGecko's coin detail by id. No holder count,
-// mint authority, or liquidity concept applies to a chain's own native
-// asset, so those fields stay null/unknown rather than being guessed.
+// the only real source is CoinGecko's coin detail by id. Holder count and
+// holder concentration genuinely don't apply to a chain's own native asset
+// (no reliable public source measures "native asset holder distribution"),
+// so those stay null/unknown rather than being guessed. Liquidity, however,
+// IS real and obtainable for assets that trade on their own chain via a
+// canonical 1:1 wrapped/native representation (see NATIVE_LIQUIDITY_PROXY) -
+// that's the same asset's real DEX liquidity, not an estimate.
 async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel) {
-  const detail = await fetchCoinGeckoCoinDetail(coingeckoId);
+  const liquidityProxy = NATIVE_LIQUIDITY_PROXY[coingeckoId];
+  const [detailResult, proxyDexResult] = await Promise.allSettled([
+    fetchCoinGeckoCoinDetail(coingeckoId),
+    liquidityProxy ? fetchDexscreenerToken(liquidityProxy.address, liquidityProxy.chainId) : Promise.resolve(null),
+  ]);
+  const detail = detailResult.status === 'fulfilled' ? detailResult.value : null;
+  const proxyDex = proxyDexResult.status === 'fulfilled' ? proxyDexResult.value : null;
   if (!detail) throw new Error('No public CoinGecko data was found for this asset.');
   const createdAt = detail.genesisDate ? new Date(detail.genesisDate).getTime() : null;
   const tokenAgeDays = createdAt ? daysSince(createdAt) : null;
   const socialLinks = mergeSocialLinks({ website: detail.website, twitter: detail.twitter, telegram: detail.telegram, github: detail.github });
+  const liquidityUsd = proxyDex?.primaryPair ? Number(proxyDex.primaryPair.liquidity?.usd || 0) : null;
+  const totalLiquidityUsd = proxyDex ? Number(proxyDex.totalLiquidityUsd || liquidityUsd || 0) : null;
 
   return {
     id: `native-${slugify(coingeckoId)}`,
@@ -1634,10 +1682,10 @@ async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel) {
     communitySize: 0,
     riskNotes: translate('scoring.riskNotes.liveDataAvailable'),
     realData: {
-      source: 'CoinGecko',
+      source: proxyDex?.primaryPair ? `CoinGecko + ${chainLabelFor(liquidityProxy.chainId)} DEX liquidity (wrapped/native representation)` : 'CoinGecko',
       holderSource: null,
-      liquidityUsd: null,
-      totalLiquidityUsd: null,
+      liquidityUsd,
+      totalLiquidityUsd,
       marketCapUsd: detail.realMarketCapUsd || detail.fdvUsd,
       marketCapIsFdv: !detail.realMarketCapUsd && Boolean(detail.fdvUsd),
       tokenAgeDays,
@@ -1663,7 +1711,7 @@ async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel) {
       coingeckoListed: true,
       twitterFollowers: detail.twitterFollowers,
       telegramUsers: detail.telegramUsers,
-      poolCount: 0,
+      poolCount: proxyDex?.poolCount || 0,
       websiteUrl: socialLinks.website || '',
       twitterUrl: socialLinks.twitter || '',
       telegramUrl: socialLinks.telegram || '',
@@ -1990,6 +2038,53 @@ async function fetchExplorerContractFlags(chainId, address) {
     upgradeable: result.Proxy === '1',
     verifiedSource: hasValue(result.SourceCode),
   };
+}
+
+// Shared parser for GoPlus's token_security response shape (same fields on
+// both the EVM and Solana endpoints): a holder_count plus a ranked holders
+// list with each entry's share of supply as a 0-1 fraction.
+function parseGoPlusHolderResult(result) {
+  if (!result) return null;
+  const holders = Array.isArray(result.holders) ? result.holders : [];
+  const holderCount = result.holder_count !== undefined && result.holder_count !== null
+    ? Number(result.holder_count)
+    : (holders.length || null);
+  if (!holderCount && !holders.length) return null;
+  const percents = holders.map((holder) => Number(holder.percent || 0)).filter((value) => !Number.isNaN(value));
+  return {
+    holderCount: holderCount || null,
+    topHolderPercent: percents.length ? roundPercent(percents[0]) : null,
+    topTenHolderPercent: percents.length ? roundPercent(percents.slice(0, 10).reduce((total, value) => total + value, 0)) : null,
+  };
+}
+
+// GoPlus Security (https://gopluslabs.io) - free, no API key, public token-
+// security data covering most EVM chains. Used only to fill holder count/
+// concentration gaps the existing Dexscreener/CoinGecko/GeckoTerminal/
+// block-explorer sources never provide for EVM tokens (those never report
+// holder data at all), so it can only add real data, never override it.
+async function fetchGoPlusEvmTokenSecurity(chainId, address) {
+  const goPlusChainId = GOPLUS_EVM_CHAIN_IDS[chainId];
+  if (!goPlusChainId) return null;
+  const response = await fetch(`${GOPLUS_API_BASE}/token_security/${goPlusChainId}?contract_addresses=${address.toLowerCase()}`);
+  if (!response.ok) throw new Error('GoPlus token-security lookup failed.');
+  const data = await response.json();
+  const result = data?.result?.[address.toLowerCase()];
+  const parsed = parseGoPlusHolderResult(result);
+  return parsed ? { ...parsed, source: 'GoPlus Security token holder analysis' } : null;
+}
+
+// Same GoPlus dataset, Solana-specific endpoint - used only as a fallback
+// when the Solana RPC full-account scan and Jupiter's indexed holder count
+// both come back empty (rate limiting, RPC outage, very new mint), never to
+// replace a real RPC/Jupiter measurement that already succeeded.
+async function fetchGoPlusSolanaTokenSecurity(address) {
+  const response = await fetch(`${GOPLUS_API_BASE}/solana/token_security?contract_addresses=${address}`);
+  if (!response.ok) throw new Error('GoPlus Solana token-security lookup failed.');
+  const data = await response.json();
+  const result = data?.result?.[address];
+  const parsed = parseGoPlusHolderResult(result);
+  return parsed ? { ...parsed, source: 'GoPlus Security token holder analysis' } : null;
 }
 
 function extractSocialLinksFromDexInfo(info = {}) {

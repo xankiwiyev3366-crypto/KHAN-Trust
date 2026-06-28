@@ -3539,24 +3539,30 @@ function Header({ page, navigate }) {
   const { t } = useTranslation();
   return (
     <header className="site-header">
-      <button className="brand" onClick={() => navigate('home')} aria-label={t('header.goHome')}>
-        <span className="brand-mark">K</span>
-        <span>
-          <strong>KHAN Trust</strong>
-          <small>{t('header.tagline')}</small>
-        </span>
-      </button>
-      <div className="header-right">
-        <nav className="desktop-nav">
-          {navItems.map((item) => (
-            <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navigate(navTargetFor(item.id))}>
-              {t(`nav.${item.id}`)}
-            </button>
-          ))}
-        </nav>
-        <ConnectWalletButton variant="desktop" />
-        <LanguageSwitcher variant="desktop" />
+      <div className="site-header-top">
+        <button className="brand" onClick={() => navigate('home')} aria-label={t('header.goHome')}>
+          <span className="brand-mark">K</span>
+          <span>
+            <strong>KHAN Trust</strong>
+            <small>{t('header.tagline')}</small>
+          </span>
+        </button>
+        <div className="header-right">
+          <ConnectWalletButton variant="desktop" />
+          <LanguageSwitcher variant="desktop" />
+        </div>
       </div>
+      {/* Own row, horizontally scrollable rather than wrapping - same
+          proven pattern as .mobile-nav below - so the utility row above
+          (logo, Connect Wallet, language switcher) is never pushed around
+          or clipped by however many nav items fit at the current width. */}
+      <nav className="desktop-nav">
+        {navItems.map((item) => (
+          <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navigate(navTargetFor(item.id))}>
+            {t(`nav.${item.id}`)}
+          </button>
+        ))}
+      </nav>
     </header>
   );
 }
@@ -3603,16 +3609,12 @@ const SIDEBAR_ITEMS = [
 ];
 
 function Sidebar({ page, navigate, alertCount }) {
-  const { t } = useTranslation();
+  // No brand/logo here - the top Header already renders the one KHAN
+  // Trust logo (sticky, full-width, visible at every breakpoint including
+  // when this sidebar is hidden on tablet/mobile). Rendering a second one
+  // here would duplicate it on desktop.
   return (
     <aside className="app-sidebar">
-      <button className="brand sidebar-brand" onClick={() => navigate('home')} aria-label={t('header.goHome')}>
-        <span className="brand-mark">K</span>
-        <span>
-          <strong>KHAN Trust</strong>
-          <small>{t('header.tagline')}</small>
-        </span>
-      </button>
       <nav className="sidebar-nav">
         {SIDEBAR_ITEMS.map((item) => {
           const Icon = item.icon;

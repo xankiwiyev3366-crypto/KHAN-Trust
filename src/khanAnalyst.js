@@ -15,20 +15,87 @@ import { computeScoreDelta } from './scoreHistory.js';
 import { peerLabelFor } from './peerBenchmark.js';
 
 function joinSignals(signals, max = 2) {
-  return signals.slice(0, max).join('; ');
+  return signals.slice(0, max).join(t('askKhan.answers.signalSeparator'));
+}
+
+function translateSignalKeys(keys = [], fallbackSignals = []) {
+  if (keys.length) {
+    return keys.map((key) => t(`askKhan.answers.signals.${key}`));
+  }
+  return fallbackSignals.map((signal) => {
+    const key = inferSignalKey(signal);
+    return key ? t(`askKhan.answers.signals.${key}`) : signal;
+  });
+}
+
+function inferSignalKey(signal = '') {
+  const matchers = [
+    ['Largest holder controls', 'largestHolderModerate'],
+    ['Liquidity is shallow relative to market cap', 'shallowLiquidity'],
+    ['Trading volume looks inconsistent', 'volumeInconsistent'],
+    ['Project is very new', 'veryNewProject'],
+    ['No verifiable public presence', 'noPublicPresence'],
+    ['Contract security status', 'contractSecurityUnknown'],
+    ['Price action has been extremely volatile', 'extremeVolatility'],
+    ['Top 10 wallets hold', 'topTenCentralization'],
+    ['Trading volume is far larger', 'volumeLiquidityMismatch'],
+    ['Extreme short-term price swing', 'extremeSwingThinLiquidity'],
+    ['Very new token with an extreme price spike', 'newTokenPriceSpike'],
+    ['Supply is well distributed', 'wellDistributedSupply'],
+    ['Liquidity is deep relative to market cap', 'deepLiquidity'],
+    ['Project has traded for over a year', 'tradedOverYear'],
+    ['Price has remained relatively stable', 'stablePrice'],
+    ['Mint and freeze authority are confirmed disabled', 'authoritiesDisabled'],
+    ['Team maintains an active public presence', 'activePublicPresence'],
+    ['Listed and verified on an independent research platform', 'coingeckoVerified'],
+    ['Holder count is growing steadily', 'holderGrowth'],
+  ];
+  return matchers.find(([prefix]) => signal.startsWith(prefix))?.[1] || null;
+}
+
+function translatedCategory(category) {
+  return t(`askKhan.answers.assetCategories.${category || 'Other'}`);
+}
+
+function translatedModifier(modifier, category) {
+  if (!modifier?.explanationKey) {
+    const inferredKey = inferModifierKey(modifier);
+    if (!inferredKey) return modifier?.explanation || '';
+    return t(`askKhan.answers.modifiers.${inferredKey}`, {
+      cap: modifier.cap,
+      category: translatedCategory(category),
+    });
+  }
+  return t(`askKhan.answers.modifiers.${modifier.explanationKey}`, {
+    cap: modifier.cap,
+    category: translatedCategory(category),
+  });
+}
+
+function inferModifierKey(modifier) {
+  if (!modifier) return null;
+  if (modifier.label === 'Established memecoin') return 'establishedMemecoin';
+  if (modifier.label === 'New / unproven memecoin') return 'newMemecoin';
+  if (modifier.label === 'Major Layer 1 infrastructure') return 'majorLayer1';
+  if (modifier.label === 'Infrastructure asset') return 'infrastructure';
+  if (modifier.label === 'Utility / DeFi asset') return 'utilityDefi';
+  if (modifier.label === 'Stablecoin') return 'stablecoin';
+  if (modifier.label === 'Gaming / metaverse token') return 'gaming';
+  return modifier.explanation ? 'default' : null;
 }
 
 function whyRisky(project) {
   const parts = [];
   const modifier = project.assetTypeRiskModifier;
-  if (modifier?.explanation) parts.push(modifier.explanation);
-  const risks = project.hiddenRiskSignals || [];
+  const modifierNote = translatedModifier(modifier, project.assetCategory);
+  if (modifierNote) parts.push(modifierNote);
+  const risks = translateSignalKeys(project.hiddenRiskSignalKeys, project.hiddenRiskSignals || []);
   if (risks.length) {
     parts.push(t('askKhan.answers.whyRiskyConcerns', { signals: joinSignals(risks, 3) }));
   } else {
     parts.push(t('askKhan.answers.whyRiskyNoConcerns'));
   }
-  const positives = project.positiveSignals || [];
+  const positives = translateSignalKeys(project.positiveSignalKeys, project.positiveSignals || []);
   if (positives.length) {
     parts.push(t('askKhan.answers.whyRiskyPositives', { signals: joinSignals(positives, 2) }));
   }
@@ -47,7 +114,9 @@ function whatChanged(project, history) {
   const direction = delta.delta > 0 ? 'improved' : delta.delta < 0 ? 'declined' : 'steady';
   const period = delta.label === 'thisWeek' ? 'thisWeek' : 'sinceLaunch';
   const driverFallbackKey = delta.delta < 0 ? 'driverRiskFallback' : 'driverPositiveFallback';
-  const driver = (delta.delta < 0 ? project.hiddenRiskSignals?.[0] : project.positiveSignals?.[0])
+  const riskSignals = translateSignalKeys(project.hiddenRiskSignalKeys, project.hiddenRiskSignals || []);
+  const positiveSignals = translateSignalKeys(project.positiveSignalKeys, project.positiveSignals || []);
+  const driver = (delta.delta < 0 ? riskSignals[0] : positiveSignals[0])
     || t(`askKhan.answers.${driverFallbackKey}`);
   return t('askKhan.answers.whatChangedSummary', {
     direction: t(`askKhan.answers.direction.${direction}`),
@@ -65,17 +134,18 @@ function howCompare(project, peerBenchmark) {
       peerCount,
       category: peerLabelFor(category),
       comparison: t(`riskSummary.peerComparison.${comparison}`),
-      modifierNote: project.assetTypeRiskModifier?.explanation || '',
+      modifierNote: translatedModifier(project.assetTypeRiskModifier, project.assetCategory),
     }).trim();
   }
-  if (project.assetTypeRiskModifier?.explanation) {
-    return t('askKhan.answers.compareNoPeersWithModifier', { explanation: project.assetTypeRiskModifier.explanation });
+  const modifierNote = translatedModifier(project.assetTypeRiskModifier, project.assetCategory);
+  if (modifierNote) {
+    return t('askKhan.answers.compareNoPeersWithModifier', { explanation: modifierNote });
   }
   return t('askKhan.answers.compareNoPeers');
 }
 
 function whatToWatch(project) {
-  const risks = project.hiddenRiskSignals || [];
+  const risks = translateSignalKeys(project.hiddenRiskSignalKeys, project.hiddenRiskSignals || []);
   if (risks.length) {
     return t('askKhan.answers.watchWithRisks', { signals: joinSignals(risks, 3) });
   }

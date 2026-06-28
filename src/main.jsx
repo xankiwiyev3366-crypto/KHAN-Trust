@@ -5971,8 +5971,8 @@ function RealDataSection({ project, data }) {
     <section className="detail-section">
       <SectionTitle icon={Activity} eyebrow={t('profileSections.liveDataEyebrow')} title={t('profileSections.liveDataTitle')} />
       <div className="real-data-grid">
-        {rows.map(([label, value, Icon]) => (
-          <div className="real-data-item" key={label}>
+        {rows.map(([label, value, Icon], index) => (
+          <div className="real-data-item" key={`${label}-${index}`}>
             <Icon size={18} />
             <span>{label}</span>
             <strong><InfoValue value={value} network={label} /></strong>

@@ -164,6 +164,25 @@ export function detectManipulationPattern(data = {}) {
   return flags;
 }
 
+function detectManipulationPatternKeys(data = {}) {
+  const flags = [];
+  const liquidity = Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0);
+  const volume = Number(data.volume24hUsd || 0);
+  if (liquidity > 0 && volume > 0 && volume / liquidity > 10) {
+    flags.push('volumeLiquidityMismatch');
+  }
+  if (typeof data.priceChange1h === 'number' && Math.abs(data.priceChange1h) > 40 && liquidity > 0 && liquidity < 50000) {
+    flags.push('extremeSwingThinLiquidity');
+  }
+  if (
+    typeof data.tokenAgeDays === 'number' && data.tokenAgeDays < 14 &&
+    typeof data.priceChange24h === 'number' && data.priceChange24h > 100
+  ) {
+    flags.push('newTokenPriceSpike');
+  }
+  return flags;
+}
+
 const EXPECTED_FIELDS = [
   'marketCapUsd', 'totalLiquidityUsd', 'holderCount', 'topHolderPercent', 'topTenHolderPercent',
   'tokenAgeDays', 'volume24hUsd', 'mintAuthorityEnabled', 'freezeAuthorityEnabled', 'upgradeable',
@@ -226,6 +245,39 @@ export function detectHiddenRisks(project = {}, data = {}, scores = {}, manipula
   return risks;
 }
 
+function detectHiddenRiskKeys(project = {}, data = {}, scores = {}, manipulationFlagKeys = []) {
+  const risks = [];
+  if (typeof data.topHolderPercent === 'number' && data.topHolderPercent > 20 && data.topHolderPercent <= 35) {
+    risks.push('largestHolderModerate');
+  }
+  if (
+    !isLargeVerifiedAsset(data) &&
+    scores.liquidityQualityScore !== null && scores.liquidityQualityScore !== undefined && scores.liquidityQualityScore < 40
+  ) {
+    risks.push('shallowLiquidity');
+  }
+  if (scores.volumeConsistencyScore !== null && scores.volumeConsistencyScore !== undefined && scores.volumeConsistencyScore < 55) {
+    risks.push('volumeInconsistent');
+  }
+  if (typeof data.tokenAgeDays === 'number' && data.tokenAgeDays < 30) {
+    risks.push('veryNewProject');
+  }
+  if (!hasValue(project.website) && !hasValue(project.twitter) && !hasValue(project.telegram)) {
+    risks.push('noPublicPresence');
+  }
+  if (data.mintAuthorityEnabled === null && data.freezeAuthorityEnabled === null && data.upgradeable === null) {
+    risks.push('contractSecurityUnknown');
+  }
+  if (scores.volatilityScore !== null && scores.volatilityScore !== undefined && scores.volatilityScore < 30) {
+    risks.push('extremeVolatility');
+  }
+  if (typeof data.topTenHolderPercent === 'number' && data.topTenHolderPercent > 55 && data.topTenHolderPercent <= 70) {
+    risks.push('topTenCentralization');
+  }
+  manipulationFlagKeys.forEach((flag) => risks.push(flag));
+  return risks;
+}
+
 export function detectPositiveSignals(project = {}, data = {}, scores = {}) {
   const positives = [];
   if (typeof data.topHolderPercent === 'number' && data.topHolderPercent <= 10) {
@@ -251,6 +303,35 @@ export function detectPositiveSignals(project = {}, data = {}, scores = {}) {
   }
   if (typeof data.holderGrowthPercent === 'number' && data.holderGrowthPercent >= 5) {
     positives.push('Holder count is growing steadily, indicating organic community growth');
+  }
+  return positives;
+}
+
+function detectPositiveSignalKeys(project = {}, data = {}, scores = {}) {
+  const positives = [];
+  if (typeof data.topHolderPercent === 'number' && data.topHolderPercent <= 10) {
+    positives.push('wellDistributedSupply');
+  }
+  if (scores.liquidityQualityScore !== null && scores.liquidityQualityScore !== undefined && scores.liquidityQualityScore >= 78) {
+    positives.push('deepLiquidity');
+  }
+  if (typeof data.tokenAgeDays === 'number' && data.tokenAgeDays >= 365) {
+    positives.push('tradedOverYear');
+  }
+  if (scores.volatilityScore !== null && scores.volatilityScore !== undefined && scores.volatilityScore >= 74) {
+    positives.push('stablePrice');
+  }
+  if (data.mintAuthorityEnabled === false && data.freezeAuthorityEnabled === false) {
+    positives.push('authoritiesDisabled');
+  }
+  if (hasValue(project.website) && hasValue(project.twitter) && hasValue(project.github)) {
+    positives.push('activePublicPresence');
+  }
+  if (data.coingeckoListed) {
+    positives.push('coingeckoVerified');
+  }
+  if (typeof data.holderGrowthPercent === 'number' && data.holderGrowthPercent >= 5) {
+    positives.push('holderGrowth');
   }
   return positives;
 }
@@ -292,6 +373,7 @@ export function getAssetTypeRiskModifier(category, project = {}, data = {}) {
       cap,
       isSpeculative: true,
       label: established ? 'Established memecoin' : 'New / unproven memecoin',
+      explanationKey: established ? 'establishedMemecoin' : 'newMemecoin',
       explanation: established
         ? `This is a memecoin with no underlying network utility — it is driven by sentiment and community attention rather than infrastructure or adoption fundamentals. Despite strong liquidity, age, or holder count, the Trust Score is capped at ${cap}/100 because high market cap alone does not reduce its speculative risk.`
         : `This is a memecoin with limited trading history, liquidity, or verified fundamentals. Speculative risk is severe, so the Trust Score is capped at ${cap}/100 regardless of market cap, volume, or community size.`,
@@ -302,6 +384,7 @@ export function getAssetTypeRiskModifier(category, project = {}, data = {}) {
       cap: 95,
       isSpeculative: false,
       label: 'Major Layer 1 infrastructure',
+      explanationKey: 'majorLayer1',
       explanation: 'This is a major Layer 1 blockchain with established infrastructure, deep liquidity, sustained developer activity, and real long-term network utility — evaluated against infrastructure-grade criteria, not speculative-asset criteria.',
     };
   }
@@ -310,6 +393,7 @@ export function getAssetTypeRiskModifier(category, project = {}, data = {}) {
       cap: 92,
       isSpeculative: false,
       label: 'Infrastructure asset',
+      explanationKey: 'infrastructure',
       explanation: `Classified as ${category} infrastructure. The score reflects network utility, developer activity, and adoption rather than hype-driven demand.`,
     };
   }
@@ -318,6 +402,7 @@ export function getAssetTypeRiskModifier(category, project = {}, data = {}) {
       cap: 85,
       isSpeculative: false,
       label: 'Utility / DeFi asset',
+      explanationKey: 'utilityDefi',
       explanation: `Classified as a ${category} project with real protocol utility. It is capped below the major infrastructure tier because its adoption and longevity are comparatively less proven than a top Layer 1.`,
     };
   }
@@ -326,6 +411,7 @@ export function getAssetTypeRiskModifier(category, project = {}, data = {}) {
       cap: 95,
       isSpeculative: false,
       label: 'Stablecoin',
+      explanationKey: 'stablecoin',
       explanation: 'Classified as a stablecoin; evaluated on peg stability, reserve transparency, and redemption mechanics rather than price-speculation risk.',
     };
   }
@@ -334,6 +420,7 @@ export function getAssetTypeRiskModifier(category, project = {}, data = {}) {
       cap: 80,
       isSpeculative: true,
       label: 'Gaming / metaverse token',
+      explanationKey: 'gaming',
       explanation: 'Classified as a gaming/metaverse token. These projects mix real product development with significant speculative hype, so the score is capped below established infrastructure assets.',
     };
   }
@@ -341,6 +428,7 @@ export function getAssetTypeRiskModifier(category, project = {}, data = {}) {
     cap: 90,
     isSpeculative: false,
     label: category,
+    explanationKey: 'default',
     explanation: `Classified as ${category}. No asset-type ceiling beyond standard scoring applies, but the score is still capped below blue-chip Layer 1 infrastructure.`,
   };
 }
@@ -391,9 +479,12 @@ export function runRiskAnalysis(project = {}, data = {}, scoreBreakdown = {}, ri
   };
 
   const manipulationFlags = detectManipulationPattern(data);
+  const manipulationFlagKeys = detectManipulationPatternKeys(data);
   const confidence = computeConfidence(data);
   const hiddenRiskSignals = detectHiddenRisks(project, data, extraScores, manipulationFlags);
+  const hiddenRiskSignalKeys = detectHiddenRiskKeys(project, data, extraScores, manipulationFlagKeys);
   const positiveSignals = detectPositiveSignals(project, data, extraScores);
+  const positiveSignalKeys = detectPositiveSignalKeys(project, data, extraScores);
   const assetTypeModifier = scoreInfo
     ? applyAssetTypeRiskModifier(category, project, data, scoreInfo.rawScore)
     : getAssetTypeRiskModifier(category, project, data);
@@ -407,7 +498,9 @@ export function runRiskAnalysis(project = {}, data = {}, scoreBreakdown = {}, ri
     confidenceLabel: confidence.label,
     missingDataFields: confidence.missingFields,
     hiddenRiskSignals,
+    hiddenRiskSignalKeys,
     positiveSignals,
+    positiveSignalKeys,
     aiRiskSummary,
     deepScores: extraScores,
   };

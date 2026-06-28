@@ -177,6 +177,13 @@ import {
   downloadAsFile,
   summaryToCsv,
 } from './platformAnalytics.js';
+import {
+  fetchHolders,
+  fetchTransactions,
+  fetchHolderStats,
+  fetchAlerts as fetchHolderAlerts,
+  triggerManualSync,
+} from './khanHolderAnalytics.js';
 
 const PROJECTS_KEY = 'khan-trust-projects-v1';
 const WATCHLIST_KEY = 'khan-trust-watchlist-v1';
@@ -3498,6 +3505,7 @@ function App() {
         {page === 'admin-analytics' && <AdminAnalyticsPage />}
         {page === 'admin-support' && <AdminSupportPage />}
         {page === 'admin-report' && <AdminReportPage />}
+        {page === 'admin-holders' && <AdminHolderAnalyticsPage />}
       </main>
       <Footer navigate={navigate} />
       <MobileNav page={page} navigate={navigate} />
@@ -7186,6 +7194,9 @@ function AdminAnalyticsPage() {
         <button className="secondary-button" type="button" onClick={() => { window.location.hash = '/admin-support'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
           <LifeBuoy size={16} /> {t('adminSupport.openSupport')}
         </button>
+        <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-holders'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+          <WalletCards size={16} /> KHAN Holder Analytics
+        </button>
         <button className="ghost-button" type="button" onClick={logout}>{t('common.signOut')}</button>
       </div>
       <p className="analytics-meta">{t('adminAnalytics.generated', { date: new Date(summary.generatedAt).toLocaleString(), count: summary.eventCount })}</p>
@@ -7302,6 +7313,395 @@ function AdminAnalyticsPage() {
             <span>{t('adminAnalytics.mostActiveWeek')} <strong>{summary.topActivity.mostActiveWeek.weekStarting || 'N/A'}</strong> ({summary.topActivity.mostActiveWeek.count})</span>
             <span>{t('adminAnalytics.mostActiveMonth')} <strong>{summary.topActivity.mostActiveMonth.month || 'N/A'}</strong> ({summary.topActivity.mostActiveMonth.count})</span>
           </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// KHAN Holder Analytics - admin-only. Every number/row comes straight from
+// the on-chain indexer (see netlify/functions/_khanIndexer.mjs); there is no
+// mock or estimated data path here except where explicitly labeled
+// "Estimated" (historical USD conversions, where exact same-block pricing
+// isn't available from a free API). Reuses the same shared admin token as
+// every other admin page (AdminVerificationPage/AdminAnalyticsPage/etc).
+// ---------------------------------------------------------------------------
+
+function MultiLineChart({ series, height = 140 }) {
+  const allPoints = series.flatMap((s) => s.data);
+  if (!allPoints.length) return <EmptyState title="No data yet" text="Data will appear once on-chain activity is indexed." />;
+  const max = Math.max(1, ...allPoints.map((p) => p.y));
+  const width = 100;
+  return (
+    <div className="holder-chart-wrap">
+      <svg className="holder-line-chart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+        {series.map((s) => {
+          if (!s.data.length) return null;
+          const stepX = width / Math.max(1, s.data.length - 1);
+          const points = s.data.map((point, index) => `${(index * stepX).toFixed(2)},${(height - (point.y / max) * height).toFixed(2)}`).join(' ');
+          return <polyline key={s.label} points={points} fill="none" stroke={s.color} strokeWidth="2" />;
+        })}
+      </svg>
+      <div className="holder-chart-legend">
+        {series.map((s) => (
+          <span key={s.label}><i style={{ background: s.color }} /> {s.label}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const HOLDER_RANGE_OPTIONS = [
+  { key: 'today', label: 'Today' },
+  { key: '24h', label: '24 Hours' },
+  { key: '7d', label: '7 Days' },
+  { key: '30d', label: '30 Days' },
+  { key: 'all', label: 'All Time' },
+];
+
+const ALERT_TYPE_LABELS = {
+  new_holder: 'New Holder',
+  new_buyer: 'New Buyer',
+  large_buy: 'Large Buy',
+  large_sell: 'Large Sell',
+  whale_buy: 'Whale Buy',
+  whale_sell: 'Whale Sell',
+  top_holder_changed: 'Top Holder Changed',
+  holder_count_increased: 'Holder Count Increased',
+};
+
+function shortenWallet(wallet) {
+  if (!wallet) return 'N/A';
+  return `${wallet.slice(0, 4)}...${wallet.slice(-4)}`;
+}
+
+function formatHolderNumber(value, fractionDigits = 2) {
+  if (value === null || value === undefined || Number.isNaN(value)) return 'N/A';
+  return Number(value).toLocaleString('en-US', { maximumFractionDigits: fractionDigits });
+}
+
+function formatUsd(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return 'N/A';
+  return `$${Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+}
+
+function formatDateTime(timestamp) {
+  if (!timestamp) return { date: 'N/A', time: '' };
+  const d = new Date(timestamp);
+  return { date: d.toLocaleDateString(), time: d.toLocaleTimeString() };
+}
+
+function AdminHolderAnalyticsPage() {
+  const [token, setToken] = useState(() => getStoredAdminToken());
+  const [passcode, setPasscode] = useState('');
+  const [authState, setAuthState] = useState({ status: 'idle', message: '' });
+
+  const [stats, setStats] = useState(null);
+  const [holders, setHolders] = useState(null);
+  const [transactions, setTransactions] = useState(null);
+  const [alerts, setAlerts] = useState([]);
+  const [loadState, setLoadState] = useState({ status: 'idle', message: '' });
+  const [syncState, setSyncState] = useState({ status: 'idle', message: '' });
+
+  const [search, setSearch] = useState('');
+  const [range, setRange] = useState('all');
+  const [holderPage, setHolderPage] = useState(1);
+  const [txPage, setTxPage] = useState(1);
+
+  const login = async (event) => {
+    event.preventDefault();
+    setAuthState({ status: 'loading', message: 'Checking passcode...' });
+    try {
+      const newToken = await adminLogin(passcode);
+      setToken(newToken);
+      setAuthState({ status: 'idle', message: '' });
+    } catch (error) {
+      setAuthState({ status: 'error', message: error.message || 'Login failed.' });
+    }
+  };
+
+  const logout = () => {
+    clearAdminToken();
+    setToken('');
+    setStats(null);
+    setHolders(null);
+    setTransactions(null);
+  };
+
+  const loadAll = async (activeToken) => {
+    setLoadState({ status: 'loading', message: 'Loading holder analytics...' });
+    try {
+      const [statsData, holdersData, txData] = await Promise.all([
+        fetchHolderStats(activeToken),
+        fetchHolders(activeToken, { search, range, page: holderPage, pageSize: 25 }),
+        fetchTransactions(activeToken, { search, range, page: txPage, pageSize: 25 }),
+      ]);
+      setStats(statsData);
+      setHolders(holdersData);
+      setTransactions(txData);
+      setLoadState({ status: 'idle', message: '' });
+    } catch (error) {
+      setLoadState({ status: 'error', message: error.message || 'Failed to load holder analytics.' });
+    }
+  };
+
+  useEffect(() => {
+    if (token) loadAll(token);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, search, range, holderPage, txPage]);
+
+  useEffect(() => {
+    if (!token) return;
+    const poll = async () => {
+      try {
+        const data = await fetchHolderAlerts(token, 30);
+        setAlerts(data.alerts || []);
+      } catch {
+        // Alerts polling must never break the rest of the page.
+      }
+    };
+    poll();
+    const interval = setInterval(poll, 30000);
+    return () => clearInterval(interval);
+  }, [token]);
+
+  const refreshNow = async () => {
+    setSyncState({ status: 'loading', message: 'Syncing on-chain data...' });
+    try {
+      const result = await triggerManualSync(token);
+      setSyncState({ status: 'idle', message: `Synced ${result.processed} new transaction(s). ${result.reachedHead ? 'Up to date.' : 'More history remains - click Refresh again to continue.'}` });
+      await loadAll(token);
+    } catch (error) {
+      setSyncState({ status: 'error', message: error.message || 'Sync failed.' });
+    }
+  };
+
+  const exportHoldersCsv = () => {
+    if (!holders) return;
+    const rows = [['Wallet', 'Current Balance', 'Total Bought', 'Total Sold', 'Buy Tx', 'Sell Tx', 'First Buy', 'Last Activity', 'Current Holder', 'SOL Spent', 'Est. USD Spent', 'Net Position', 'Rank', 'Whale']];
+    holders.holders.forEach((h) => rows.push([
+      h.wallet, h.currentBalance, h.totalBought, h.totalSold, h.buyCount, h.sellCount,
+      h.firstBuyAt ? new Date(h.firstBuyAt).toISOString() : '', h.lastActivityAt ? new Date(h.lastActivityAt).toISOString() : '',
+      h.isCurrentHolder ? 'Yes' : 'No', h.solSpent, h.usdSpentEstimate ?? '', h.netPosition, h.rank ?? '', h.isWhale ? 'Yes' : 'No',
+    ]));
+    const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    downloadAsFile(`khan-holders-${Date.now()}.csv`, csv, 'text/csv');
+  };
+
+  if (!token) {
+    return (
+      <section className="page-section">
+        <SectionTitle icon={WalletCards} eyebrow="Admin" title="KHAN Holder Analytics" />
+        <form className="add-form admin-login-form" onSubmit={login}>
+          <FormField label="Admin passcode" type="password" value={passcode} onChange={setPasscode} required />
+          <button className="primary-button wide-button" type="submit" disabled={authState.status === 'loading'}>
+            Sign in <ArrowRight size={18} />
+          </button>
+          {authState.message && <p className="lookup-message error">{authState.message}</p>}
+        </form>
+      </section>
+    );
+  }
+
+  if (loadState.status === 'loading' && !stats) {
+    return (
+      <section className="page-section">
+        <SectionTitle icon={WalletCards} eyebrow="Admin" title="KHAN Holder Analytics" />
+        <p className="lookup-message">Loading holder analytics...</p>
+      </section>
+    );
+  }
+
+  if (!stats) {
+    return (
+      <section className="page-section">
+        <SectionTitle icon={WalletCards} eyebrow="Admin" title="KHAN Holder Analytics" />
+        <p className="lookup-message error">{loadState.message || 'Failed to load holder analytics.'}</p>
+        <button className="secondary-button" type="button" onClick={() => loadAll(token)}>Retry</button>
+      </section>
+    );
+  }
+
+  const s = stats.stats;
+  const growthSeries = [
+    { label: 'Holder Growth', color: 'var(--gold)', data: stats.charts.growth.map((p) => ({ y: p.holderCount })) },
+    { label: 'Buyer Growth', color: 'var(--success)', data: stats.charts.growth.map((p) => ({ y: p.buyerCount })) },
+    { label: 'Wallet Growth', color: 'var(--gold-bright)', data: stats.charts.growth.map((p) => ({ y: p.walletCount })) },
+  ];
+  const volumeSeries = [
+    { label: 'Daily Buy Volume (SOL)', color: 'var(--success)', data: stats.charts.dailyVolume.map((p) => ({ y: p.buyVolumeSol })) },
+    { label: 'Daily Sell Volume (SOL)', color: 'var(--danger)', data: stats.charts.dailyVolume.map((p) => ({ y: p.sellVolumeSol })) },
+  ];
+  const distributionData = stats.charts.topHolderDistribution;
+
+  return (
+    <section className="page-section analytics-dashboard holder-analytics-dashboard">
+      <SectionTitle icon={WalletCards} eyebrow="Admin" title="KHAN Holder Analytics" />
+      <div className="analytics-toolbar">
+        <button className="secondary-button" type="button" onClick={refreshNow} disabled={syncState.status === 'loading'}>
+          <RefreshCw size={16} /> Refresh now
+        </button>
+        <button className="secondary-button" type="button" onClick={exportHoldersCsv}><Download size={16} /> Export holders CSV</button>
+        <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-analytics'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+          <BarChart3 size={16} /> Platform analytics
+        </button>
+        <button className="ghost-button" type="button" onClick={logout}>Sign out</button>
+      </div>
+      {syncState.message && <p className={`lookup-message ${syncState.status === 'error' ? 'error' : ''}`}>{syncState.message}</p>}
+      <p className="analytics-meta">
+        Mint <code>{OFFICIAL_KHAN_CONTRACT}</code> &middot; KHAN/USD {formatUsd(s.khanUsdPrice)} &middot; SOL/USD {formatUsd(stats.stats.solUsdPrice)} &middot; Total supply {formatHolderNumber(s.totalSupply, 0)}
+      </p>
+
+      <div className="analytics-stat-grid">
+        <StatCard icon={Users} label="Total Holders" numericValue={s.totalHolders} />
+        <StatCard icon={WalletCards} label="Current Holders" numericValue={s.currentHolders} />
+        <StatCard icon={TrendingUp} label="Unique Buyers" numericValue={s.uniqueBuyers} />
+        <StatCard icon={TrendingDown} label="Unique Sellers" numericValue={s.uniqueSellers} />
+        <StatCard icon={UserPlus} label="Today's Buyers" numericValue={s.todaysBuyers} />
+        <StatCard icon={UserPlus} label="Today's Holders" numericValue={s.todaysHolders} />
+        <StatCard icon={Crown} label="Largest Buy Today" value={`${formatHolderNumber(s.largestBuyTodaySol)} SOL`} />
+        <StatCard icon={Crown} label="Largest Holder" value={formatHolderNumber(s.largestHolderBalance, 0)} sublabel="KHAN" />
+        <StatCard icon={Activity} label="Average Buy" value={`${formatHolderNumber(s.averageBuySol)} SOL`} />
+        <StatCard icon={Activity} label="Average Holding" value={formatHolderNumber(s.averageHolding, 0)} sublabel="KHAN" />
+        <StatCard icon={TrendingUp} label="Total Buy Volume" value={`${formatHolderNumber(s.totalBuyVolumeSol)} SOL`} />
+        <StatCard icon={TrendingDown} label="Total Sell Volume" value={`${formatHolderNumber(s.totalSellVolumeSol)} SOL`} />
+        <StatCard icon={Activity} label="Net Buy Volume" value={`${formatHolderNumber(s.netBuyVolumeSol)} SOL`} />
+      </div>
+
+      <div className="detail-section analytics-section">
+        <SectionTitle icon={Bell} eyebrow="Live" title="Alerts" />
+        {!alerts.length ? (
+          <EmptyState title="No alerts yet" text="Alerts appear here as new on-chain activity is indexed." />
+        ) : (
+          <ul className="holder-alert-list">
+            {alerts.map((alert) => (
+              <li key={alert.id} className="holder-alert-item">
+                <AlertTriangle size={14} />
+                <span className="holder-alert-type">{ALERT_TYPE_LABELS[alert.type] || alert.type}</span>
+                {alert.wallet && <code>{shortenWallet(alert.wallet)}</code>}
+                {alert.amount !== null && alert.amount !== undefined && <span>{formatHolderNumber(alert.amount)}</span>}
+                <span className="holder-alert-time">{alert.createdAt ? new Date(alert.createdAt).toLocaleString() : ''}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="detail-section analytics-section analytics-grid-2">
+        <div>
+          <h4>Holder / Buyer / Wallet Growth</h4>
+          <MultiLineChart series={growthSeries} />
+        </div>
+        <div>
+          <h4>Daily Buy vs Sell Volume (SOL)</h4>
+          <MultiLineChart series={volumeSeries} />
+        </div>
+      </div>
+
+      <div className="detail-section analytics-section">
+        <h4>Top Holder Distribution</h4>
+        <DonutChart data={distributionData} />
+      </div>
+
+      <div className="detail-section analytics-section">
+        <SectionTitle icon={ListFilter} eyebrow="Filters" title="Search &amp; Range" />
+        <div className="holder-filter-row">
+          <input
+            className="holder-search-input"
+            type="text"
+            placeholder="Search wallet, signature, amount..."
+            value={search}
+            onChange={(event) => { setSearch(event.target.value); setHolderPage(1); setTxPage(1); }}
+          />
+          <div className="analytics-range-row">
+            {HOLDER_RANGE_OPTIONS.map((option) => (
+              <button key={option.key} className={range === option.key ? 'active' : ''} onClick={() => { setRange(option.key); setHolderPage(1); setTxPage(1); }}>
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="detail-section analytics-section">
+        <h4>Holders ({holders?.total ?? 0})</h4>
+        {!holders?.holders?.length ? (
+          <EmptyState title="No holders yet" text="Real holders will appear here once the indexer has synced on-chain activity." />
+        ) : (
+          <table className="analytics-table holder-table">
+            <thead>
+              <tr>
+                <th>Rank</th><th>Wallet</th><th>Balance</th><th>Portfolio %</th><th>Est. Value</th>
+                <th>Buys</th><th>Sells</th><th>Net</th><th>Whale</th><th>First Buy</th><th>Last Activity</th><th>Holder</th>
+              </tr>
+            </thead>
+            <tbody>
+              {holders.holders.map((h) => (
+                <tr key={h.wallet}>
+                  <td>{h.rank ?? 'N/A'}</td>
+                  <td><code title={h.wallet}>{h.shortWallet}</code></td>
+                  <td>{formatHolderNumber(h.currentBalance, 0)}</td>
+                  <td>{h.portfolioPercent !== null ? `${formatHolderNumber(h.portfolioPercent)}%` : 'N/A'}</td>
+                  <td>{formatUsd(h.estimatedValueUsd)}</td>
+                  <td>{h.buyCount}</td>
+                  <td>{h.sellCount}</td>
+                  <td>{formatHolderNumber(h.netPosition, 0)}</td>
+                  <td>{h.isWhale ? <Crown size={14} /> : ''}</td>
+                  <td>{h.firstBuyAt ? new Date(h.firstBuyAt).toLocaleDateString() : 'N/A'}</td>
+                  <td>{h.lastActivityAt ? new Date(h.lastActivityAt).toLocaleDateString() : 'N/A'}</td>
+                  <td>{h.isCurrentHolder ? 'Yes' : 'No'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <div className="holder-pagination">
+          <button className="secondary-button" type="button" disabled={holderPage <= 1} onClick={() => setHolderPage((p) => Math.max(1, p - 1))}>Previous</button>
+          <span>Page {holders?.page ?? 1}</span>
+          <button className="secondary-button" type="button" disabled={!holders || holderPage * 25 >= holders.total} onClick={() => setHolderPage((p) => p + 1)}>Next</button>
+        </div>
+      </div>
+
+      <div className="detail-section analytics-section">
+        <h4>Transactions ({transactions?.total ?? 0})</h4>
+        {!transactions?.transactions?.length ? (
+          <EmptyState title="No transactions yet" text="Real buy/sell transactions will appear here once the indexer has synced on-chain activity." />
+        ) : (
+          <table className="analytics-table holder-table">
+            <thead>
+              <tr>
+                <th>Date</th><th>Time</th><th>Wallet</th><th>Direction</th><th>KHAN</th><th>SOL</th><th>Est. USD</th><th>Signature</th><th>Links</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transactions.transactions.map((tx) => {
+                const { date, time } = formatDateTime(tx.blockTime);
+                return (
+                  <tr key={`${tx.signature}-${tx.wallet}-${tx.direction}`}>
+                    <td>{date}</td>
+                    <td>{time}</td>
+                    <td><code title={tx.wallet}>{shortenWallet(tx.wallet)}</code></td>
+                    <td>{tx.direction === 'buy' ? <span className="trend-up">Buy</span> : <span className="trend-down">Sell</span>}</td>
+                    <td>{formatHolderNumber(tx.khanAmount, 0)}</td>
+                    <td>{formatHolderNumber(tx.solAmount)}</td>
+                    <td>{tx.usdEstimate !== null ? `${formatUsd(tx.usdEstimate)} (Estimated)` : 'N/A'}</td>
+                    <td><code title={tx.signature}>{tx.signature ? `${tx.signature.slice(0, 8)}...` : 'N/A'}</code></td>
+                    <td>
+                      {tx.solscanUrl && <a href={tx.solscanUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Solscan</a>}
+                      {' '}
+                      {tx.pumpFunUrl && <a href={tx.pumpFunUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Pump.fun</a>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+        <div className="holder-pagination">
+          <button className="secondary-button" type="button" disabled={txPage <= 1} onClick={() => setTxPage((p) => Math.max(1, p - 1))}>Previous</button>
+          <span>Page {transactions?.page ?? 1}</span>
+          <button className="secondary-button" type="button" disabled={!transactions || txPage * 25 >= transactions.total} onClick={() => setTxPage((p) => p + 1)}>Next</button>
         </div>
       </div>
     </section>

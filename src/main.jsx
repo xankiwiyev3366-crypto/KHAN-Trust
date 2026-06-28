@@ -39,6 +39,7 @@ import {
   CircleDot,
   Clock3,
   Copy,
+  Crown,
   Download,
   ExternalLink,
   Eye,
@@ -52,6 +53,7 @@ import {
   Inbox,
   Info,
   Layers3,
+  LayoutDashboard,
   LifeBuoy,
   LineChart,
   Maximize2,
@@ -68,11 +70,13 @@ import {
   Shield,
   Sparkles,
   Star,
+  Tags,
   Target,
   TimerReset,
   TrendingDown,
   TrendingUp,
   Trash2,
+  Trophy,
   UserPlus,
   Users,
   WalletCards,
@@ -83,7 +87,7 @@ import { WHITEPAPER } from './whitepaperConfig.js';
 import { runRiskAnalysis, classifyAsset, applyAssetTypeRiskModifier } from './scoringEngine.js';
 import { historyKeyFor, fetchScoreHistory, computeScoreDelta, useScoreHistory } from './scoreHistory.js';
 import { ANALYST_QUESTIONS, answerQuestion } from './khanAnalyst.js';
-import { detectRiskAlerts } from './riskAlerts.js';
+import { detectRiskAlerts, useWatchlistAlertCount } from './riskAlerts.js';
 import { computePeerBenchmark, peerLabelFor } from './peerBenchmark.js';
 import { I18nProvider, useTranslation } from './i18n/I18nContext.jsx';
 import { translate, getLanguage } from './i18n/index.js';
@@ -3248,6 +3252,7 @@ function App() {
     const id = page.split('/')[1];
     return projects.find((project) => project.id === id) || null;
   }, [page, projects]);
+  const alertCount = useWatchlistAlertCount(projects, watchlist);
 
   useEffect(() => {
     if (reportProject) trackReportViewed(reportProject);
@@ -3417,6 +3422,8 @@ function App() {
 
   return (
     <div className="app-shell">
+      <Sidebar page={page} navigate={navigate} alertCount={alertCount} />
+      <div className="app-content">
       <Header page={page} navigate={navigate} />
       <main>
         {page === 'home' && (
@@ -3485,6 +3492,8 @@ function App() {
         {page === 'disclaimer' && <DisclaimerPage />}
         {page === 'contact' && <ContactPage />}
         {page === 'support' && <SupportPage navigate={navigate} />}
+        {page === 'top-projects' && <TopProjectsPage projects={projects} navigate={navigate} />}
+        {page === 'categories' && <CategoriesPage projects={projects} navigate={navigate} />}
         {page === 'admin-verify' && <AdminVerificationPage onReviewed={refreshVerificationMap} />}
         {page === 'admin-analytics' && <AdminAnalyticsPage />}
         {page === 'admin-support' && <AdminSupportPage />}
@@ -3510,6 +3519,7 @@ function App() {
           onClose={() => setEditingProject(null)}
         />
       )}
+      </div>
     </div>
   );
 }
@@ -3575,6 +3585,63 @@ function isActive(page, id) {
   if (id === 'explore') return page === 'explore' || page.startsWith('project/') || page.startsWith('report/');
   if (id === 'support') return page === 'support' || page === 'admin-support';
   return page === id;
+}
+
+// Persistent left dashboard sidebar (desktop only - the existing
+// MobileNav bottom bar keeps covering small screens, unchanged). Routes
+// through the same `navigate(target)` the top Header already uses, so
+// every existing page/route continues to work exactly as before; this is
+// a second way to reach them, not a replacement for the routing itself.
+const SIDEBAR_ITEMS = [
+  { id: 'home', label: 'Dashboard', icon: LayoutDashboard },
+  { id: 'explore', label: 'Explore', icon: Layers3 },
+  { id: 'watchlist', label: 'Watchlist', icon: Eye },
+  { id: 'alerts', label: 'Alerts', icon: Bell, badgeFrom: 'alertCount' },
+  { id: 'compare', label: 'Comparison', icon: Scale },
+  { id: 'top-projects', label: 'Top Projects', icon: Trophy },
+  { id: 'categories', label: 'Categories', icon: Tags },
+];
+
+function Sidebar({ page, navigate, alertCount }) {
+  const { t } = useTranslation();
+  return (
+    <aside className="app-sidebar">
+      <button className="brand sidebar-brand" onClick={() => navigate('home')} aria-label={t('header.goHome')}>
+        <span className="brand-mark">K</span>
+        <span>
+          <strong>KHAN Trust</strong>
+          <small>{t('header.tagline')}</small>
+        </span>
+      </button>
+      <nav className="sidebar-nav">
+        {SIDEBAR_ITEMS.map((item) => {
+          const Icon = item.icon;
+          // "Alerts" is a dedicated nav entry, but it surfaces the exact
+          // same risk-change alerts the Watchlist page already computes
+          // (see detectRiskAlerts) - it routes there rather than
+          // duplicating that page.
+          const target = item.id === 'alerts' ? 'watchlist' : item.id;
+          const active = item.id === 'alerts' ? page === 'watchlist' : isActive(page, item.id);
+          const badge = item.badgeFrom === 'alertCount' ? alertCount : 0;
+          return (
+            <button key={item.id} className={active ? 'active' : ''} onClick={() => navigate(target)}>
+              <Icon size={18} />
+              <span>{item.label}</span>
+              {badge > 0 && <span className="sidebar-badge">{badge}</span>}
+            </button>
+          );
+        })}
+      </nav>
+      <div className="sidebar-promo">
+        <Crown size={28} />
+        <strong>Join the KHAN Ecosystem</strong>
+        <p>Hold $KHAN and unlock premium features.</p>
+        <button className="sidebar-promo-cta" onClick={() => navigate('khan')}>
+          Learn More <ArrowRight size={14} />
+        </button>
+      </div>
+    </aside>
+  );
 }
 
 function HomePage({ projects, query, setQuery, searchState, onSearch, onSelectMatch, onTokenCheck, navigate, openMethodology }) {
@@ -3741,6 +3808,61 @@ function ExplorePage({ projects, query, setQuery, searchState, onSearch, onSelec
         ))}
       </div>
       {!filtered.length && <EmptyState title={t('explore.emptyNoMatchTitle')} text={t('explore.emptyNoMatchText')} />}
+    </section>
+  );
+}
+
+// Sidebar "Top Projects" - the same tracked projects as Explore, just
+// ranked by Trust Score instead of recency. Pure client-side re-sort of
+// data Explore already has; no new scoring or data source.
+function TopProjectsPage({ projects, navigate }) {
+  const { t } = useTranslation();
+  const ranked = [...projects].sort((a, b) => (b.trustScore || 0) - (a.trustScore || 0));
+  return (
+    <section className="page-section">
+      <SectionTitle icon={Trophy} eyebrow="Ranked" title="Top Projects" />
+      <div className="project-grid">
+        {ranked.map((project, index) => (
+          <div className="top-project-card" key={project.id}>
+            <span className="top-project-rank">#{index + 1}</span>
+            <ProjectCard project={project} navigate={navigate} />
+          </div>
+        ))}
+      </div>
+      {!ranked.length && <EmptyState title={t('explore.emptyNoMatchTitle')} text={t('explore.emptyNoMatchText')} />}
+    </section>
+  );
+}
+
+// Sidebar "Categories" - groups already-classified projects (see
+// classifyAsset in scoringEngine.js, surfaced as project.assetCategory) so
+// users can browse by asset type instead of by name. Selecting a category
+// jumps to Explore filtered to those tokens by reusing Explore's own text
+// search against the category name.
+function CategoriesPage({ projects, navigate }) {
+  const { t } = useTranslation();
+  const categories = useMemo(() => {
+    const counts = new Map();
+    projects.forEach((project) => {
+      const category = project.assetCategory || 'Other';
+      counts.set(category, (counts.get(category) || 0) + 1);
+    });
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [projects]);
+
+  return (
+    <section className="page-section">
+      <SectionTitle icon={Tags} eyebrow="Browse" title="Categories" />
+      <div className="categories-browse-grid">
+        {categories.map(([category, count]) => (
+          <button className="categories-browse-card" key={category} onClick={() => navigate('explore')}>
+            <span className="categories-browse-icon"><Tags size={20} /></span>
+            <strong>{category}</strong>
+            <span>{count} {count === 1 ? 'project' : 'projects'}</span>
+          </button>
+        ))}
+      </div>
+      {!categories.length && <EmptyState title={t('explore.emptyNoMatchTitle')} text={t('explore.emptyNoMatchText')} />}
     </section>
   );
 }
@@ -4850,13 +4972,17 @@ function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch
         </div>
       </div>
 
+      <div className="dashboard-top-row">
+        <CommunityProof project={project} />
+      </div>
+      <CategoryScoreCards project={project} />
+      <ContractSecurityRow project={project} />
+
       <div className="profile-layout">
         <div className="main-column">
           <RiskSummary project={project} peerBenchmark={peerBenchmark} />
-          <AskKhanCard project={project} history={history} peerBenchmark={peerBenchmark} />
           <InfoGrid project={project} />
           <LiveMarketChart project={project} data={project.realData} />
-          <CategoryScoreCards project={project} />
           <TrustBreakdown project={project} />
           {project.realData && <RealDataSection project={project} data={project.realData} />}
           <ScamRiskCard project={project} />
@@ -4869,7 +4995,8 @@ function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch
           <FutureFoundationSection />
         </div>
         <aside className="side-column">
-          <CommunityProof project={project} />
+          <AskKhanCard project={project} history={history} peerBenchmark={peerBenchmark} />
+          <PeerBenchmarkCard project={project} peerBenchmark={peerBenchmark} />
           <Disclaimer compact />
         </aside>
       </div>
@@ -5033,21 +5160,33 @@ function RiskSummary({ project, peerBenchmark }) {
         ))}
       </div>
       <p className="plain-explanation">{plainRiskExplanation(project)}</p>
-      {peerBenchmark && (
-        <div className="peer-benchmark">
-          <div className="peer-benchmark-track">
-            <div className="peer-benchmark-fill" style={{ width: `${peerBenchmark.percentile}%` }} />
-            <div className="peer-benchmark-median-marker" />
-          </div>
-          <p className="peer-benchmark-label">
-            {t('riskSummary.peerBenchmark', {
-              comparison: t(`riskSummary.peerComparison.${peerBenchmark.comparison}`),
-              category: peerLabelFor(peerBenchmark.category),
-              peerCount: peerBenchmark.peerCount,
-            })}
-          </p>
+    </section>
+  );
+}
+
+// Phase 4 — Analyst Perspective, as its own dashboard card (moved out of
+// RiskSummary so it can sit in the report's side rail next to Ask KHAN,
+// matching the reference dashboard layout). Same computePeerBenchmark data,
+// just a dedicated visual home for it.
+function PeerBenchmarkCard({ project, peerBenchmark }) {
+  const { t } = useTranslation();
+  if (!peerBenchmark) return null;
+  return (
+    <section className="detail-section peer-benchmark-card">
+      <SectionTitle icon={BarChart3} eyebrow={t('riskSummary.eyebrow')} title="Peer Benchmark" />
+      <div className="peer-benchmark">
+        <div className="peer-benchmark-track">
+          <div className="peer-benchmark-fill" style={{ width: `${peerBenchmark.percentile}%` }} />
+          <div className="peer-benchmark-median-marker" />
         </div>
-      )}
+        <p className="peer-benchmark-label">
+          {t('riskSummary.peerBenchmark', {
+            comparison: t(`riskSummary.peerComparison.${peerBenchmark.comparison}`),
+            category: peerLabelFor(peerBenchmark.category),
+            peerCount: peerBenchmark.peerCount,
+          })}
+        </p>
+      </div>
     </section>
   );
 }
@@ -5589,6 +5728,40 @@ function CategoryScoreCards({ project }) {
               </div>
               <p>{explainers[category.key]}</p>
             </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// Compact "Contract Security" checklist row for the dashboard layout -
+// reuses the exact same mint/freeze/upgradeable flags the rest of the
+// engine already scores (see scoreSecurity/contractSecuritySummary); a
+// flag that was never confirmed shows as unknown rather than a false pass.
+function ContractSecurityRow({ project }) {
+  const data = project.realData;
+  if (!data) return null;
+  const checks = [
+    { label: 'No Mint', flag: data.mintAuthorityEnabled },
+    { label: 'No Freeze', flag: data.freezeAuthorityEnabled },
+    { label: 'No Upgradeable', flag: data.upgradeable },
+  ];
+  return (
+    <section className="detail-section contract-security-row">
+      <div className="contract-security-head">
+        <Lock size={18} />
+        <strong>Contract Security</strong>
+        <VerifiedBadge status={project.verificationStatus} size={14} />
+      </div>
+      <div className="contract-security-checks">
+        {checks.map((check) => {
+          const known = check.flag === true || check.flag === false;
+          const ok = check.flag === false;
+          return (
+            <span key={check.label} className={`security-check ${known ? (ok ? 'ok' : 'warn') : 'unknown'}`}>
+              {known ? (ok ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />) : <CircleDot size={14} />} {check.label}
+            </span>
           );
         })}
       </div>

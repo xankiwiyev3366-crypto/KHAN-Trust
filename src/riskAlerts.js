@@ -5,7 +5,9 @@
 // to be alarming, just the same plain-language voice as the rest of the
 // analyst layer. Messages are translated via the standalone `translate()`
 // mirror (see i18n/en.js `watchlist.alerts` and its az/tr/ru mirrors).
+import { useEffect, useState } from 'react';
 import { translate as t } from './i18n/index.js';
+import { historyKeyFor, fetchScoreHistory } from './scoreHistory.js';
 
 const SCORE_DROP_THRESHOLD = 8;
 const HOLDER_CONCENTRATION_INCREASE_THRESHOLD = 5; // percentage points
@@ -50,4 +52,33 @@ export function detectRiskAlerts(history) {
   }
 
   return alerts;
+}
+
+// Total active alert count across every watched token - powers the
+// sidebar's "Alerts" badge. Same fetch as WatchlistPage's own effect; the
+// duplication is cheap (localStorage/dev-fallback reads) and keeps this
+// hook independent of whether the Watchlist page itself is mounted.
+export function useWatchlistAlertCount(projects, watchlist) {
+  const [count, setCount] = useState(0);
+  const watchedIds = watchlist.join(',');
+
+  useEffect(() => {
+    let cancelled = false;
+    const watched = projects.filter((project) => watchlist.includes(project.id));
+    Promise.all(
+      watched.map(async (project) => {
+        const key = historyKeyFor(project);
+        const history = key ? await fetchScoreHistory(key).catch(() => []) : [];
+        return detectRiskAlerts(history).length;
+      })
+    ).then((counts) => {
+      if (!cancelled) setCount(counts.reduce((total, value) => total + value, 0));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedIds, projects.length]);
+
+  return count;
 }

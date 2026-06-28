@@ -3399,6 +3399,17 @@ button:disabled {
     flex-direction: column;
   }
 
+  /* align-items: flex-start above (needed so report/launchpad cards don't
+     stretch their inner content oddly) has a side effect on .profile-hero
+     specifically: its two direct children shrink-to-fit their content
+     instead of filling the column, so the title/description block was
+     sized to its longest unwrapped line and silently overflowed off the
+     right edge of the screen instead of wrapping. Force them to span the
+     full width of the stacked column. */
+  .profile-hero > * {
+    width: 100%;
+  }
+
   .one-time-offer .primary-button,
   .unlock-bar button,
   .launchpad-card button,
@@ -3449,7 +3460,6 @@ button:disabled {
     padding: 18px;
   }
 
-  .profile-actions,
   .hero-actions,
   .report-action-row {
     width: 100%;
@@ -3459,7 +3469,6 @@ button:disabled {
     width: 100%;
   }
 
-  .profile-actions button,
   .hero-actions button,
   .report-action-row button,
   .ecosystem-actions button,
@@ -3467,9 +3476,66 @@ button:disabled {
     width: 100%;
   }
 
+  /* Token Report actions become a compact, horizontally-scrollable pill
+     row instead of a tall stack of full-width buttons - touch-friendly
+     and consistent with the app-style horizontal scroll already used for
+     the top nav, rather than the old "wall of buttons" mobile pattern. */
+  .profile-actions {
+    flex-wrap: nowrap;
+    width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+
+  .profile-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .profile-actions button {
+    flex: 0 0 auto;
+    width: auto;
+    min-height: 40px;
+    padding: 0 14px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
   .result-score-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+}
+
+/* Small phones (390/414/430px-class devices) - the tagline next to the
+   logo and the "Connect Wallet" label were the two things actually
+   forcing the header to wrap across 3-4 lines instead of feeling like a
+   tight app bar. Hiding the tagline here (not at 740px) keeps it visible
+   on tablets where there's room. */
+@media (max-width: 480px) {
+  .brand small {
+    display: none;
+  }
+
+  .brand strong {
+    font-size: 15px;
+  }
+
+  .site-header {
+    padding: 12px clamp(14px, 4vw, 24px);
+    gap: 10px;
+  }
+
+  .site-header-top {
+    gap: 10px;
+  }
+
+  .wallet-connect-trigger {
+    padding: 0 11px;
+  }
+
+  .wallet-connect-trigger > span:first-of-type {
+    display: none;
   }
 }
 

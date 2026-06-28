@@ -94,10 +94,22 @@ export async function refreshPoolAddresses(meta) {
   return { ...meta, poolAddresses: Array.from(merged), poolAddressesUpdatedAt: now };
 }
 
+const SIGNATURE_PAGE_MAX_ATTEMPTS = 5;
+const SIGNATURE_PAGE_BASE_DELAY_MS = 400;
+
 async function fetchSignaturePage(before) {
   const params = before ? [KHAN_MINT, { limit: SIGNATURES_PAGE_SIZE, before }] : [KHAN_MINT, { limit: SIGNATURES_PAGE_SIZE }];
-  const result = await solanaRpc('getSignaturesForAddress', params);
-  return Array.isArray(result) ? result : [];
+  let lastError;
+  for (let attempt = 0; attempt < SIGNATURE_PAGE_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const result = await solanaRpc('getSignaturesForAddress', params);
+      return Array.isArray(result) ? result : [];
+    } catch (error) {
+      lastError = error;
+      await sleep(SIGNATURE_PAGE_BASE_DELAY_MS * 2 ** attempt);
+    }
+  }
+  throw lastError;
 }
 
 // Collects signatures newer than `lastSignature`, oldest-first, bounded per
@@ -138,9 +150,42 @@ async function collectNewSignatures(lastSignature) {
   return { signatures: collected.slice(0, MAX_TX_DETAIL_FETCHES_PER_BATCH), reachedHead: reachedHead && collected.length <= MAX_TX_DETAIL_FETCHES_PER_BATCH };
 }
 
-async function fetchParsedTransaction(signature) {
-  return solanaRpc('getTransaction', [signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]);
+async function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// Accuracy over speed: a transient RPC error (rate limit, timeout, node lag)
+// must never translate into a silently-skipped buy/sell. Retries with
+// exponential backoff before giving up - and the caller (runSyncBatch) halts
+// the whole batch rather than skipping past a signature that still fails
+// after every retry, so the sync cursor can never advance past an
+// unprocessed transaction.
+const TX_FETCH_MAX_ATTEMPTS = 6;
+const TX_FETCH_BASE_DELAY_MS = 400;
+
+async function fetchParsedTransactionWithRetry(signature) {
+  let lastError;
+  for (let attempt = 0; attempt < TX_FETCH_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const tx = await solanaRpc('getTransaction', [signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }]);
+      if (tx) return tx;
+      // A null result for a signature getSignaturesForAddress just returned
+      // means the node hasn't finished indexing it yet, not that it doesn't
+      // exist - retry rather than treat it as "no transaction".
+      lastError = new Error(`getTransaction returned null for ${signature}`);
+    } catch (error) {
+      lastError = error;
+    }
+    await sleep(TX_FETCH_BASE_DELAY_MS * 2 ** attempt);
+  }
+  throw lastError;
+}
+
+// A small delay between transaction-detail fetches keeps a keyless public
+// RPC endpoint from rate-limiting the batch in the first place (prevention
+// is cheaper than retries). Skipped when a Helius key is configured, since
+// Helius's RPC tier comfortably handles back-to-back requests.
+const INTER_REQUEST_DELAY_MS = HELIUS_API_KEY ? 0 : 150;
 
 // Pure balance-delta classifier - the venue-agnostic core. Works identically
 // whether the swap routed through Pump.fun's bonding curve or a Raydium AMM,
@@ -332,17 +377,23 @@ function newHolderRecord(wallet) {
 function applyEventToHolder(holders, event) {
   const existing = holders[event.wallet] || newHolderRecord(event.wallet);
   const next = { ...existing };
+  // event.blockTime is only ever missing for a transaction whose block hasn't
+  // finalized timestamp metadata yet (vanishingly rare for confirmed mainnet
+  // history) - in that case the buy/sell counts and amounts are still real
+  // and recorded, but the timestamp fields are left alone rather than being
+  // corrupted with a fabricated "0" date that would sort as the dawn of time.
+  const hasTimestamp = typeof event.blockTime === 'number' && event.blockTime > 0;
   if (event.direction === 'buy') {
     next.totalBought += event.khanAmount;
     next.buyCount += 1;
     next.solSpent += event.solAmount;
-    if (!next.firstBuyAt || event.blockTime < next.firstBuyAt) next.firstBuyAt = event.blockTime;
+    if (hasTimestamp && (!next.firstBuyAt || event.blockTime < next.firstBuyAt)) next.firstBuyAt = event.blockTime;
   } else {
     next.totalSold += event.khanAmount;
     next.sellCount += 1;
     next.solReceived += event.solAmount;
   }
-  if (!next.lastActivityAt || (event.blockTime && event.blockTime > next.lastActivityAt)) {
+  if (hasTimestamp && (!next.lastActivityAt || event.blockTime > next.lastActivityAt)) {
     next.lastActivityAt = event.blockTime;
   }
   holders[event.wallet] = next;
@@ -384,20 +435,36 @@ export async function runSyncBatch() {
   meta = await refreshPoolAddresses(meta);
   const poolAddressSet = new Set(meta.poolAddresses);
 
-  const { signatures, reachedHead } = await collectNewSignatures(meta.lastSignature);
+  const { signatures, reachedHead: collectedReachedHead } = await collectNewSignatures(meta.lastSignature);
 
   let holders = await readHolders();
   const isNewWalletByAddress = new Map();
   const newTransactionRows = [];
   let allEvents = [];
+  // Tracks whether every signature in this batch was either fully processed
+  // or confirmed on-chain-failed (no balance change possible). If even one
+  // signature could not be fetched after every retry, the batch stops dead
+  // at that point - the cursor is left exactly on the last fully-processed
+  // signature so the unresolved one is retried (never skipped) on the next
+  // run, and reachedHead is forced false so callers keep retrying instead of
+  // wrongly concluding the indexer is caught up.
+  let haltedOnUnresolvedSignature = false;
+  let processedCount = 0;
 
   for (const sigEntry of signatures) {
-    if (sigEntry.err) continue;
+    if (sigEntry.err) {
+      // A transaction that failed on-chain moved no tokens/SOL - safe to
+      // skip and advance the cursor past it with certainty, not a guess.
+      meta.lastSignature = sigEntry.signature;
+      processedCount += 1;
+      continue;
+    }
     let tx;
     try {
-      tx = await fetchParsedTransaction(sigEntry.signature);
-    } catch {
-      continue;
+      tx = await fetchParsedTransactionWithRetry(sigEntry.signature);
+    } catch (error) {
+      haltedOnUnresolvedSignature = true;
+      break;
     }
     const events = classifyParsedTransaction(tx, poolAddressSet);
     for (const event of events) {
@@ -412,7 +479,11 @@ export async function runSyncBatch() {
     }
     allEvents = allEvents.concat(events);
     meta.lastSignature = sigEntry.signature;
+    processedCount += 1;
+    if (INTER_REQUEST_DELAY_MS) await sleep(INTER_REQUEST_DELAY_MS);
   }
+
+  const reachedHead = collectedReachedHead && !haltedOnUnresolvedSignature;
 
   // Periodically reconcile against authoritative live balances rather than
   // trusting the incremental ledger forever - bounded to avoid doing a full
@@ -448,7 +519,7 @@ export async function runSyncBatch() {
   meta.cursorReachedHead = reachedHead;
   await writeMeta(meta);
 
-  return { processed: signatures.length, reachedHead, holderCount: currentHolderCount };
+  return { processed: processedCount, reachedHead, holderCount: currentHolderCount };
 }
 
 export { WHALE_SUPPLY_FRACTION };

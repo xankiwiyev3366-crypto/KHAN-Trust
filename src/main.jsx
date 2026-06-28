@@ -7407,6 +7407,7 @@ function AdminHolderAnalyticsPage() {
 
   const [search, setSearch] = useState('');
   const [range, setRange] = useState('all');
+  const [txDirection, setTxDirection] = useState('all');
   const [holderPage, setHolderPage] = useState(1);
   const [txPage, setTxPage] = useState(1);
 
@@ -7436,7 +7437,7 @@ function AdminHolderAnalyticsPage() {
       const [statsData, holdersData, txData] = await Promise.all([
         fetchHolderStats(activeToken),
         fetchHolders(activeToken, { search, range, page: holderPage, pageSize: 25 }),
-        fetchTransactions(activeToken, { search, range, page: txPage, pageSize: 25 }),
+        fetchTransactions(activeToken, { search, range, direction: txDirection, page: txPage, pageSize: 25 }),
       ]);
       setStats(statsData);
       setHolders(holdersData);
@@ -7450,7 +7451,7 @@ function AdminHolderAnalyticsPage() {
   useEffect(() => {
     if (token) loadAll(token);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, search, range, holderPage, txPage]);
+  }, [token, search, range, txDirection, holderPage, txPage]);
 
   useEffect(() => {
     if (!token) return;
@@ -7647,7 +7648,7 @@ function AdminHolderAnalyticsPage() {
             <thead>
               <tr>
                 <th>{t('adminHolders.columns.rank')}</th><th>{t('adminHolders.columns.wallet')}</th><th>{t('adminHolders.columns.balance')}</th><th>{t('adminHolders.columns.portfolioPercent')}</th><th>{t('adminHolders.columns.estValue')}</th>
-                <th>{t('adminHolders.columns.buys')}</th><th>{t('adminHolders.columns.sells')}</th><th>{t('adminHolders.columns.net')}</th><th>{t('adminHolders.columns.whale')}</th><th>{t('adminHolders.columns.firstBuy')}</th><th>{t('adminHolders.columns.lastActivity')}</th><th>{t('adminHolders.columns.holder')}</th>
+                <th>{t('adminHolders.columns.totalBought')}</th><th>{t('adminHolders.columns.buys')}</th><th>{t('adminHolders.columns.sells')}</th><th>{t('adminHolders.columns.net')}</th><th>{t('adminHolders.columns.whale')}</th><th>{t('adminHolders.columns.firstBuy')}</th><th>{t('adminHolders.columns.lastActivity')}</th><th>{t('adminHolders.columns.holder')}</th>
               </tr>
             </thead>
             <tbody>
@@ -7658,6 +7659,7 @@ function AdminHolderAnalyticsPage() {
                   <td>{formatHolderNumber(h.currentBalance, 0)}</td>
                   <td>{h.portfolioPercent !== null ? `${formatHolderNumber(h.portfolioPercent)}%` : t('common.notAvailable')}</td>
                   <td>{formatUsd(h.estimatedValueUsd)}</td>
+                  <td>{formatHolderNumber(h.totalBought, 0)}</td>
                   <td>{h.buyCount}</td>
                   <td>{h.sellCount}</td>
                   <td>{formatHolderNumber(h.netPosition, 0)}</td>
@@ -7679,13 +7681,24 @@ function AdminHolderAnalyticsPage() {
 
       <div className="detail-section analytics-section">
         <h4>{t('adminHolders.transactionsTitle', { count: transactions?.total ?? 0 })}</h4>
+        <div className="analytics-range-row">
+          {[
+            { key: 'all', label: t('adminHolders.directionAll') },
+            { key: 'buy', label: t('adminHolders.directionBuy') },
+            { key: 'sell', label: t('adminHolders.directionSell') },
+          ].map((option) => (
+            <button key={option.key} className={txDirection === option.key ? 'active' : ''} onClick={() => { setTxDirection(option.key); setTxPage(1); }}>
+              {option.label}
+            </button>
+          ))}
+        </div>
         {!transactions?.transactions?.length ? (
           <EmptyState title={t('adminHolders.noTransactionsTitle')} text={t('adminHolders.noTransactionsText')} />
         ) : (
           <table className="analytics-table holder-table">
             <thead>
               <tr>
-                <th>{t('adminHolders.columns.date')}</th><th>{t('adminHolders.columns.time')}</th><th>{t('adminHolders.columns.wallet')}</th><th>{t('adminHolders.columns.direction')}</th><th>{t('adminHolders.columns.khan')}</th><th>{t('adminHolders.columns.sol')}</th><th>{t('adminHolders.columns.estUsd')}</th><th>{t('adminHolders.columns.signature')}</th><th>{t('adminHolders.columns.links')}</th>
+                <th>{t('adminHolders.columns.date')}</th><th>{t('adminHolders.columns.time')}</th><th>{t('adminHolders.columns.wallet')}</th><th>{t('adminHolders.columns.direction')}</th><th>{t('adminHolders.columns.khan')}</th><th>{t('adminHolders.columns.sol')}</th><th>{t('adminHolders.columns.estUsd')}</th><th>{t('adminHolders.columns.currentBalance')}</th><th>{t('adminHolders.columns.holder')}</th><th>{t('adminHolders.columns.signature')}</th><th>{t('adminHolders.columns.links')}</th>
               </tr>
             </thead>
             <tbody>
@@ -7700,6 +7713,8 @@ function AdminHolderAnalyticsPage() {
                     <td>{formatHolderNumber(tx.khanAmount, 0)}</td>
                     <td>{formatHolderNumber(tx.solAmount)}</td>
                     <td>{tx.usdEstimate !== null ? `${formatUsd(tx.usdEstimate)} ${t('adminHolders.estimatedSuffix')}` : t('common.notAvailable')}</td>
+                    <td>{formatHolderNumber(tx.currentBalance, 0)}</td>
+                    <td>{tx.isCurrentHolder ? t('common.yes') : t('common.no')}</td>
                     <td><code title={tx.signature}>{tx.signature ? `${tx.signature.slice(0, 8)}...` : t('common.notAvailable')}</code></td>
                     <td>
                       {tx.solscanUrl && <a href={tx.solscanUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> {t('adminHolders.solscanLink')}</a>}

@@ -2,7 +2,7 @@
 // balance-delta event from _khanIndexer.mjs, never synthesized.
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
-import { readTransactions } from './_khanHolderStore.mjs';
+import { readTransactions, readHolders } from './_khanHolderStore.mjs';
 import { KHAN_MINT } from './_khanIndexer.mjs';
 
 const RANGE_WINDOWS_MS = {
@@ -51,14 +51,25 @@ export async function handler(event) {
 
     const total = rows.length;
     const startIndex = (page - 1) * pageSize;
-    const pageRows = rows.slice(startIndex, startIndex + pageSize).map((row) => ({
-      ...row,
-      solscanUrl: row.signature ? `https://solscan.io/tx/${row.signature}` : null,
-      // Pump.fun has no per-transaction page - this links to the coin's
-      // trade page, and the frontend hides it once KHAN is shown as
-      // graduated (Pump.fun stops being the live trading venue).
-      pumpFunUrl: `https://pump.fun/coin/${KHAN_MINT}`,
-    }));
+    // Every row is joined with the wallet's current on-chain state (current
+    // balance, current-holder status) so each individual buy/sell can be
+    // read on its own without cross-referencing the holders table - required
+    // for the competition-audit use case (who bought what, and do they still
+    // hold).
+    const holdersMap = await readHolders();
+    const pageRows = rows.slice(startIndex, startIndex + pageSize).map((row) => {
+      const holder = holdersMap[row.wallet];
+      return {
+        ...row,
+        currentBalance: holder ? holder.currentBalance : 0,
+        isCurrentHolder: holder ? holder.isCurrentHolder : false,
+        solscanUrl: row.signature ? `https://solscan.io/tx/${row.signature}` : null,
+        // Pump.fun has no per-transaction page - this links to the coin's
+        // trade page, and the frontend hides it once KHAN is shown as
+        // graduated (Pump.fun stops being the live trading venue).
+        pumpFunUrl: `https://pump.fun/coin/${KHAN_MINT}`,
+      };
+    });
 
     return jsonResponse(200, { total, page, pageSize, transactions: pageRows });
   } catch (error) {

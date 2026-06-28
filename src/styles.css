@@ -1624,6 +1624,32 @@ main {
   padding: 22px;
 }
 
+.score-history-strip {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  text-align: center;
+}
+
+.score-history-strip .analytics-sparkline {
+  width: 100%;
+  height: 28px;
+}
+
+.score-delta {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.score-delta.up {
+  color: var(--success);
+}
+
+.score-delta.down {
+  color: var(--danger);
+}
+
 .profile-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 330px;

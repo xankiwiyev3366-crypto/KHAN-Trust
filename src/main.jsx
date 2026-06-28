@@ -81,6 +81,7 @@ import {
 import './styles.css';
 import { WHITEPAPER } from './whitepaperConfig.js';
 import { runRiskAnalysis, classifyAsset, applyAssetTypeRiskModifier } from './scoringEngine.js';
+import { historyKeyFor, fetchScoreHistory, recordScoreSnapshot, computeScoreDelta } from './scoreHistory.js';
 import { I18nProvider, useTranslation } from './i18n/I18nContext.jsx';
 import { translate, getLanguage } from './i18n/index.js';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
@@ -2549,11 +2550,24 @@ function hasSavedRoadmap(project = {}) {
   return Boolean(project.roadmap?.some((item) => hasValue(item.phase) && item.phase !== 'Roadmap proof needed'));
 }
 
+// Native chain coins (BTC, ETH, SOL, BNB, ...) all share the same literal
+// placeholder contract string (see lookupNativeCoinGeckoAsset) since they
+// have no real contract address - that string must never be used to match
+// two stored projects as "the same token", or scanning e.g. ETH after BTC
+// would overwrite Bitcoin's stored profile with Ethereum's. Their id (e.g.
+// "native-bitcoin") is already the real unique identity for these.
+const NON_DEDUPABLE_CONTRACTS = new Set(['not provided', 'native asset (no contract)']);
+
+function dedupableContract(contract) {
+  const normalized = contract?.toLowerCase();
+  return normalized && !NON_DEDUPABLE_CONTRACTS.has(normalized) ? normalized : null;
+}
+
 function findStoredProject(items = [], project = {}) {
-  const normalizedContract = project.contract?.toLowerCase();
+  const normalizedContract = dedupableContract(project.contract);
   return items.find((item) => {
     const sameId = item.id === project.id;
-    const sameContract = normalizedContract && item.contract?.toLowerCase() === normalizedContract;
+    const sameContract = normalizedContract && dedupableContract(item.contract) === normalizedContract;
     return sameId || sameContract;
   });
 }
@@ -3138,7 +3152,7 @@ function looksLikeSolanaAddress(value) {
 }
 
 function upsertProject(items, project) {
-  const normalizedContract = project.contract?.toLowerCase();
+  const normalizedContract = dedupableContract(project.contract);
   const existing = findStoredProject(items, project);
   if (project.realData?.isDemo && existing?.realData && !existing.realData.isDemo) {
     return [normalizeProject(existing), ...items.filter((item) => item !== existing)];
@@ -3147,7 +3161,7 @@ function upsertProject(items, project) {
   const projectWithGrowth = applyHolderGrowth(mergedProject, existing);
   const withoutExisting = items.filter((item) => {
     const sameId = item.id === projectWithGrowth.id;
-    const sameContract = normalizedContract && item.contract?.toLowerCase() === normalizedContract;
+    const sameContract = normalizedContract && dedupableContract(item.contract) === normalizedContract;
     return !sameId && !sameContract;
   });
   return [projectWithGrowth, ...withoutExisting];
@@ -4759,6 +4773,7 @@ function ProjectProfile({ project, navigate, watched, toggleWatch, onEdit, openM
         </div>
         <div className="profile-score-card">
           <ScoreCircle score={project.trustScore} size="large" />
+          <ScoreHistoryStrip project={project} />
           <RiskPill level={project.riskLevel} />
           <span className="confidence-badge">{confidence.label}</span>
           <strong>{riskBadge(project.trustScore)}</strong>
@@ -7259,6 +7274,48 @@ function ScoreCircle({ score, size = 'normal' }) {
     <div className={`score-circle ${size}`} style={style}>
       <span><AnimatedNumber value={score} /></span>
       <small>{t('common.trust')}</small>
+    </div>
+  );
+}
+
+// Phase 1 — Score Memory: small trend line + one-line delta under the score
+// on the main Token Report page. Records today's snapshot (throttled to
+// once/day/key) and renders nothing until there's at least two days of real
+// history to compare - a single dot isn't a trend, so it stays silent
+// rather than showing a misleading flat line.
+function ScoreHistoryStrip({ project }) {
+  const { t } = useTranslation();
+  const [history, setHistory] = useState([]);
+  const key = historyKeyFor(project);
+
+  useEffect(() => {
+    if (!key) return;
+    let cancelled = false;
+    recordScoreSnapshot(project, project.trustScore, project.riskLevel).catch(() => {});
+    fetchScoreHistory(key)
+      .then((entries) => {
+        if (!cancelled) setHistory(entries);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, project.trustScore, project.riskLevel]);
+
+  const delta = computeScoreDelta(history, project.trustScore);
+  const sparkData = history.length >= 2 ? history.map((entry) => ({ count: entry.score })) : null;
+
+  if (!sparkData && !delta) return null;
+
+  return (
+    <div className="score-history-strip">
+      {sparkData && <Sparkline data={sparkData} color="var(--gold)" height={28} />}
+      {delta && (
+        <span className={`score-delta ${delta.delta > 0 ? 'up' : delta.delta < 0 ? 'down' : 'flat'}`}>
+          {delta.delta > 0 ? '+' : ''}{delta.delta} {t(`scoreHistory.${delta.label}`)}
+        </span>
+      )}
     </div>
   );
 }

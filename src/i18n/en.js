@@ -565,6 +565,10 @@ export default {
     trustScore: 'Trust Score',
     confidenceScore: 'Confidence Score',
   },
+  scoreHistory: {
+    thisWeek: 'this week',
+    sinceLaunch: 'since first scan',
+  },
   shareReady: {
     eyebrow: 'Share',
     title: 'Share-ready Result',

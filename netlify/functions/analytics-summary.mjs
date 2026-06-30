@@ -192,6 +192,8 @@ function buildVisitorAnalytics(pageViewEvents) {
   const newVisitors = visitors.filter((event) => event.isNewVisitor).length;
   const desktop = visitors.filter((event) => event.device !== 'mobile').length;
   const mobile = visitors.filter((event) => event.device === 'mobile').length;
+  const loggedInVisitors = visitors.filter((event) => event.isLoggedIn).length;
+  const guestVisitors = visitors.length - loggedInVisitors;
 
   const trafficSources = { direct: 0, google: 0, x: 0, telegram: 0, other: 0 };
   visitors.forEach((event) => {
@@ -203,6 +205,8 @@ function buildVisitorAnalytics(pageViewEvents) {
     uniqueVisitors: visitors.length,
     newVisitors,
     returningVisitors: Math.max(0, visitors.length - newVisitors),
+    loggedInVisitors,
+    guestVisitors,
     desktop,
     mobile,
     trafficSources,

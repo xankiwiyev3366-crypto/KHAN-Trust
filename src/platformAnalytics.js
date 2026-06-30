@@ -95,6 +95,7 @@ export function trackEvent(type, payload = {}) {
       isNewVisitor: visitorContext.isNewVisitor,
       device: visitorContext.device || detectDevice(),
       trafficSource: visitorContext.trafficSource || detectTrafficSource(),
+      isLoggedIn: Boolean(_currentUserId),
       ...(_currentUserId ? { userId: _currentUserId } : {}),
       ...payload,
     });

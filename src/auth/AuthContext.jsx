@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { AuthGateModal } from './AuthGateModal.jsx';
 
 const TOKEN_KEY = 'khan-trust-auth-token-v1';
 
@@ -18,6 +19,10 @@ export function AuthProvider({ children }) {
   });
   const [isLoading, setIsLoading] = useState(Boolean(token));
 
+  // Gate modal state
+  const [gateOpen, setGateOpen] = useState(false);
+  const pendingCallback = useRef(null);
+
   // Restore session on mount
   useEffect(() => {
     if (!token) { setIsLoading(false); return; }
@@ -26,6 +31,18 @@ export function AuthProvider({ children }) {
       .catch(() => { localStorage.removeItem(TOKEN_KEY); setToken(null); })
       .finally(() => setIsLoading(false));
   }, []);
+
+  // When user logs in (from any path), fire the pending gated callback
+  useEffect(() => {
+    if (user && pendingCallback.current) {
+      const cb = pendingCallback.current;
+      pendingCallback.current = null;
+      setGateOpen(false);
+      // Small timeout lets React commit the user state before the callback
+      // triggers any component that reads user from context
+      setTimeout(cb, 0);
+    }
+  }, [user]);
 
   const persist = useCallback((u, tok) => {
     setUser(u);
@@ -102,9 +119,32 @@ export function AuthProvider({ children }) {
     return data.scans || [];
   }, [token]);
 
+  // gate(callback): if logged in, run immediately; otherwise show benefit modal
+  // and run callback after the user authenticates.
+  const gate = useCallback((callback) => {
+    if (user) {
+      callback?.();
+      return;
+    }
+    pendingCallback.current = callback;
+    setGateOpen(true);
+  }, [user]);
+
+  const closeGate = useCallback(() => {
+    setGateOpen(false);
+    pendingCallback.current = null;
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, register, login, logout, forgotPassword, resetPassword, verifyEmail, updateProfile, fetchUserScans }}>
+    <AuthContext.Provider value={{ user, token, isLoading, register, login, logout, forgotPassword, resetPassword, verifyEmail, updateProfile, fetchUserScans, gate }}>
       {children}
+      {gateOpen && (
+        <AuthGateModal
+          onLogin={login}
+          onRegister={register}
+          onClose={closeGate}
+        />
+      )}
     </AuthContext.Provider>
   );
 }

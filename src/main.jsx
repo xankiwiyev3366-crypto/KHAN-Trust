@@ -4,7 +4,7 @@
 // pre-bundling, not the production rollup build, so the production bundle
 // never got this without an explicit import here.
 import './bufferShim.js';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import {
@@ -3190,9 +3190,13 @@ function applyHolderGrowth(project, existing) {
   return project;
 }
 
+// Pages that require authentication before the user can enter.
+// Clicking these in the nav shows the gate modal rather than navigating.
+const GATED_PAGES = new Set(['watchlist', 'alerts', 'add', 'launchpad', 'profile']);
+
 function App() {
   const { t } = useTranslation();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, gate } = useAuth();
   const [page, setPage] = useState(() => window.location.hash.replace('#/', '') || 'home');
   const [authModalMode, setAuthModalMode] = useState(null); // null = closed
   const [query, setQuery] = useState('');
@@ -3284,6 +3288,18 @@ function App() {
     setPage(target);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  // Auth-gated navigation: intercepts clicks to protected pages and shows
+  // the benefit modal instead of navigating. After auth the original target
+  // is resumed automatically. Use this for all user-initiated nav clicks;
+  // keep `navigate` for programmatic/internal routing that should not gate.
+  const navTo = useCallback((target) => {
+    if (GATED_PAGES.has(target) && !user) {
+      gate(() => navigate(target));
+      return;
+    }
+    navigate(target);
+  }, [user, gate]);
 
   const saveProjectProfile = (project) => {
     const normalized = normalizeProject(project);
@@ -3429,19 +3445,17 @@ function App() {
   };
 
   const toggleWatch = (projectId) => {
-    setWatchlist((items) => (items.includes(projectId) ? items.filter((id) => id !== projectId) : [...items, projectId]));
-    // Mirror to the server-synced watchlist for Premium/Early Supporter
-    // wallets only - free users keep the existing local-only behavior
-    // unchanged. Fire-and-forget: the server rejects writes for wallets
-    // without an entitlement anyway, so there's nothing to recover from here.
-    if (hasPremium && entitledWallet) toggleServerWatch(entitledWallet, projectId);
+    gate(() => {
+      setWatchlist((items) => (items.includes(projectId) ? items.filter((id) => id !== projectId) : [...items, projectId]));
+      if (hasPremium && entitledWallet) toggleServerWatch(entitledWallet, projectId);
+    });
   };
 
   return (
     <div className="app-shell">
-      <Sidebar page={page} navigate={navigate} alertCount={alertCount} />
+      <Sidebar page={page} navigate={navigate} navTo={navTo} alertCount={alertCount} />
       <div className="app-content">
-      <Header page={page} navigate={navigate} setAuthModalMode={setAuthModalMode} />
+      <Header page={page} navigate={navigate} navTo={navTo} setAuthModalMode={setAuthModalMode} />
       <main>
         {page === 'home' && (
           <HomePage
@@ -3494,7 +3508,7 @@ function App() {
             toggleWatch={() => toggleWatch(selectedProject.id)}
             onEdit={() => setEditingProject(selectedProject)}
             openMethodology={() => setMethodologyOpen(true)}
-            onRequestVerification={() => setRequestingVerification(selectedProject)}
+            onRequestVerification={() => gate(() => setRequestingVerification(selectedProject))}
           />
         )}
         {page.startsWith('project/') && !selectedProject && (
@@ -3521,7 +3535,7 @@ function App() {
         {page.startsWith('reset-password/') && <ResetPasswordPage token={page.split('/')[1]} navigate={navigate} />}
       </main>
       <Footer navigate={navigate} />
-      <MobileNav page={page} navigate={navigate} setAuthModalMode={setAuthModalMode} />
+      <MobileNav page={page} navigate={navigate} navTo={navTo} setAuthModalMode={setAuthModalMode} />
       {authModalMode && (
         <AuthModal
           initialMode={authModalMode}
@@ -3563,7 +3577,7 @@ function navTargetFor(itemId) {
   return itemId;
 }
 
-function Header({ page, navigate, setAuthModalMode }) {
+function Header({ page, navigate, navTo, setAuthModalMode }) {
   const { t } = useTranslation();
   return (
     <header className="site-header">
@@ -3576,18 +3590,14 @@ function Header({ page, navigate, setAuthModalMode }) {
           </span>
         </button>
         <div className="header-right">
-          <AuthNavButton navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />
+          <AuthNavButton navigate={navigate} navTo={navTo} onOpenAuth={() => setAuthModalMode('login')} />
           <ConnectWalletButton variant="desktop" />
           <LanguageSwitcher variant="desktop" />
         </div>
       </div>
-      {/* Own row, horizontally scrollable rather than wrapping - same
-          proven pattern as .mobile-nav below - so the utility row above
-          (logo, Connect Wallet, language switcher) is never pushed around
-          or clipped by however many nav items fit at the current width. */}
       <nav className="desktop-nav">
         {navItems.map((item) => (
-          <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navigate(navTargetFor(item.id))}>
+          <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navTo(navTargetFor(item.id))}>
             {t(`nav.${item.id}`)}
           </button>
         ))}
@@ -3596,20 +3606,20 @@ function Header({ page, navigate, setAuthModalMode }) {
   );
 }
 
-function MobileNav({ page, navigate, setAuthModalMode }) {
+function MobileNav({ page, navigate, navTo, setAuthModalMode }) {
   const { t } = useTranslation();
   return (
     <nav className="mobile-nav">
       {navItems.map((item) => {
         const Icon = item.icon;
         return (
-          <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navigate(navTargetFor(item.id))}>
+          <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navTo(navTargetFor(item.id))}>
             <Icon size={18} />
             <span>{t(`nav.${item.id}`)}</span>
           </button>
         );
       })}
-      <AuthNavButton navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} variant="mobile" />
+      <AuthNavButton navigate={navigate} navTo={navTo} onOpenAuth={() => setAuthModalMode('login')} variant="mobile" />
       <ConnectWalletButton variant="mobile" />
       <LanguageSwitcher variant="mobile" />
     </nav>
@@ -3653,12 +3663,8 @@ function isSidebarActive(page, id) {
   return page === id;
 }
 
-function Sidebar({ page, navigate, alertCount }) {
+function Sidebar({ page, navigate, navTo, alertCount }) {
   const { t } = useTranslation();
-  // No brand/logo here - the top Header already renders the one KHAN
-  // Trust logo (sticky, full-width, visible at every breakpoint including
-  // when this sidebar is hidden on tablet/mobile). Rendering a second one
-  // here would duplicate it on desktop.
   return (
     <aside className="app-sidebar">
       <nav className="sidebar-nav">
@@ -3667,7 +3673,7 @@ function Sidebar({ page, navigate, alertCount }) {
           const active = isSidebarActive(page, item.id);
           const badge = item.badgeFrom === 'alertCount' ? alertCount : 0;
           return (
-            <button key={item.id} className={active ? 'active' : ''} onClick={() => navigate(item.id)}>
+            <button key={item.id} className={active ? 'active' : ''} onClick={() => navTo(item.id)}>
               <Icon size={18} />
               <span>{t(item.labelKey)}</span>
               {badge > 0 && <span className="sidebar-badge">{badge}</span>}
@@ -4066,6 +4072,7 @@ function CompareRow({ label, first, second }) {
 
 function RiskReportPage({ project, navigate }) {
   const { t } = useTranslation();
+  const { gate } = useAuth();
   const reasons = riskSignals(project).slice(0, 3);
   const factors = riskFactors(project);
   const confidence = confidenceScore(project);
@@ -4087,7 +4094,7 @@ function RiskReportPage({ project, navigate }) {
 
       <div className="report-action-row">
         <div className="pdf-export-cta">
-          <button className="secondary-button" type="button" onClick={() => handleDownloadPdf(project)}>
+          <button className="secondary-button" type="button" onClick={() => gate(() => handleDownloadPdf(project))}>
             <Download size={18} /> {t('riskReport.downloadPdf')}
           </button>
           <small>{t('riskReport.downloadHint')}</small>
@@ -4940,6 +4947,7 @@ function ProjectCard({ project, navigate }) {
 }
 
 function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch, onEdit, openMethodology, onRequestVerification }) {
+  const { gate } = useAuth();
   const { t } = useTranslation();
   const confidence = confidenceScore(project);
   const canRequestVerification =
@@ -4991,7 +4999,7 @@ function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch
                 <BadgeCheck size={18} /> {t('projectProfile.requestVerification')}
               </button>
             )}
-            <button className="secondary-button" onClick={() => handleDownloadPdf(project)}>
+            <button className="secondary-button" onClick={() => gate(() => handleDownloadPdf(project))}>
               <Download size={18} /> {t('projectProfile.downloadPdf')}
             </button>
             <button className="primary-button" onClick={unlockPremium}>
@@ -5241,6 +5249,7 @@ function PeerBenchmarkCard({ project, peerBenchmark }) {
 // ungrounded.
 function AskKhanCard({ project, history, peerBenchmark }) {
   const { t } = useTranslation();
+  const { gate } = useAuth();
   const [activeQuestion, setActiveQuestion] = useState(null);
 
   return (
@@ -5252,7 +5261,7 @@ function AskKhanCard({ project, history, peerBenchmark }) {
             key={question.id}
             type="button"
             className={activeQuestion === question.id ? 'active' : ''}
-            onClick={() => setActiveQuestion(question.id)}
+            onClick={() => gate(() => setActiveQuestion(question.id))}
           >
             {t(question.labelKey)}
           </button>
@@ -7321,6 +7330,8 @@ function AdminAnalyticsPage() {
             <span><strong>{summary.visitorAnalytics.uniqueVisitors}</strong> {t('adminAnalytics.uniqueVisitors')}</span>
             <span>{t('adminAnalytics.newVisitors')} <strong>{summary.visitorAnalytics.newVisitors}</strong></span>
             <span>{t('adminAnalytics.returningVisitors')} <strong>{summary.visitorAnalytics.returningVisitors}</strong></span>
+            <span>Logged-in visitors <strong>{summary.visitorAnalytics.loggedInVisitors ?? 0}</strong></span>
+            <span>Guest visitors <strong>{summary.visitorAnalytics.guestVisitors ?? 0}</strong></span>
           </div>
           <MiniBarChart data={deviceData} />
         </div>
@@ -9188,8 +9199,9 @@ function AdminReportPage() {
 }
 
 // ── Auth nav button shown in Header and MobileNav ──────────────────────────
-function AuthNavButton({ navigate, onOpenAuth, variant = 'desktop' }) {
+function AuthNavButton({ navigate, navTo, onOpenAuth, variant = 'desktop' }) {
   const { user, logout } = useAuth();
+  const go = navTo || navigate; // navTo applies gating; fall back if not provided
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const ref = useRef(null);
@@ -9220,7 +9232,7 @@ function AuthNavButton({ navigate, onOpenAuth, variant = 'desktop' }) {
   const initial = (user.name || user.email || '?')[0].toUpperCase();
   if (variant === 'mobile') {
     return (
-      <button className={`mobile-nav-auth-btn ${menuOpen ? 'active' : ''}`} onClick={() => { navigate('profile'); }}>
+      <button className={`mobile-nav-auth-btn ${menuOpen ? 'active' : ''}`} onClick={() => go('profile')}>
         <span className="auth-avatar-small">{initial}</span>
         <span>{user.name?.split(' ')[0] || 'Profile'}</span>
       </button>
@@ -9244,7 +9256,7 @@ function AuthNavButton({ navigate, onOpenAuth, variant = 'desktop' }) {
             <small>{user.email}</small>
             {!user.emailVerified && <span className="auth-unverified-badge">Email not verified</span>}
           </div>
-          <button onClick={() => { setMenuOpen(false); navigate('profile'); }}>
+          <button onClick={() => { setMenuOpen(false); go('profile'); }}>
             <User size={14} /> My Profile
           </button>
           <button onClick={() => { setMenuOpen(false); logout(); }}>
@@ -9446,4 +9458,11 @@ function Root() {
   );
 }
 
-createRoot(document.getElementById('root')).render(<Root />);
+// Guard against Vite HMR re-executing this module and calling createRoot
+// twice on the same container (produces a warning loop in dev but is harmless
+// in production where the module only runs once).
+const _rootContainer = document.getElementById('root');
+if (!_rootContainer._reactRoot) {
+  _rootContainer._reactRoot = createRoot(_rootContainer);
+}
+_rootContainer._reactRoot.render(<Root />);

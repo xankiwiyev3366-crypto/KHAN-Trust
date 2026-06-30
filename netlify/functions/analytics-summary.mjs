@@ -1,6 +1,7 @@
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readEvents, jsonResponse } from './_analyticsStore.mjs';
 import { readStatuses, readRequests } from './_verificationStore.mjs';
+import { countRegisteredUsers } from './_authStore.mjs';
 
 const DAY_MS = 86400000;
 
@@ -297,6 +298,40 @@ export async function handler(event) {
     const verificationAnalytics = await buildVerificationAnalytics();
     const visitorAnalytics = buildVisitorAnalytics(pageViewEvents);
 
+    // Registered-user analytics derived from auth events + auth store count
+    const registeredTotal = await countRegisteredUsers().catch(() => 0);
+    const today = new Date().toISOString().slice(0, 10);
+    const registeredToday = events.filter((e) => e.type === 'user_registered' && e.timestamp?.startsWith(today)).length;
+    const activeUserIds = new Set(
+      events.filter((e) => e.userId && withinDays(e.timestamp, 1)).map((e) => e.userId)
+    );
+    const loginsByUser = new Map();
+    events.filter((e) => e.type === 'user_login' && e.userId).forEach((e) => {
+      loginsByUser.set(e.userId, (loginsByUser.get(e.userId) || 0) + 1);
+    });
+    const returningUsers = Array.from(loginsByUser.values()).filter((n) => n > 1).length;
+    const loggedInVisitors = new Set(events.filter((e) => e.userId).map((e) => e.userId)).size;
+    const scansByUser = new Map();
+    events.filter((e) => e.type === 'token_scan' && e.userId).forEach((e) => {
+      scansByUser.set(e.userId, (scansByUser.get(e.userId) || 0) + 1);
+    });
+    const totalUserScans = Array.from(scansByUser.values()).reduce((a, b) => a + b, 0);
+    const avgScansPerUser = registeredTotal > 0 ? Math.round(totalUserScans / registeredTotal) : 0;
+    const topActiveUsers = Array.from(scansByUser.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([userId, count]) => ({ userId, scanCount: count }));
+
+    const userAnalytics = {
+      registeredTotal,
+      registeredToday,
+      activeUsersToday: activeUserIds.size,
+      returningUsers,
+      loggedInVisitors,
+      avgScansPerUser,
+      topActiveUsers,
+    };
+
     const overview = {
       totalScans: scanEvents.length,
       totalUsers: visitorAnalytics.uniqueVisitors,
@@ -316,6 +351,7 @@ export async function handler(event) {
       trustScoreAnalytics: buildTrustScoreAnalytics(scoreEvents),
       visitorAnalytics,
       verificationAnalytics,
+      userAnalytics,
       popularSearches: buildPopularSearches(searchEvents.length ? searchEvents : scanEvents),
       topActivity: buildTopActivity(events),
       projectsAddedCount: addedEvents.length,

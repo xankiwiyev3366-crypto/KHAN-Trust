@@ -17,6 +17,12 @@
 const VISITOR_ID_KEY = 'khan-trust-visitor-id-v1';
 const VISITOR_SEEN_KEY = 'khan-trust-visitor-seen-v1';
 
+let _currentUserId = null;
+
+export function setAnalyticsUserId(userId) {
+  _currentUserId = userId || null;
+}
+
 function randomId() {
   return `v-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -89,6 +95,7 @@ export function trackEvent(type, payload = {}) {
       isNewVisitor: visitorContext.isNewVisitor,
       device: visitorContext.device || detectDevice(),
       trafficSource: visitorContext.trafficSource || detectTrafficSource(),
+      ...(_currentUserId ? { userId: _currentUserId } : {}),
       ...payload,
     });
     fetch('/.netlify/functions/analytics-track', {

@@ -77,6 +77,7 @@ import {
   TrendingUp,
   Trash2,
   Trophy,
+  User,
   UserPlus,
   Users,
   WalletCards,
@@ -95,6 +96,8 @@ import LanguageSwitcher from './LanguageSwitcher.jsx';
 import WalletContextProvider from './wallet/WalletContextProvider.jsx';
 import ConnectWalletButton from './ConnectWalletButton.jsx';
 import { useKhanWallet } from './wallet/useKhanWallet.js';
+import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
+import { AuthModal } from './auth/AuthModal.jsx';
 import { PhantomWalletName } from '@solana/wallet-adapter-phantom';
 import {
   initAnalytics,
@@ -176,6 +179,7 @@ import {
   fetchAnalyticsSummary,
   downloadAsFile,
   summaryToCsv,
+  setAnalyticsUserId,
 } from './platformAnalytics.js';
 import {
   fetchHolders,
@@ -3188,7 +3192,9 @@ function applyHolderGrowth(project, existing) {
 
 function App() {
   const { t } = useTranslation();
+  const { user, isLoading: authLoading } = useAuth();
   const [page, setPage] = useState(() => window.location.hash.replace('#/', '') || 'home');
+  const [authModalMode, setAuthModalMode] = useState(null); // null = closed
   const [query, setQuery] = useState('');
   const [searchState, setSearchState] = useState({ status: 'idle', message: '' });
   const [activeFilter, setActiveFilter] = useState('All');
@@ -3234,6 +3240,10 @@ function App() {
     initAnalytics();
     initAnalyticsContext();
   }, []);
+
+  useEffect(() => {
+    setAnalyticsUserId(user?.id || null);
+  }, [user?.id]);
 
   useEffect(() => {
     trackPageView(`/${page}`);
@@ -3431,7 +3441,7 @@ function App() {
     <div className="app-shell">
       <Sidebar page={page} navigate={navigate} alertCount={alertCount} />
       <div className="app-content">
-      <Header page={page} navigate={navigate} />
+      <Header page={page} navigate={navigate} setAuthModalMode={setAuthModalMode} />
       <main>
         {page === 'home' && (
           <HomePage
@@ -3506,9 +3516,19 @@ function App() {
         {page === 'admin-support' && <AdminSupportPage />}
         {page === 'admin-report' && <AdminReportPage />}
         {page === 'admin-holders' && <AdminHolderAnalyticsPage />}
+        {page === 'profile' && <UserProfilePage navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />}
+        {page.startsWith('verify-email/') && <EmailVerifyPage token={page.split('/')[1]} navigate={navigate} />}
+        {page.startsWith('reset-password/') && <ResetPasswordPage token={page.split('/')[1]} navigate={navigate} />}
       </main>
       <Footer navigate={navigate} />
-      <MobileNav page={page} navigate={navigate} />
+      <MobileNav page={page} navigate={navigate} setAuthModalMode={setAuthModalMode} />
+      {authModalMode && (
+        <AuthModal
+          initialMode={authModalMode}
+          onClose={() => setAuthModalMode(null)}
+          onSuccess={() => setAuthModalMode(null)}
+        />
+      )}
       {methodologyOpen && <MethodologyModal onClose={() => setMethodologyOpen(false)} />}
       {requestingVerification && (
         <VerificationRequestModal
@@ -3543,7 +3563,7 @@ function navTargetFor(itemId) {
   return itemId;
 }
 
-function Header({ page, navigate }) {
+function Header({ page, navigate, setAuthModalMode }) {
   const { t } = useTranslation();
   return (
     <header className="site-header">
@@ -3556,6 +3576,7 @@ function Header({ page, navigate }) {
           </span>
         </button>
         <div className="header-right">
+          <AuthNavButton navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />
           <ConnectWalletButton variant="desktop" />
           <LanguageSwitcher variant="desktop" />
         </div>
@@ -3575,7 +3596,7 @@ function Header({ page, navigate }) {
   );
 }
 
-function MobileNav({ page, navigate }) {
+function MobileNav({ page, navigate, setAuthModalMode }) {
   const { t } = useTranslation();
   return (
     <nav className="mobile-nav">
@@ -3588,6 +3609,7 @@ function MobileNav({ page, navigate }) {
           </button>
         );
       })}
+      <AuthNavButton navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} variant="mobile" />
       <ConnectWalletButton variant="mobile" />
       <LanguageSwitcher variant="mobile" />
     </nav>
@@ -7212,6 +7234,20 @@ function AdminAnalyticsPage() {
         <StatCard icon={X} label={t('adminAnalytics.rejectedVerification')} numericValue={summary.overview.rejectedVerification} />
       </div>
 
+      {summary.userAnalytics && (
+        <>
+          <h3 className="analytics-section-heading">Registered User Analytics</h3>
+          <div className="analytics-stat-grid">
+            <StatCard icon={UserPlus} label="Registered Users" numericValue={summary.userAnalytics.registeredTotal} />
+            <StatCard icon={User} label="New Registrations Today" numericValue={summary.userAnalytics.registeredToday} />
+            <StatCard icon={Activity} label="Active Users Today" numericValue={summary.userAnalytics.activeUsersToday} />
+            <StatCard icon={Users} label="Returning Users" numericValue={summary.userAnalytics.returningUsers} sublabel="logged in 2+ times" />
+            <StatCard icon={Users} label="Logged-in Visitors" numericValue={summary.userAnalytics.loggedInVisitors} sublabel="distinct user accounts" />
+            <StatCard icon={BarChart3} label="Avg Scans per User" numericValue={summary.userAnalytics.avgScansPerUser} sublabel="registered users only" />
+          </div>
+        </>
+      )}
+
       <div className="detail-section analytics-section">
         <SectionTitle icon={LineChart} eyebrow={t('adminAnalytics.scansEyebrow')} title={t('adminAnalytics.scanActivity')} />
         <div className="analytics-range-row">
@@ -9151,12 +9187,261 @@ function AdminReportPage() {
   );
 }
 
+// ── Auth nav button shown in Header and MobileNav ──────────────────────────
+function AuthNavButton({ navigate, onOpenAuth, variant = 'desktop' }) {
+  const { user, logout } = useAuth();
+  const { t } = useTranslation();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setMenuOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [menuOpen]);
+
+  if (!user) {
+    if (variant === 'mobile') {
+      return (
+        <button className="mobile-nav-auth-btn" onClick={onOpenAuth}>
+          <User size={18} />
+          <span>Sign In</span>
+        </button>
+      );
+    }
+    return (
+      <button className="auth-nav-signin-btn" onClick={onOpenAuth}>
+        <User size={15} /> Sign In
+      </button>
+    );
+  }
+
+  const initial = (user.name || user.email || '?')[0].toUpperCase();
+  if (variant === 'mobile') {
+    return (
+      <button className={`mobile-nav-auth-btn ${menuOpen ? 'active' : ''}`} onClick={() => { navigate('profile'); }}>
+        <span className="auth-avatar-small">{initial}</span>
+        <span>{user.name?.split(' ')[0] || 'Profile'}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="auth-nav-user" ref={ref}>
+      <button className="auth-nav-user-btn" onClick={() => setMenuOpen((v) => !v)} aria-expanded={menuOpen}>
+        {user.avatarUrl
+          ? <img src={user.avatarUrl} alt={user.name} className="auth-avatar" />
+          : <span className="auth-avatar">{initial}</span>
+        }
+        <span className="auth-nav-username">{user.name?.split(' ')[0] || 'Profile'}</span>
+        <ChevronDown size={13} />
+      </button>
+      {menuOpen && (
+        <div className="auth-nav-dropdown">
+          <div className="auth-nav-dropdown-header">
+            <strong>{user.name}</strong>
+            <small>{user.email}</small>
+            {!user.emailVerified && <span className="auth-unverified-badge">Email not verified</span>}
+          </div>
+          <button onClick={() => { setMenuOpen(false); navigate('profile'); }}>
+            <User size={14} /> My Profile
+          </button>
+          <button onClick={() => { setMenuOpen(false); logout(); }}>
+            <X size={14} /> Sign Out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── User Profile Page ─────────────────────────────────────────────────────────
+function UserProfilePage({ navigate, onOpenAuth }) {
+  const { user, logout, updateProfile, fetchUserScans } = useAuth();
+  const [scans, setScans] = useState([]);
+  const [scansLoading, setScansLoading] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editAvatar, setEditAvatar] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+
+  useEffect(() => {
+    if (!user) return;
+    setEditName(user.name || '');
+    setEditAvatar(user.avatarUrl || '');
+    setScansLoading(true);
+    fetchUserScans()
+      .then(setScans)
+      .catch(() => setScans([]))
+      .finally(() => setScansLoading(false));
+  }, [user?.id]);
+
+  if (!user) {
+    return (
+      <section className="page-section">
+        <SectionTitle icon={User} eyebrow="Account" title="My Profile" />
+        <p className="lookup-message">You are not signed in.</p>
+        <button className="primary-button" onClick={onOpenAuth}>Sign In</button>
+      </section>
+    );
+  }
+
+  const initial = (user.name || user.email || '?')[0].toUpperCase();
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    setSaveMsg('');
+    try {
+      await updateProfile({ name: editName, avatarUrl: editAvatar });
+      setSaveMsg('Profile updated.');
+    } catch (err) {
+      setSaveMsg(err.message || 'Failed to save.');
+    }
+    setSaving(false);
+  };
+
+  const scansToday = scans.filter((s) => s.timestamp?.startsWith(new Date().toISOString().slice(0, 10))).length;
+  const scansThisWeek = scans.filter((s) => {
+    const diff = Date.now() - new Date(s.timestamp).getTime();
+    return diff <= 7 * 86400000;
+  }).length;
+  const scansThisMonth = scans.filter((s) => {
+    const diff = Date.now() - new Date(s.timestamp).getTime();
+    return diff <= 30 * 86400000;
+  }).length;
+
+  return (
+    <section className="page-section">
+      <SectionTitle icon={User} eyebrow="Account" title="My Profile" />
+
+      <div className="profile-card">
+        <div className="profile-avatar-section">
+          {user.avatarUrl
+            ? <img src={user.avatarUrl} alt={user.name} className="profile-avatar-large" />
+            : <span className="profile-avatar-large profile-avatar-fallback">{initial}</span>
+          }
+          <div>
+            <h2 className="profile-name">{user.name}</h2>
+            <p className="profile-email">{user.email}</p>
+            {!user.emailVerified && <span className="auth-unverified-badge">Email not verified</span>}
+            {user.emailVerified && <span className="auth-verified-badge">✓ Email verified</span>}
+            <p className="profile-joined">Member since {new Date(user.createdAt).toLocaleDateString()}</p>
+          </div>
+        </div>
+
+        <div className="profile-stats-row">
+          <div className="profile-stat"><span>{scans.length}</span><small>Total Scans</small></div>
+          <div className="profile-stat"><span>{scansToday}</span><small>Today</small></div>
+          <div className="profile-stat"><span>{scansThisWeek}</span><small>This Week</small></div>
+          <div className="profile-stat"><span>{scansThisMonth}</span><small>This Month</small></div>
+        </div>
+      </div>
+
+      <div className="profile-edit-section">
+        <h3>Edit Profile</h3>
+        <form className="auth-form" onSubmit={handleSave}>
+          <label className="auth-field">
+            <span>Full Name</span>
+            <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} required />
+          </label>
+          <label className="auth-field">
+            <span>Avatar URL <small>(optional)</small></span>
+            <input type="url" value={editAvatar} onChange={(e) => setEditAvatar(e.target.value)} placeholder="https://…" />
+          </label>
+          {saveMsg && <p className="lookup-message">{saveMsg}</p>}
+          <button className="primary-button" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+        </form>
+      </div>
+
+      <div className="profile-scan-history">
+        <h3>Scan History</h3>
+        {scansLoading && <p className="lookup-message">Loading…</p>}
+        {!scansLoading && scans.length === 0 && <p className="lookup-message">No scans recorded yet.</p>}
+        {!scansLoading && scans.length > 0 && (
+          <div className="scan-history-table-wrap">
+            <table className="data-table">
+              <thead><tr><th>Project</th><th>Ticker</th><th>Trust Score</th><th>Date</th></tr></thead>
+              <tbody>
+                {scans.map((s, i) => (
+                  <tr key={i}>
+                    <td>{s.projectName || '—'}</td>
+                    <td>{s.ticker || '—'}</td>
+                    <td>{s.trustScore != null ? s.trustScore : '—'}</td>
+                    <td>{s.timestamp ? new Date(s.timestamp).toLocaleDateString() : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="profile-danger-zone">
+        <button className="ghost-button" onClick={() => { logout(); navigate('home'); }}>Sign Out</button>
+      </div>
+    </section>
+  );
+}
+
+// ── Email Verification Page ───────────────────────────────────────────────────
+function EmailVerifyPage({ token, navigate }) {
+  const { verifyEmail } = useAuth();
+  const [status, setStatus] = useState('loading'); // loading | success | error
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    verifyEmail(token)
+      .then(() => setStatus('success'))
+      .catch((err) => { setStatus('error'); setMessage(err.message || 'Verification failed.'); });
+  }, [token]);
+
+  return (
+    <section className="page-section">
+      <SectionTitle icon={Mail} eyebrow="Account" title="Email Verification" />
+      {status === 'loading' && <p className="lookup-message">Verifying your email…</p>}
+      {status === 'success' && (
+        <div className="auth-info-block">
+          <p>Your email has been verified successfully.</p>
+          <button className="primary-button" onClick={() => navigate('profile')}>Go to Profile</button>
+        </div>
+      )}
+      {status === 'error' && (
+        <div className="auth-info-block">
+          <p className="lookup-message error">{message}</p>
+          <button className="secondary-button" onClick={() => navigate('home')}>Back to Home</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ── Password Reset Page ───────────────────────────────────────────────────────
+function ResetPasswordPage({ token, navigate }) {
+  const [showModal, setShowModal] = useState(true);
+  if (!showModal) return null;
+  return (
+    <section className="page-section">
+      <SectionTitle icon={Lock} eyebrow="Account" title="Reset Password" />
+      <AuthModal
+        initialMode="reset-password"
+        resetToken={token}
+        onClose={() => { setShowModal(false); navigate('home'); }}
+        onSuccess={() => { setShowModal(false); navigate('home'); }}
+      />
+    </section>
+  );
+}
+
 function Root() {
   return (
     <I18nProvider>
-      <WalletContextProvider>
-        <App />
-      </WalletContextProvider>
+      <AuthProvider>
+        <WalletContextProvider>
+          <App />
+        </WalletContextProvider>
+      </AuthProvider>
     </I18nProvider>
   );
 }

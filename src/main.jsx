@@ -5005,7 +5005,7 @@ function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch
             <button className="primary-button" onClick={unlockPremium}>
               <Lock size={18} /> {t('projectProfile.unlockPremium')}
             </button>
-            <button className="secondary-button" onClick={() => setReportModalOpen(true)}>
+            <button className="secondary-button" onClick={() => gate(() => setReportModalOpen(true))}>
               <Flag size={18} /> {t('projectProfile.reportSuggest')}
             </button>
             <button className="ghost-button" onClick={openMethodology}>

@@ -5195,6 +5195,7 @@ function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch
             <button className={watched ? 'primary-button watched' : 'primary-button'} onClick={toggleWatch}>
               <Bell size={18} /> {watched ? t('projectProfile.watchingProject') : t('projectProfile.watchProject')}
             </button>
+            <TokenAlertToggle project={project} />
             {canEdit && (
               <button className="secondary-button" onClick={onEdit}>
                 <Plus size={18} /> {t('projectProfile.editProject')}

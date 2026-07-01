@@ -4143,7 +4143,7 @@ function CompareRow({ label, first, second }) {
 // Retention alerts opt-in (Direction 3). Additive control shown on the token
 // report: a logged-in user can ask to be emailed if this token's risk rises
 // (see netlify/functions/alerts-*). Login-gated via the existing gate();
-// hidden for demo tokens. Every network call is best-effort so it can never
+// Every network call is best-effort so it can never
 // break the report it sits on.
 function TokenAlertToggle({ project }) {
   const { t } = useTranslation();
@@ -4166,7 +4166,7 @@ function TokenAlertToggle({ project }) {
     return () => { cancelled = true; };
   }, [user, identity, fetchAlertTokens]);
 
-  if (!identity || project.realData?.isDemo) return null;
+  if (!identity) return null;
 
   const onClick = () => {
     gate(async () => {

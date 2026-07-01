@@ -3,6 +3,14 @@
 // just a fetch call) when RESEND_API_KEY is set; otherwise every call is a
 // silent no-op so the rest of the app (report/ticket submission) keeps
 // working exactly the same whether or not email is configured.
+//
+// SECURITY: this module and RESEND_API_KEY are Netlify Functions-only (Node,
+// server-side). Do not import this file from anything under src/ - Vite only
+// ever bundles env vars explicitly prefixed VITE_ into the browser build, and
+// RESEND_API_KEY deliberately is not one, so it never reaches the client.
+// The only way to trigger an email from the frontend is through one of our
+// own endpoints (auth-resend-verification, auth-forgot-password, etc.) -
+// the frontend must never call api.resend.com directly.
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const FROM_ADDRESS = process.env.SUPPORT_FROM_EMAIL || 'KHAN Trust <onboarding@resend.dev>';
 const ADMIN_NOTIFY_EMAIL = process.env.KHAN_ADMIN_NOTIFY_EMAIL || '';

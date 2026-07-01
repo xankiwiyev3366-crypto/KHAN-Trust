@@ -76,6 +76,69 @@ export default {
     tagline: 'Доверие важнее хайпа',
     goHome: 'На главную',
   },
+  // My Profile page, plus the two bits of profile UI that also render inside
+  // the header/mobile-nav dropdown (email verification badge+action) so both
+  // places share one translated source instead of drifting apart.
+  userProfile: {
+    eyebrow: 'Аккаунт',
+    title: 'Мой профиль',
+    notSignedIn: 'Вы не вошли в систему.',
+    emailVerified: '✓ Email подтверждён',
+    emailNotVerified: 'Email не подтверждён',
+    memberSince: 'Участник с {{date}}',
+    stats: {
+      totalScans: 'Всего сканирований',
+      today: 'Сегодня',
+      thisWeek: 'На этой неделе',
+      thisMonth: 'В этом месяце',
+    },
+    editTitle: 'Редактировать профиль',
+    fields: {
+      fullName: 'Полное имя',
+      profilePicture: 'Фото профиля',
+    },
+    avatar: {
+      uploadPhoto: 'Загрузить фото',
+      changePhoto: 'Изменить фото',
+      processing: 'Обработка…',
+      remove: 'Удалить',
+      previewAlt: 'Предпросмотр аватара',
+      helpText: 'PNG, JPEG, WEBP или GIF. Автоматически изменяется до {{size}}×{{size}}. Если фото не задано, вместо него показываются ваши инициалы.',
+      errors: {
+        invalidType: 'Пожалуйста, выберите изображение в формате PNG, JPEG, WEBP или GIF.',
+        tooLarge: 'Изображение слишком большое. Пожалуйста, выберите файл размером до 8МБ.',
+        readFileFailed: 'Не удалось прочитать выбранный файл.',
+        readImageFailed: 'Не удалось прочитать выбранное изображение.',
+        genericFailed: 'Не удалось обработать это изображение.',
+      },
+    },
+    saveChanges: 'Сохранить изменения',
+    saving: 'Сохранение…',
+    toast: {
+      saveSuccess: 'Профиль обновлён.',
+      saveError: 'Не удалось сохранить профиль.',
+    },
+    scanHistory: {
+      title: 'История сканирований',
+      loading: 'Загрузка…',
+      empty: 'Сканирований пока нет.',
+      columns: {
+        project: 'Проект',
+        ticker: 'Тикер',
+        trustScore: 'Trust Score',
+        date: 'Дата',
+      },
+    },
+    signOut: 'Выйти',
+    verification: {
+      sendButton: 'Отправить письмо для подтверждения',
+      resendButton: 'Отправить письмо повторно',
+      sendingButton: 'Отправка…',
+      resendCountdown: 'Повторная отправка через {{seconds}}с',
+      sentDefaultMessage: 'Письмо для подтверждения отправлено.',
+      errorDefaultMessage: 'Не удалось отправить письмо для подтверждения.',
+    },
+  },
   footer: {
     tagline: 'Доверие важнее хайпа.',
     quickLinksTitle: 'Быстрые ссылки',

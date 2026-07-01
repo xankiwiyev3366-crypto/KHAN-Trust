@@ -76,6 +76,69 @@ export default {
     tagline: 'Hype-dan əvvəl etibar',
     goHome: 'Ana səhifəyə keç',
   },
+  // My Profile page, plus the two bits of profile UI that also render inside
+  // the header/mobile-nav dropdown (email verification badge+action) so both
+  // places share one translated source instead of drifting apart.
+  userProfile: {
+    eyebrow: 'Hesab',
+    title: 'Mənim Profilim',
+    notSignedIn: 'Siz daxil olmamısınız.',
+    emailVerified: '✓ E-poçt təsdiqləndi',
+    emailNotVerified: 'E-poçt təsdiqlənməyib',
+    memberSince: 'Üzv olma tarixi: {{date}}',
+    stats: {
+      totalScans: 'Ümumi Taramalar',
+      today: 'Bu gün',
+      thisWeek: 'Bu həftə',
+      thisMonth: 'Bu ay',
+    },
+    editTitle: 'Profili Redaktə Et',
+    fields: {
+      fullName: 'Ad Soyad',
+      profilePicture: 'Profil Şəkli',
+    },
+    avatar: {
+      uploadPhoto: 'Şəkil yüklə',
+      changePhoto: 'Şəkli dəyiş',
+      processing: 'Emal edilir…',
+      remove: 'Sil',
+      previewAlt: 'Avatar önizləməsi',
+      helpText: 'PNG, JPEG, WEBP və ya GIF. Avtomatik olaraq {{size}}×{{size}} ölçüsünə dəyişdirilir. Heç biri təyin edilməyibsə, əvəzinə baş hərflərinizi göstərəcəyik.',
+      errors: {
+        invalidType: 'Zəhmət olmasa PNG, JPEG, WEBP və ya GIF formatında şəkil seçin.',
+        tooLarge: 'Şəkil çox böyükdür. Zəhmət olmasa 8MB-dan kiçik fayl seçin.',
+        readFileFailed: 'Seçilmiş fayl oxuna bilmədi.',
+        readImageFailed: 'Seçilmiş şəkil oxuna bilmədi.',
+        genericFailed: 'Həmin şəkil emal edilə bilmədi.',
+      },
+    },
+    saveChanges: 'Dəyişiklikləri Yadda Saxla',
+    saving: 'Yadda saxlanılır…',
+    toast: {
+      saveSuccess: 'Profil yeniləndi.',
+      saveError: 'Profili yadda saxlamaq alınmadı.',
+    },
+    scanHistory: {
+      title: 'Tarama Tarixçəsi',
+      loading: 'Yüklənir…',
+      empty: 'Hələ heç bir tarama qeydə alınmayıb.',
+      columns: {
+        project: 'Layihə',
+        ticker: 'Ticker',
+        trustScore: 'Trust Score',
+        date: 'Tarix',
+      },
+    },
+    signOut: 'Çıxış',
+    verification: {
+      sendButton: 'Təsdiq e-poçtu göndər',
+      resendButton: 'Təsdiq e-poçtunu yenidən göndər',
+      sendingButton: 'Göndərilir…',
+      resendCountdown: '{{seconds}} saniyəyə yenidən göndər',
+      sentDefaultMessage: 'Təsdiq e-poçtu göndərildi.',
+      errorDefaultMessage: 'Təsdiq e-poçtu göndərilə bilmədi.',
+    },
+  },
   footer: {
     tagline: 'Hype-dan əvvəl etibar.',
     quickLinksTitle: 'Sürətli Keçidlər',

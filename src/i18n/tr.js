@@ -76,6 +76,69 @@ export default {
     tagline: 'Hype\'tan önce güven',
     goHome: 'Ana sayfaya git',
   },
+  // My Profile page, plus the two bits of profile UI that also render inside
+  // the header/mobile-nav dropdown (email verification badge+action) so both
+  // places share one translated source instead of drifting apart.
+  userProfile: {
+    eyebrow: 'Hesap',
+    title: 'Profilim',
+    notSignedIn: 'Giriş yapmadınız.',
+    emailVerified: '✓ E-posta doğrulandı',
+    emailNotVerified: 'E-posta doğrulanmadı',
+    memberSince: 'Katılma tarihi: {{date}}',
+    stats: {
+      totalScans: 'Toplam Tarama',
+      today: 'Bugün',
+      thisWeek: 'Bu Hafta',
+      thisMonth: 'Bu Ay',
+    },
+    editTitle: 'Profili Düzenle',
+    fields: {
+      fullName: 'Ad Soyad',
+      profilePicture: 'Profil Fotoğrafı',
+    },
+    avatar: {
+      uploadPhoto: 'Fotoğraf yükle',
+      changePhoto: 'Fotoğrafı değiştir',
+      processing: 'İşleniyor…',
+      remove: 'Kaldır',
+      previewAlt: 'Avatar önizlemesi',
+      helpText: 'PNG, JPEG, WEBP veya GIF. Otomatik olarak {{size}}×{{size}} boyutuna getirilir. Ayarlanmamışsa, yerine baş harfleriniz gösterilir.',
+      errors: {
+        invalidType: 'Lütfen PNG, JPEG, WEBP veya GIF formatında bir görsel seçin.',
+        tooLarge: 'Görsel çok büyük. Lütfen 8MB\'tan küçük bir dosya seçin.',
+        readFileFailed: 'Seçilen dosya okunamadı.',
+        readImageFailed: 'Seçilen görsel okunamadı.',
+        genericFailed: 'Bu görsel işlenemedi.',
+      },
+    },
+    saveChanges: 'Değişiklikleri Kaydet',
+    saving: 'Kaydediliyor…',
+    toast: {
+      saveSuccess: 'Profil güncellendi.',
+      saveError: 'Profil kaydedilemedi.',
+    },
+    scanHistory: {
+      title: 'Tarama Geçmişi',
+      loading: 'Yükleniyor…',
+      empty: 'Henüz kaydedilmiş tarama yok.',
+      columns: {
+        project: 'Proje',
+        ticker: 'Ticker',
+        trustScore: 'Trust Score',
+        date: 'Tarih',
+      },
+    },
+    signOut: 'Çıkış Yap',
+    verification: {
+      sendButton: 'Doğrulama e-postası gönder',
+      resendButton: 'Doğrulama e-postasını yeniden gönder',
+      sendingButton: 'Gönderiliyor…',
+      resendCountdown: '{{seconds}} saniye içinde yeniden gönder',
+      sentDefaultMessage: 'Doğrulama e-postası gönderildi.',
+      errorDefaultMessage: 'Doğrulama e-postası gönderilemedi.',
+    },
+  },
   footer: {
     tagline: 'Hype\'tan önce güven.',
     quickLinksTitle: 'Hızlı Bağlantılar',

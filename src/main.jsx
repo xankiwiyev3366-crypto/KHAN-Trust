@@ -9181,6 +9181,7 @@ const VERIFICATION_RESEND_COOLDOWN_S = 60;
 // that knows how to trigger + rate-limit this action.
 function EmailVerificationAction({ compact = false }) {
   const { resendVerificationEmail } = useAuth();
+  const { t } = useTranslation();
   const [state, setState] = useState({ status: 'idle', message: '' }); // idle | sending | sent | error
   const [cooldown, setCooldown] = useState(0);
   const busy = state.status === 'sending';
@@ -9196,18 +9197,26 @@ function EmailVerificationAction({ compact = false }) {
     setState({ status: 'sending', message: '' });
     try {
       const result = await resendVerificationEmail();
-      setState({ status: 'sent', message: result.message || 'Verification email sent.' });
+      setState({ status: 'sent', message: result.message || t('userProfile.verification.sentDefaultMessage') });
       setCooldown(VERIFICATION_RESEND_COOLDOWN_S);
     } catch (err) {
-      setState({ status: 'error', message: err.message || 'Could not send verification email.' });
+      setState({ status: 'error', message: err.message || t('userProfile.verification.errorDefaultMessage') });
       if (err.status === 429) setCooldown(VERIFICATION_RESEND_COOLDOWN_S);
     }
   };
 
+  const label = busy
+    ? t('userProfile.verification.sendingButton')
+    : cooldown > 0
+      ? t('userProfile.verification.resendCountdown', { seconds: cooldown })
+      : state.status === 'sent'
+        ? t('userProfile.verification.resendButton')
+        : t('userProfile.verification.sendButton');
+
   return (
     <div className={compact ? 'email-verify-action compact' : 'email-verify-action'}>
       <button type="button" className="email-verify-btn" onClick={send} disabled={busy || cooldown > 0}>
-        {busy ? 'Sending…' : cooldown > 0 ? `Resend in ${cooldown}s` : state.status === 'sent' ? 'Resend verification email' : 'Send verification email'}
+        {label}
       </button>
       {state.message && (
         <p className={`email-verify-message ${state.status === 'error' ? 'error' : 'success'}`}>{state.message}</p>
@@ -9236,13 +9245,13 @@ function AuthNavButton({ navigate, navTo, onOpenAuth, variant = 'desktop' }) {
       return (
         <button className="mobile-nav-auth-btn" onClick={onOpenAuth}>
           <User size={18} />
-          <span>Sign In</span>
+          <span>{t('common.signIn')}</span>
         </button>
       );
     }
     return (
       <button className="auth-nav-signin-btn" onClick={onOpenAuth}>
-        <User size={15} /> Sign In
+        <User size={15} /> {t('common.signIn')}
       </button>
     );
   }
@@ -9255,7 +9264,7 @@ function AuthNavButton({ navigate, navTo, onOpenAuth, variant = 'desktop' }) {
           ? <img src={user.avatarUrl} alt={user.name} className="auth-avatar-small" />
           : <span className="auth-avatar-small">{initial}</span>
         }
-        <span>{user.name?.split(' ')[0] || 'Profile'}</span>
+        <span>{user.name?.split(' ')[0] || t('userProfile.title')}</span>
       </button>
     );
   }
@@ -9267,7 +9276,7 @@ function AuthNavButton({ navigate, navTo, onOpenAuth, variant = 'desktop' }) {
           ? <img src={user.avatarUrl} alt={user.name} className="auth-avatar" />
           : <span className="auth-avatar">{initial}</span>
         }
-        <span className="auth-nav-username">{user.name?.split(' ')[0] || 'Profile'}</span>
+        <span className="auth-nav-username">{user.name?.split(' ')[0] || t('userProfile.title')}</span>
         <ChevronDown size={13} />
       </button>
       {menuOpen && (
@@ -9276,19 +9285,19 @@ function AuthNavButton({ navigate, navTo, onOpenAuth, variant = 'desktop' }) {
             <strong>{user.name}</strong>
             <small>{user.email}</small>
             {user.emailVerified
-              ? <span className="auth-verified-badge">✓ Email verified</span>
+              ? <span className="auth-verified-badge">{t('userProfile.emailVerified')}</span>
               : (
                 <>
-                  <span className="auth-unverified-badge">Email not verified</span>
+                  <span className="auth-unverified-badge">{t('userProfile.emailNotVerified')}</span>
                   <EmailVerificationAction compact />
                 </>
               )}
           </div>
           <button onClick={() => { setMenuOpen(false); go('profile'); }}>
-            <User size={14} /> My Profile
+            <User size={14} /> {t('userProfile.title')}
           </button>
           <button onClick={() => { setMenuOpen(false); logout(); }}>
-            <X size={14} /> Sign Out
+            <X size={14} /> {t('userProfile.signOut')}
           </button>
         </div>
       )}
@@ -9321,10 +9330,10 @@ const AVATAR_OUTPUT_SIZE = 256;
 
 function validateAvatarFile(file) {
   if (!ALLOWED_AVATAR_TYPES.has(file.type)) {
-    throw new Error('Please choose a PNG, JPEG, WEBP, or GIF image.');
+    throw new Error(translate('userProfile.avatar.errors.invalidType'));
   }
   if (file.size > MAX_AVATAR_UPLOAD_BYTES) {
-    throw new Error('Image is too large. Please choose a file under 8MB.');
+    throw new Error(translate('userProfile.avatar.errors.tooLarge'));
   }
 }
 
@@ -9336,10 +9345,10 @@ function validateAvatarFile(file) {
 function resizeAvatarFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Could not read the selected file.'));
+    reader.onerror = () => reject(new Error(translate('userProfile.avatar.errors.readFileFailed')));
     reader.onload = () => {
       const img = new Image();
-      img.onerror = () => reject(new Error('Could not read the selected image.'));
+      img.onerror = () => reject(new Error(translate('userProfile.avatar.errors.readImageFailed')));
       img.onload = () => {
         const side = Math.min(img.width, img.height);
         const sx = (img.width - side) / 2;
@@ -9360,6 +9369,7 @@ function resizeAvatarFile(file) {
 // ── User Profile Page ─────────────────────────────────────────────────────────
 function UserProfilePage({ navigate, onOpenAuth }) {
   const { user, logout, updateProfile, fetchUserScans } = useAuth();
+  const { t, language } = useTranslation();
   const [scans, setScans] = useState([]);
   const [scansLoading, setScansLoading] = useState(false);
   const [editName, setEditName] = useState('');
@@ -9369,6 +9379,7 @@ function UserProfilePage({ navigate, onOpenAuth }) {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const avatarInputRef = useRef(null);
+  const dateLocale = PDF_LOCALE_MAP[language] || 'en-US';
 
   useEffect(() => {
     if (!user) return;
@@ -9384,9 +9395,9 @@ function UserProfilePage({ navigate, onOpenAuth }) {
   if (!user) {
     return (
       <section className="page-section">
-        <SectionTitle icon={User} eyebrow="Account" title="My Profile" />
-        <p className="lookup-message">You are not signed in.</p>
-        <button className="primary-button" onClick={onOpenAuth}>Sign In</button>
+        <SectionTitle icon={User} eyebrow={t('userProfile.eyebrow')} title={t('userProfile.title')} />
+        <p className="lookup-message">{t('userProfile.notSignedIn')}</p>
+        <button className="primary-button" onClick={onOpenAuth}>{t('common.signIn')}</button>
       </section>
     );
   }
@@ -9404,7 +9415,7 @@ function UserProfilePage({ navigate, onOpenAuth }) {
       const dataUrl = await resizeAvatarFile(file);
       setEditAvatar(dataUrl);
     } catch (err) {
-      setAvatarError(err.message || 'Could not process that image.');
+      setAvatarError(err.message || t('userProfile.avatar.errors.genericFailed'));
     }
     setAvatarProcessing(false);
   };
@@ -9414,9 +9425,9 @@ function UserProfilePage({ navigate, onOpenAuth }) {
     setSaving(true);
     try {
       await updateProfile({ name: editName, avatarUrl: editAvatar });
-      setToast({ tone: 'success', message: 'Profile updated.' });
+      setToast({ tone: 'success', message: t('userProfile.toast.saveSuccess') });
     } catch (err) {
-      setToast({ tone: 'error', message: err.message || 'Failed to save profile.' });
+      setToast({ tone: 'error', message: err.message || t('userProfile.toast.saveError') });
     }
     setSaving(false);
   };
@@ -9433,7 +9444,7 @@ function UserProfilePage({ navigate, onOpenAuth }) {
 
   return (
     <section className="page-section">
-      <SectionTitle icon={User} eyebrow="Account" title="My Profile" />
+      <SectionTitle icon={User} eyebrow={t('userProfile.eyebrow')} title={t('userProfile.title')} />
       <ProfileToast toast={toast} onDismiss={() => setToast(null)} />
 
       <div className="profile-card">
@@ -9446,37 +9457,37 @@ function UserProfilePage({ navigate, onOpenAuth }) {
             <h2 className="profile-name">{user.name}</h2>
             <p className="profile-email">{user.email}</p>
             {user.emailVerified
-              ? <span className="auth-verified-badge">✓ Email verified</span>
+              ? <span className="auth-verified-badge">{t('userProfile.emailVerified')}</span>
               : (
                 <>
-                  <span className="auth-unverified-badge">Email not verified</span>
+                  <span className="auth-unverified-badge">{t('userProfile.emailNotVerified')}</span>
                   <EmailVerificationAction />
                 </>
               )}
-            <p className="profile-joined">Member since {new Date(user.createdAt).toLocaleDateString()}</p>
+            <p className="profile-joined">{t('userProfile.memberSince', { date: new Date(user.createdAt).toLocaleDateString(dateLocale) })}</p>
           </div>
         </div>
 
         <div className="profile-stats-row">
-          <div className="profile-stat"><span>{scans.length}</span><small>Total Scans</small></div>
-          <div className="profile-stat"><span>{scansToday}</span><small>Today</small></div>
-          <div className="profile-stat"><span>{scansThisWeek}</span><small>This Week</small></div>
-          <div className="profile-stat"><span>{scansThisMonth}</span><small>This Month</small></div>
+          <div className="profile-stat"><span>{scans.length}</span><small>{t('userProfile.stats.totalScans')}</small></div>
+          <div className="profile-stat"><span>{scansToday}</span><small>{t('userProfile.stats.today')}</small></div>
+          <div className="profile-stat"><span>{scansThisWeek}</span><small>{t('userProfile.stats.thisWeek')}</small></div>
+          <div className="profile-stat"><span>{scansThisMonth}</span><small>{t('userProfile.stats.thisMonth')}</small></div>
         </div>
       </div>
 
       <div className="profile-edit-section">
-        <h3>Edit Profile</h3>
+        <h3>{t('userProfile.editTitle')}</h3>
         <form className="auth-form" onSubmit={handleSave}>
           <label className="auth-field">
-            <span>Full Name</span>
+            <span>{t('userProfile.fields.fullName')}</span>
             <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} required disabled={saving} />
           </label>
           <div className="auth-field">
-            <span>Profile Picture</span>
+            <span>{t('userProfile.fields.profilePicture')}</span>
             <div className="avatar-upload-row">
               {editAvatar
-                ? <img src={editAvatar} alt="Avatar preview" className="avatar-upload-preview" />
+                ? <img src={editAvatar} alt={t('userProfile.avatar.previewAlt')} className="avatar-upload-preview" />
                 : <span className="avatar-upload-preview avatar-upload-preview-fallback">{initial}</span>
               }
               <div className="avatar-upload-actions">
@@ -9494,7 +9505,7 @@ function UserProfilePage({ navigate, onOpenAuth }) {
                   onClick={() => avatarInputRef.current?.click()}
                   disabled={saving || avatarProcessing}
                 >
-                  <Camera size={16} /> {avatarProcessing ? 'Processing…' : editAvatar ? 'Change photo' : 'Upload photo'}
+                  <Camera size={16} /> {avatarProcessing ? t('userProfile.avatar.processing') : editAvatar ? t('userProfile.avatar.changePhoto') : t('userProfile.avatar.uploadPhoto')}
                 </button>
                 {editAvatar && (
                   <button
@@ -9503,33 +9514,40 @@ function UserProfilePage({ navigate, onOpenAuth }) {
                     onClick={() => setEditAvatar('')}
                     disabled={saving || avatarProcessing}
                   >
-                    <Trash2 size={16} /> Remove
+                    <Trash2 size={16} /> {t('userProfile.avatar.remove')}
                   </button>
                 )}
               </div>
             </div>
-            <small className="inline-note">PNG, JPEG, WEBP, or GIF. Automatically resized to {AVATAR_OUTPUT_SIZE}×{AVATAR_OUTPUT_SIZE}. If none is set, your initials are shown instead.</small>
+            <small className="inline-note">{t('userProfile.avatar.helpText', { size: AVATAR_OUTPUT_SIZE })}</small>
             {avatarError && <p className="lookup-message error">{avatarError}</p>}
           </div>
-          <button className="primary-button" type="submit" disabled={saving || avatarProcessing}>{saving ? 'Saving…' : 'Save Changes'}</button>
+          <button className="primary-button" type="submit" disabled={saving || avatarProcessing}>{saving ? t('userProfile.saving') : t('userProfile.saveChanges')}</button>
         </form>
       </div>
 
       <div className="profile-scan-history">
-        <h3>Scan History</h3>
-        {scansLoading && <p className="lookup-message">Loading…</p>}
-        {!scansLoading && scans.length === 0 && <p className="lookup-message">No scans recorded yet.</p>}
+        <h3>{t('userProfile.scanHistory.title')}</h3>
+        {scansLoading && <p className="lookup-message">{t('userProfile.scanHistory.loading')}</p>}
+        {!scansLoading && scans.length === 0 && <p className="lookup-message">{t('userProfile.scanHistory.empty')}</p>}
         {!scansLoading && scans.length > 0 && (
           <div className="scan-history-table-wrap">
             <table className="data-table">
-              <thead><tr><th>Project</th><th>Ticker</th><th>Trust Score</th><th>Date</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>{t('userProfile.scanHistory.columns.project')}</th>
+                  <th>{t('userProfile.scanHistory.columns.ticker')}</th>
+                  <th>{t('userProfile.scanHistory.columns.trustScore')}</th>
+                  <th>{t('userProfile.scanHistory.columns.date')}</th>
+                </tr>
+              </thead>
               <tbody>
                 {scans.map((s, i) => (
                   <tr key={i}>
                     <td>{s.projectName || '—'}</td>
                     <td>{s.ticker || '—'}</td>
                     <td>{s.trustScore != null ? s.trustScore : '—'}</td>
-                    <td>{s.timestamp ? new Date(s.timestamp).toLocaleDateString() : '—'}</td>
+                    <td>{s.timestamp ? new Date(s.timestamp).toLocaleDateString(dateLocale) : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -9539,7 +9557,7 @@ function UserProfilePage({ navigate, onOpenAuth }) {
       </div>
 
       <div className="profile-danger-zone">
-        <button className="ghost-button" onClick={() => { logout(); navigate('home'); }}>Sign Out</button>
+        <button className="ghost-button" onClick={() => { logout(); navigate('home'); }}>{t('userProfile.signOut')}</button>
       </div>
     </section>
   );

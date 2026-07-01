@@ -78,6 +78,69 @@ export default {
     tagline: 'Trust before hype',
     goHome: 'Go to home',
   },
+  // My Profile page, plus the two bits of profile UI that also render inside
+  // the header/mobile-nav dropdown (email verification badge+action) so both
+  // places share one translated source instead of drifting apart.
+  userProfile: {
+    eyebrow: 'Account',
+    title: 'My Profile',
+    notSignedIn: 'You are not signed in.',
+    emailVerified: '✓ Email verified',
+    emailNotVerified: 'Email not verified',
+    memberSince: 'Member since {{date}}',
+    stats: {
+      totalScans: 'Total Scans',
+      today: 'Today',
+      thisWeek: 'This Week',
+      thisMonth: 'This Month',
+    },
+    editTitle: 'Edit Profile',
+    fields: {
+      fullName: 'Full Name',
+      profilePicture: 'Profile Picture',
+    },
+    avatar: {
+      uploadPhoto: 'Upload photo',
+      changePhoto: 'Change photo',
+      processing: 'Processing…',
+      remove: 'Remove',
+      previewAlt: 'Avatar preview',
+      helpText: 'PNG, JPEG, WEBP, or GIF. Automatically resized to {{size}}×{{size}}. If none is set, your initials are shown instead.',
+      errors: {
+        invalidType: 'Please choose a PNG, JPEG, WEBP, or GIF image.',
+        tooLarge: 'Image is too large. Please choose a file under 8MB.',
+        readFileFailed: 'Could not read the selected file.',
+        readImageFailed: 'Could not read the selected image.',
+        genericFailed: 'Could not process that image.',
+      },
+    },
+    saveChanges: 'Save Changes',
+    saving: 'Saving…',
+    toast: {
+      saveSuccess: 'Profile updated.',
+      saveError: 'Failed to save profile.',
+    },
+    scanHistory: {
+      title: 'Scan History',
+      loading: 'Loading…',
+      empty: 'No scans recorded yet.',
+      columns: {
+        project: 'Project',
+        ticker: 'Ticker',
+        trustScore: 'Trust Score',
+        date: 'Date',
+      },
+    },
+    signOut: 'Sign Out',
+    verification: {
+      sendButton: 'Send verification email',
+      resendButton: 'Resend verification email',
+      sendingButton: 'Sending…',
+      resendCountdown: 'Resend in {{seconds}}s',
+      sentDefaultMessage: 'Verification email sent.',
+      errorDefaultMessage: 'Could not send verification email.',
+    },
+  },
   footer: {
     tagline: 'Trust before hype.',
     quickLinksTitle: 'Quick Links',

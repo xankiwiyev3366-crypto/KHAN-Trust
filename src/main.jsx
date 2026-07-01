@@ -309,6 +309,63 @@ const NATIVE_LIQUIDITY_PROXY = {
   sui: { chainId: 'sui', address: '0x2::sui::SUI' },
 };
 
+// Blockchair exposes a real, CORS-enabled, no-key "hodling_addresses" stat -
+// the number of on-chain addresses currently holding a balance - which is a
+// genuine holder count for a native chain asset (not a wrapped-token proxy).
+// Maps our CoinGecko ids to Blockchair's chain slugs for the chains it covers;
+// chains it doesn't cover fall back to the CoinGecko market-rank distribution
+// signal below. Best-effort: any failure just drops to the next provider.
+const BLOCKCHAIR_NATIVE_CHAINS = {
+  bitcoin: 'bitcoin',
+  ethereum: 'ethereum',
+  litecoin: 'litecoin',
+  dogecoin: 'dogecoin',
+  ripple: 'ripple',
+  cardano: 'cardano',
+  'bitcoin-cash': 'bitcoin-cash',
+  dash: 'dash',
+  zcash: 'zcash',
+  stellar: 'stellar',
+};
+
+// A native chain asset (BTC, ETH, SOL, ...) has no token-contract "holder
+// distribution" API, but its market-cap rank is a real, checkable proxy for how
+// broadly held and decentralized it is - a top-ranked base-layer money is, by
+// definition, one of the most widely distributed assets in the market. This is
+// used only as the LAST holder-health signal, after a real on-chain holder
+// count (Blockchair) has been attempted, and mirrors the engine's existing
+// policy of crediting verifiable listing/rank signals (see coingeckoScore /
+// verifiedFloor). Returns null when rank is unknown, so nothing is invented.
+function scoreNativeHolderDistribution(marketCapRank) {
+  const rank = Number(marketCapRank || 0);
+  if (!rank) return null;
+  if (rank <= 3) return 96;
+  if (rank <= 10) return 90;
+  if (rank <= 25) return 82;
+  if (rank <= 50) return 72;
+  if (rank <= 100) return 60;
+  return 48;
+}
+
+// Best-effort native holder count from Blockchair's public stats endpoint.
+// CORS-enabled and key-free; returns null on any failure (unsupported chain,
+// rate limit, network) so the caller cleanly falls through to the next signal.
+async function fetchBlockchairNativeStats(coingeckoId) {
+  const slug = BLOCKCHAIR_NATIVE_CHAINS[coingeckoId];
+  if (!slug) return null;
+  try {
+    const response = await fetch(`https://api.blockchair.com/${slug}/stats`);
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const data = payload?.data || {};
+    const holderCount = Number(data.hodling_addresses || 0) || null;
+    if (!holderCount) return null;
+    return { holderCount, source: `Blockchair ${slug} on-chain address count` };
+  } catch {
+    return null;
+  }
+}
+
 // Block-explorer "contract creation timestamp" + "is proxy/upgradeable"
 // lookups. These need a free API key per chain (Etherscan/BscScan/
 // BaseScan/PolygonScan all offer one at no cost) - set the matching env var
@@ -812,10 +869,18 @@ function calculateLiveScores(project = {}, data = {}) {
   const communityScoreValue = scoreHolders(project.communitySize);
   const descriptionScore = hasValue(project.description) ? 58 : null;
   const socialScoreInputs = [websiteScore, twitterScore, telegramScore, githubScore].filter((value) => value !== null && value !== undefined);
+  // Holder-health signal with a provider fallback chain: a real on-chain holder
+  // count first (works for tokens and for native chains Blockchair covers),
+  // then - for a native asset only - the CoinGecko market-rank distribution
+  // proxy, so a top base-layer coin never reads as "Holder Health: Not
+  // Available" when its distribution is verifiably broad. Non-native tokens are
+  // unaffected: the fallback only fires when data.isNativeAsset is true.
+  const holderScore = scoreHolders(holderCount)
+    ?? (data.isNativeAsset ? scoreNativeHolderDistribution(data.marketCapRank) : null);
   const scores = {
     marketCapScore: scoreMarketCap(data.marketCapUsd),
     liquidityScore: scoreLiquidity(data.totalLiquidityUsd ?? data.liquidityUsd),
-    holderScore: scoreHolders(holderCount),
+    holderScore,
     topHolderScore: scoreTopHolder(data.topHolderPercent),
     topTenHolderScore: scoreTopTenHolder(data.topTenHolderPercent),
     tokenAgeScore: scoreTokenAge(data.tokenAgeDays),
@@ -1635,9 +1700,14 @@ async function lookupGenericChainTokenUncached(chainId, address) {
       sells24h: dexStats?.sells24h ?? null,
       topPoolConcentrationPercent: dexStats?.topPoolConcentrationPercent ?? null,
       topAccountCount: null,
-      mintAuthorityEnabled: null,
-      freezeAuthorityEnabled: null,
-      upgradeable: explorerFlags?.upgradeable ?? null,
+      // Contract-security flags with a provider fallback chain: GoPlus (free, no
+      // key) supplies mint/freeze signals; the block explorer stays
+      // authoritative for the proxy/upgradeable flag when a key is configured,
+      // with GoPlus as the keyless fallback. Each stays null only when no
+      // provider could confirm it.
+      mintAuthorityEnabled: goPlus?.mintAuthorityEnabled ?? null,
+      freezeAuthorityEnabled: goPlus?.freezeAuthorityEnabled ?? null,
+      upgradeable: explorerFlags?.upgradeable ?? goPlus?.upgradeable ?? null,
       verifiedSource: explorerFlags?.verifiedSource ?? null,
       coingeckoListed: Boolean(coingecko?.listed),
       twitterFollowers: coingecko?.twitterFollowers ?? null,
@@ -1691,12 +1761,14 @@ async function lookupTokenMatch(match) {
 // that's the same asset's real DEX liquidity, not an estimate.
 async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel) {
   const liquidityProxy = NATIVE_LIQUIDITY_PROXY[coingeckoId];
-  const [detailResult, proxyDexResult] = await Promise.allSettled([
+  const [detailResult, proxyDexResult, blockchairResult] = await Promise.allSettled([
     fetchCoinGeckoCoinDetail(coingeckoId),
     liquidityProxy ? fetchDexscreenerToken(liquidityProxy.address, liquidityProxy.chainId) : Promise.resolve(null),
+    fetchBlockchairNativeStats(coingeckoId),
   ]);
   const detail = detailResult.status === 'fulfilled' ? detailResult.value : null;
   const proxyDex = proxyDexResult.status === 'fulfilled' ? proxyDexResult.value : null;
+  const blockchair = blockchairResult.status === 'fulfilled' ? blockchairResult.value : null;
   if (!detail) throw new Error('No public CoinGecko data was found for this asset.');
   const createdAt = detail.genesisDate ? new Date(detail.genesisDate).getTime() : null;
   const tokenAgeDays = createdAt ? daysSince(createdAt) : null;
@@ -1719,19 +1791,29 @@ async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel) {
     description: detail.description || `${detail.name} is ${chainLabel}'s native chain asset.`,
     status: 'Live CoinGecko data',
     lastUpdate: new Date().toISOString().slice(0, 10),
-    holderCount: 0,
-    communitySize: 0,
+    holderCount: blockchair?.holderCount || 0,
+    communitySize: blockchair?.holderCount || 0,
     riskNotes: translate('scoring.riskNotes.liveDataAvailable'),
     realData: {
-      source: proxyDex?.primaryPair ? `CoinGecko + ${chainLabelFor(liquidityProxy.chainId)} DEX liquidity (wrapped/native representation)` : 'CoinGecko',
-      holderSource: null,
+      source: [
+        'CoinGecko',
+        proxyDex?.primaryPair ? `${chainLabelFor(liquidityProxy.chainId)} DEX liquidity (wrapped/native representation)` : null,
+        blockchair ? 'Blockchair on-chain stats' : null,
+      ].filter(Boolean).join(' + '),
+      // Real on-chain holder count when a provider covers this chain
+      // (Blockchair); otherwise the CoinGecko market-rank distribution signal
+      // supplies the holder-health score (see calculateLiveScores), never a
+      // fabricated count.
+      holderSource: blockchair?.source || (detail.marketCapRank ? 'CoinGecko market rank (native asset distribution)' : null),
       liquidityUsd,
       totalLiquidityUsd,
       marketCapUsd: detail.realMarketCapUsd || detail.fdvUsd,
       marketCapIsFdv: !detail.realMarketCapUsd && Boolean(detail.fdvUsd),
+      marketCapRank: detail.marketCapRank,
+      watchlistUsers: detail.watchlistUsers,
       tokenAgeDays,
       tokenAgeSource: createdAt ? 'CoinGecko genesis date' : null,
-      holderCount: null,
+      holderCount: blockchair?.holderCount ?? null,
       topHolderPercent: null,
       topTenHolderPercent: null,
       holderGrowthPercent: null,
@@ -1746,9 +1828,22 @@ async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel) {
       atl: detail.atl,
       volume24hUsd: detail.volume24hUsd,
       topAccountCount: null,
-      mintAuthorityEnabled: null,
-      freezeAuthorityEnabled: null,
-      upgradeable: null,
+      // A native chain asset has NO token contract, so it has no mint, freeze,
+      // or upgradeable authority anyone could exercise - issuance is governed by
+      // network consensus, not a callable contract. These are therefore FALSE
+      // (confirmed absent), not null (unknown): a factual security posture, not
+      // a placeholder. This lets scoreSecurity() award the real "no authorities
+      // enabled" score instead of returning Not Available.
+      mintAuthorityEnabled: false,
+      freezeAuthorityEnabled: false,
+      upgradeable: false,
+      nativeSecurity: {
+        protocolSecured: true,
+        chain: chainLabel,
+        // Established, top-ranked base-layer chains are consensus-secured; this
+        // is a real, checkable status, surfaced for display only.
+        chainSecurityStatus: 'Consensus-secured base-layer network',
+      },
       coingeckoListed: true,
       twitterFollowers: detail.twitterFollowers,
       telegramUsers: detail.telegramUsers,
@@ -1930,6 +2025,12 @@ function parseCoinGeckoCoinDetail(data) {
     github: cleanLink(links.repos_url?.github?.find(hasValue)),
     twitterFollowers: Number(community.twitter_followers || 0) || null,
     telegramUsers: Number(community.telegram_channel_user_count || 0) || null,
+    // Real, universal distribution signals CoinGecko returns for every listed
+    // asset (including native coins that have no contract): the market-cap rank
+    // and how many people track the asset. Used as an honest holder-distribution
+    // proxy for native assets, which have no single on-chain "holder count" API.
+    marketCapRank: Number(data.market_cap_rank || 0) || null,
+    watchlistUsers: Number(community.watchlist_portfolio_users || 0) || null,
   };
 }
 
@@ -2104,6 +2205,15 @@ function parseGoPlusHolderResult(result) {
 // concentration gaps the existing Dexscreener/CoinGecko/GeckoTerminal/
 // block-explorer sources never provide for EVM tokens (those never report
 // holder data at all), so it can only add real data, never override it.
+// GoPlus returns its boolean-ish flags as the strings "1"/"0" (or omits them
+// when unknown). Normalizes to real true/false, or null when GoPlus has no
+// answer - so an unknown flag stays "unknown", never a fabricated pass/fail.
+function goPlusFlag(value) {
+  if (value === '1' || value === 1) return true;
+  if (value === '0' || value === 0) return false;
+  return null;
+}
+
 async function fetchGoPlusEvmTokenSecurity(chainId, address) {
   const goPlusChainId = GOPLUS_EVM_CHAIN_IDS[chainId];
   if (!goPlusChainId) return null;
@@ -2112,7 +2222,22 @@ async function fetchGoPlusEvmTokenSecurity(chainId, address) {
   const data = await response.json();
   const result = data?.result?.[address.toLowerCase()];
   const parsed = parseGoPlusHolderResult(result);
-  return parsed ? { ...parsed, source: 'GoPlus Security token holder analysis' } : null;
+  if (!result) return parsed ? { ...parsed, source: 'GoPlus Security token holder analysis' } : null;
+  // Real contract-security signals GoPlus already returns for EVM tokens (free,
+  // no key): a callable mint function (is_mintable), pausable transfers
+  // (transfer_pausable ~ freeze authority), and a proxy/upgradeable contract
+  // (is_proxy). These fill the mint/freeze/upgrade flags that otherwise require
+  // a per-chain explorer API key, so Contract Security resolves for EVM tokens
+  // even without one.
+  const security = {
+    mintAuthorityEnabled: goPlusFlag(result.is_mintable),
+    freezeAuthorityEnabled: goPlusFlag(result.transfer_pausable),
+    upgradeable: goPlusFlag(result.is_proxy),
+  };
+  const base = parsed || { holderCount: null, topHolderPercent: null, topTenHolderPercent: null };
+  const hasSecurity = Object.values(security).some((value) => value !== null);
+  if (!parsed && !hasSecurity) return null;
+  return { ...base, ...security, source: 'GoPlus Security token analysis' };
 }
 
 // Same GoPlus dataset, Solana-specific endpoint - used only as a fallback
@@ -6005,19 +6130,31 @@ function CategoryScoreCards({ project }) {
 function ContractSecurityRow({ project }) {
   const data = project.realData;
   if (!data) return null;
+  const isNative = Boolean(data.isNativeAsset);
   const checks = [
-    { label: 'No Mint', flag: data.mintAuthorityEnabled },
-    { label: 'No Freeze', flag: data.freezeAuthorityEnabled },
+    { label: 'No Mint Authority', flag: data.mintAuthorityEnabled },
+    { label: 'No Freeze Authority', flag: data.freezeAuthorityEnabled },
     { label: 'No Upgradeable', flag: data.upgradeable },
   ];
   return (
     <section className="detail-section contract-security-row">
       <div className="contract-security-head">
         <Lock size={18} />
-        <strong>Contract Security</strong>
+        <strong>{isNative ? 'Chain Security' : 'Contract Security'}</strong>
         <VerifiedBadge status={project.verificationStatus} size={14} />
       </div>
       <div className="contract-security-checks">
+        {/* Native chain assets have no token contract - surface the real
+            protocol-level security posture instead of contract-authority flags
+            that don't apply. The mint/freeze/upgrade checks still render below
+            (all confirmed absent for a native asset), so nothing reads as
+            "unknown" when it is in fact structurally impossible. */}
+        {isNative && (
+          <>
+            <span className="security-check ok"><CheckCircle2 size={14} /> Native Asset</span>
+            <span className="security-check ok"><CheckCircle2 size={14} /> Protocol Secured</span>
+          </>
+        )}
         {checks.map((check) => {
           const known = check.flag === true || check.flag === false;
           const ok = check.flag === false;
@@ -6028,6 +6165,9 @@ function ContractSecurityRow({ project }) {
           );
         })}
       </div>
+      {isNative && data.nativeSecurity?.chainSecurityStatus && (
+        <p className="inline-note contract-security-native-note">{data.nativeSecurity.chainSecurityStatus}</p>
+      )}
     </section>
   );
 }
@@ -6161,7 +6301,7 @@ function CommunityProof({ project }) {
   const { t } = useTranslation();
   const s = t('profileSections.communityProofStats');
   const stats = [
-    [s.holderCount, formatNumber(project.holders), WalletCards],
+    [s.holderCount, project.holders ? formatNumber(project.holders) : t('common.notAvailable'), WalletCards],
     [s.topHolder, project.realData ? formatPercent(project.realData.topHolderPercent) : t('common.notConnected'), Shield],
     [s.liquidity, project.realData ? formatCurrency(project.realData.totalLiquidityUsd ?? project.realData.liquidityUsd) : t('common.notConnected'), BarChart3],
     [marketCapLabel(s.marketCap, project.realData), project.realData ? formatCurrency(project.realData.marketCapUsd) : t('common.notConnected'), LineChart],

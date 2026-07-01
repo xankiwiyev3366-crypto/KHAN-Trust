@@ -4290,6 +4290,20 @@ function EarlySupporterBadge({ compact = false }) {
   );
 }
 
+// Plain $9/month Premium's own badge - distinct from EarlySupporterBadge so
+// the two plans never look identical. Only ever rendered for hasPremium &&
+// !isEarlySupporter; an Early Supporter always sees EarlySupporterBadge
+// instead, never both, even though Early Supporter also includes every
+// Premium feature - the two badges are mutually exclusive by design.
+function PremiumBadge({ compact = false }) {
+  const { t } = useTranslation();
+  return (
+    <span className="premium-badge" title={t('premium.badgeTooltip')}>
+      <BadgeCheck size={compact ? 12 : 14} /> {t('premium.badgeLabel')}
+    </span>
+  );
+}
+
 // Real, working Saved Reports - the one Premium/Early Supporter feature that
 // previously existed only as marketing copy. Reads/writes go through
 // userData.js, which is rejected server-side for any wallet without an
@@ -4382,7 +4396,7 @@ function PremiumLockedSection({ project, navigate }) {
     return (
       <section className="detail-section premium-lock-section">
         <SectionTitle icon={CheckCircle2} eyebrow={t(isEarly ? 'earlySupporter.eyebrow' : 'premium.eyebrow')} title={t(isEarly ? 'earlySupporter.activeTitle' : 'premium.activeTitle')} />
-        {isEarly && <EarlySupporterBadge />}
+        {isEarly ? <EarlySupporterBadge /> : <PremiumBadge />}
         <p className="inline-note verify-success">{t(isEarly ? 'earlySupporter.activeNote' : 'premium.activeNote')}</p>
         <PlanFeatureGrid items={t(isEarly ? 'earlySupporter.items' : 'premium.items')} />
         <SavedReportsPanel wallet={wallet} project={project} />
@@ -4424,7 +4438,7 @@ function OneTimeUnlockCard({ project, navigate }) {
     return (
       <section className="detail-section one-time-card">
         <SectionTitle icon={CheckCircle2} eyebrow={t(isEarly ? 'earlySupporter.eyebrow' : 'premium.eyebrow')} title={t(isEarly ? 'earlySupporter.activeTitle' : 'premium.activeTitle')} />
-        {isEarly && <EarlySupporterBadge />}
+        {isEarly ? <EarlySupporterBadge /> : <PremiumBadge />}
         <p className="inline-note verify-success">{t(isEarly ? 'earlySupporter.activeNote' : 'premium.activeNote')}</p>
       </section>
     );
@@ -4510,7 +4524,7 @@ function PricingPage({ navigate }) {
       </p>
       {hasPremium && (
         <p className="pricing-note payment-message verify-success">
-          {isEarly ? <EarlySupporterBadge compact /> : null}{' '}
+          {isEarly ? <EarlySupporterBadge compact /> : <PremiumBadge compact />}{' '}
           {t(isEarly ? 'earlySupporter.activeNote' : 'premium.activeNote')}
         </p>
       )}

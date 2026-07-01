@@ -241,19 +241,25 @@ export default {
     viewPricing: 'View Pricing',
     accessTitle: 'Premium Access',
     priceMonthly: '$9/month',
-    accessNote: 'Premium unlocks Saved Reports, a wallet-synced Watchlist, and KHAN Launchpad token creation on top of everything free.',
+    accessNote: 'Premium unlocks Saved Reports, a wallet-synced Watchlist, KHAN Launchpad token creation, and the Premium badge on top of everything free.',
     activeTitle: 'Premium Active',
     activeNote: 'Your connected wallet has a verified payment on record. Your Premium tools are unlocked below.',
     comingSoonLabel: 'Coming soon',
+    badgeLabel: 'Premium',
+    badgeTooltip: 'This wallet has an active Premium subscription.',
     // Each item is [title, description, status]. 'active' tools are real and
     // unlocked immediately; 'comingSoon' items are not built yet and are
     // shown only as a transparent roadmap note, never claimed as included.
+    // The Early Supporter Badge and Lifetime Recognition are exclusive to
+    // the Early Supporter plan (see earlySupporter.items below) - they must
+    // never appear in this list.
     items: [
       ['Saved Reports', 'Save any scan report to your connected wallet and come back to it later, from any device.', 'active'],
       ['Synced Watchlist', 'Your watchlist follows your wallet instead of just one browser.', 'active'],
       ['Token Creation (Launchpad)', 'Create devnet and mainnet Solana tokens through KHAN Launchpad. Real SOL network fees still apply on mainnet.', 'active'],
-      ['Deeper Risk Analysis', 'Expanded scoring across liquidity depth, contract age patterns, and transparency signals.', 'comingSoon'],
-      ['Advanced Holder Insights', 'Whale-pressure alerts and concentration trend tracking beyond the free Top 10 view.', 'comingSoon'],
+      ['Premium Badge', 'A badge shown next to your wallet while your subscription is active.', 'active'],
+      ['Future Premium AI features', 'Expanded AI-assisted analysis, planned for a future release.', 'comingSoon'],
+      ['Future Advanced Research features', 'Deeper liquidity, holder, and transparency research tools, planned for a future release.', 'comingSoon'],
     ],
     unlockedMessageTitle: 'Here is what you just unlocked',
     savedReports: {
@@ -269,6 +275,8 @@ export default {
     badgeTooltip: 'This wallet backed KHAN Trust early - thank you.',
     activeTitle: 'Early Supporter Active',
     activeNote: 'Thank you for backing KHAN Trust early. Your supporter status is permanently linked to this wallet, alongside the Premium tools below.',
+    // Early Supporter Badge and Lifetime Recognition are exclusive to this
+    // $29 one-time plan - they must never be listed under premium.items.
     items: [
       ['Early Supporter Badge', 'A permanent badge shown next to your wallet across the site.', 'active'],
       ['Lifetime Recognition', 'One-time payment, recognition that never expires - tied to your wallet for good.', 'active'],
@@ -295,15 +303,15 @@ export default {
       premium: {
         name: 'Premium',
         price: '$9/month or 9 USDT/month',
-        description: 'Monthly access to wallet-linked research tools: Saved Reports, a Synced Watchlist, and KHAN Launchpad token creation.',
-        features: ['Saved Reports', 'Synced Watchlist', 'Token Creation (Launchpad)', 'Deeper Risk Analysis (coming soon)', 'Advanced Holder Insights (coming soon)'],
+        description: 'Monthly access to wallet-linked research tools: Saved Reports, a Synced Watchlist, KHAN Launchpad token creation, and the Premium badge.',
+        features: ['Saved Reports', 'Synced Watchlist', 'Token Creation (Launchpad)', 'Premium Badge', 'Future Premium AI features (coming soon)', 'Future Advanced Research features (coming soon)'],
         cta: 'Unlock Premium',
       },
       earlySupporter: {
         name: 'Early Supporter',
         price: '$29 one-time or 29 USDT one-time',
         description: 'One-time recognition as an early KHAN Trust supporter, plus every Premium tool, for life.',
-        features: ['Early Supporter badge (lifetime)', 'All Premium tools included', 'No expiry, no recurring payment', 'Not an investment - no profit claims'],
+        features: ['Exclusive Early Supporter badge (lifetime)', 'Lifetime recognition', 'All Premium features included, for life', 'No expiry, no recurring payment', 'Not an investment - no profit claims'],
         cta: 'Become Early Supporter',
       },
     },
@@ -318,8 +326,9 @@ export default {
         ['Saved Reports', false, true, true],
         ['Synced Watchlist', false, true, true],
         ['Token Creation (Launchpad)', false, true, true],
-        ['Early Supporter badge', false, false, true],
-        ['Lifetime recognition', false, false, true],
+        ['Premium Badge', false, true, true],
+        ['Exclusive Early Supporter Badge (lifetime)', false, false, true],
+        ['Lifetime Recognition', false, false, true],
         ['Billing', 'Free', 'Monthly', 'One-time'],
       ],
     },

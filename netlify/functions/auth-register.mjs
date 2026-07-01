@@ -33,7 +33,19 @@ export async function handler(event) {
   await saveUser(user);
 
   const verifyToken = await createVerifyToken(user.email);
-  await sendVerificationEmail(user.email, user.name, verifyToken);
+  const emailResult = await sendVerificationEmail(user.email, user.name, verifyToken);
+  if (!emailResult.ok) {
+    // Registration must still succeed even if the welcome email fails to
+    // send (the user can always use Resend from their profile) - but the
+    // failure needs to be visible somewhere, otherwise every affected
+    // signup silently ends up permanently unverified with no clue why.
+    console.error('[auth-register] verification email failed to send', {
+      userId: id,
+      reason: emailResult.reason,
+      status: emailResult.status,
+      detail: emailResult.detail,
+    });
+  }
 
   await appendEvent({
     type: 'user_registered',

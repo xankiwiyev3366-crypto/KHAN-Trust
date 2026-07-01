@@ -33,12 +33,27 @@ export async function handler(event) {
   }
 
   const verifyToken = await createVerifyToken(user.email);
-  const delivered = await sendVerificationEmail(user.email, user.name, verifyToken);
+  const result = await sendVerificationEmail(user.email, user.name, verifyToken);
 
   await updateUser(user.id, { lastVerificationEmailSentAt: new Date().toISOString() });
 
-  if (!delivered) {
-    return jsonResponse(200, { message: 'Email delivery is not configured yet - please contact support.', delivered: false });
+  if (!result.ok) {
+    console.error('[auth-resend-verification] delivery failed', {
+      userId: user.id,
+      reason: result.reason,
+      status: result.status,
+      detail: result.detail,
+    });
+    // Only a genuinely missing API key is "not configured" - anything else
+    // (Resend rejected the send, network error) is a real delivery failure
+    // and must not be reported to the user as a setup problem, since that
+    // previously hid actual bugs (e.g. an unverified sending domain, which
+    // Resend only allows sending FROM until a domain is verified, TO the
+    // account owner's own address - every other recipient gets rejected).
+    const message = result.reason === 'missing_api_key'
+      ? 'Email delivery is not configured yet - please contact support.'
+      : 'We could not send that email right now. Please try again in a few minutes or contact support.';
+    return jsonResponse(200, { message, delivered: false, reason: result.reason });
   }
   return jsonResponse(200, { message: 'Verification email sent. Check your inbox.', delivered: true });
 }

@@ -25,9 +25,18 @@ export function getAdminNotifyEmail() {
 }
 
 // Never throws - a broken email provider must never block a report/ticket
-// from being saved. Returns true/false for the caller to log if it wants to.
+// from being saved. Returns a structured result instead of a bare boolean so
+// callers that DO care why delivery failed (auth-resend-verification.mjs)
+// can tell "key missing" apart from "Resend rejected this specific send" -
+// collapsing those into one boolean is what previously made every failure
+// report as "not configured" even when the key was present and the real
+// cause was something else entirely (see reason: 'provider_error' below).
+// Existing fire-and-forget callers (report-submit.mjs) that only `await`
+// this without reading the result are unaffected - {ok: false, ...} is
+// still falsy-safe to ignore.
 export async function sendEmail({ to, subject, text, html }) {
-  if (!RESEND_API_KEY || !to) return false;
+  if (!RESEND_API_KEY) return { ok: false, reason: 'missing_api_key' };
+  if (!to) return { ok: false, reason: 'missing_recipient' };
   try {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -37,9 +46,25 @@ export async function sendEmail({ to, subject, text, html }) {
       },
       body: JSON.stringify({ from: FROM_ADDRESS, to: [to], subject, ...(html ? { html } : { text }) }),
     });
-    return response.ok;
-  } catch {
-    return false;
+    if (!response.ok) {
+      // Resend's error body names the actual problem (e.g. "You can only
+      // send testing emails to your own email address" when no sending
+      // domain is verified yet) - logged here so it shows up in Netlify
+      // function logs instead of being discarded, since that's the one
+      // piece of information needed to actually diagnose a delivery failure.
+      const detail = await response.text().catch(() => '');
+      console.error('[sendEmail] Resend API rejected the request', {
+        status: response.status,
+        detail,
+        to,
+        from: FROM_ADDRESS,
+      });
+      return { ok: false, reason: 'provider_error', status: response.status, detail };
+    }
+    return { ok: true };
+  } catch (error) {
+    console.error('[sendEmail] request to Resend failed', { message: error.message, to, from: FROM_ADDRESS });
+    return { ok: false, reason: 'network_error', detail: error.message };
   }
 }
 

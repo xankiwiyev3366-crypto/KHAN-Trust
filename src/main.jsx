@@ -3316,6 +3316,32 @@ function App() {
     navigate(target);
   }, [user, gate]);
 
+  // navTo() only protects clicks that go through it - `page` can still land
+  // on a gated value via the initial hash on load, hashchange (browser
+  // back/forward, a typed or bookmarked URL), or any other navigate() call,
+  // none of which run navTo's check. This effect is the single point that
+  // catches ALL of those paths regardless of how `page` got there: it waits
+  // for the session-restore check (authLoading) to finish - so a logged-in
+  // user reloading a gated page isn't bounced before their session loads -
+  // then, if the page is gated and there's still no user, sends them back to
+  // a safe page and opens the same sign-in gate navTo would have shown,
+  // resuming the original destination automatically after auth.
+  useEffect(() => {
+    if (authLoading) return;
+    if (GATED_PAGES.has(page) && !user) {
+      const target = page;
+      window.location.hash = '/home';
+      setPage('home');
+      gate(() => navigate(target));
+    }
+  }, [page, user, authLoading, gate]);
+
+  // While a gated page's auth state isn't confirmed yet (session restore in
+  // flight, or confirmed logged-out and about to be redirected by the effect
+  // above), the routed page below must not render - otherwise its content
+  // flashes on screen for a frame before the redirect takes effect.
+  const pageAuthReady = !GATED_PAGES.has(page) || (!authLoading && Boolean(user));
+
   const saveProjectProfile = (project) => {
     const normalized = normalizeProject(project);
     setUserProjects((items) => upsertProject(items, normalized));
@@ -3498,12 +3524,12 @@ function App() {
             navigate={navigate}
           />
         )}
-        {page === 'add' && <AddProjectPage onAdd={addProject} navigate={navigate} />}
-        {page === 'launchpad' && <LaunchpadPage onCreateProfile={saveProjectProfile} navigate={navigate} />}
+        {page === 'add' && pageAuthReady && <AddProjectPage onAdd={addProject} navigate={navigate} />}
+        {page === 'launchpad' && pageAuthReady && <LaunchpadPage onCreateProfile={saveProjectProfile} navigate={navigate} />}
         {page === 'pricing' && <PricingPage navigate={navigate} />}
         {page === 'whitepaper' && <WhitepaperPage navigate={navigate} />}
         {page === 'compare' && <ComparePage projects={projects} navigate={navigate} />}
-        {(page === 'watchlist' || page === 'alerts') && (
+        {(page === 'watchlist' || page === 'alerts') && pageAuthReady && (
           <WatchlistPage projects={projects} watchlist={watchlist} toggleWatch={toggleWatch} navigate={navigate} />
         )}
         {page.startsWith('report/') && reportProject && (
@@ -3545,7 +3571,7 @@ function App() {
         {page === 'admin-support' && <AdminSupportPage />}
         {page === 'admin-report' && <AdminReportPage />}
         {page === 'admin-holders' && <AdminHolderAnalyticsPage />}
-        {page === 'profile' && <UserProfilePage navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />}
+        {page === 'profile' && pageAuthReady && <UserProfilePage navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />}
         {page.startsWith('verify-email/') && <EmailVerifyPage token={page.split('/')[1]} navigate={navigate} />}
         {page.startsWith('reset-password/') && <ResetPasswordPage token={page.split('/')[1]} navigate={navigate} />}
       </main>

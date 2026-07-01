@@ -34,6 +34,7 @@ import {
   Bell,
   BookOpen,
   CalendarDays,
+  Camera,
   CheckCircle2,
   ChevronDown,
   CircleDot,
@@ -9169,6 +9170,52 @@ function AdminReportPage() {
   );
 }
 
+// Client-side mirror of the server's cooldown (see
+// netlify/functions/auth-resend-verification.mjs) - starts the countdown
+// immediately on send/429 without waiting on a round trip, and stops a user
+// from firing several requests before the first response even comes back.
+const VERIFICATION_RESEND_COOLDOWN_S = 60;
+
+// "Send verification email" / "Resend verification email" control, shared by
+// the header dropdown and the Profile page so there is exactly one place
+// that knows how to trigger + rate-limit this action.
+function EmailVerificationAction({ compact = false }) {
+  const { resendVerificationEmail } = useAuth();
+  const [state, setState] = useState({ status: 'idle', message: '' }); // idle | sending | sent | error
+  const [cooldown, setCooldown] = useState(0);
+  const busy = state.status === 'sending';
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => setCooldown((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [cooldown > 0]);
+
+  const send = async () => {
+    if (busy || cooldown > 0) return;
+    setState({ status: 'sending', message: '' });
+    try {
+      const result = await resendVerificationEmail();
+      setState({ status: 'sent', message: result.message || 'Verification email sent.' });
+      setCooldown(VERIFICATION_RESEND_COOLDOWN_S);
+    } catch (err) {
+      setState({ status: 'error', message: err.message || 'Could not send verification email.' });
+      if (err.status === 429) setCooldown(VERIFICATION_RESEND_COOLDOWN_S);
+    }
+  };
+
+  return (
+    <div className={compact ? 'email-verify-action compact' : 'email-verify-action'}>
+      <button type="button" className="email-verify-btn" onClick={send} disabled={busy || cooldown > 0}>
+        {busy ? 'Sending…' : cooldown > 0 ? `Resend in ${cooldown}s` : state.status === 'sent' ? 'Resend verification email' : 'Send verification email'}
+      </button>
+      {state.message && (
+        <p className={`email-verify-message ${state.status === 'error' ? 'error' : 'success'}`}>{state.message}</p>
+      )}
+    </div>
+  );
+}
+
 // ── Auth nav button shown in Header and MobileNav ──────────────────────────
 function AuthNavButton({ navigate, navTo, onOpenAuth, variant = 'desktop' }) {
   const { user, logout } = useAuth();
@@ -9204,7 +9251,10 @@ function AuthNavButton({ navigate, navTo, onOpenAuth, variant = 'desktop' }) {
   if (variant === 'mobile') {
     return (
       <button className={`mobile-nav-auth-btn ${menuOpen ? 'active' : ''}`} onClick={() => go('profile')}>
-        <span className="auth-avatar-small">{initial}</span>
+        {user.avatarUrl
+          ? <img src={user.avatarUrl} alt={user.name} className="auth-avatar-small" />
+          : <span className="auth-avatar-small">{initial}</span>
+        }
         <span>{user.name?.split(' ')[0] || 'Profile'}</span>
       </button>
     );
@@ -9225,7 +9275,14 @@ function AuthNavButton({ navigate, navTo, onOpenAuth, variant = 'desktop' }) {
           <div className="auth-nav-dropdown-header">
             <strong>{user.name}</strong>
             <small>{user.email}</small>
-            {!user.emailVerified && <span className="auth-unverified-badge">Email not verified</span>}
+            {user.emailVerified
+              ? <span className="auth-verified-badge">✓ Email verified</span>
+              : (
+                <>
+                  <span className="auth-unverified-badge">Email not verified</span>
+                  <EmailVerificationAction compact />
+                </>
+              )}
           </div>
           <button onClick={() => { setMenuOpen(false); go('profile'); }}>
             <User size={14} /> My Profile
@@ -9239,6 +9296,67 @@ function AuthNavButton({ navigate, navTo, onOpenAuth, variant = 'desktop' }) {
   );
 }
 
+// Small fixed-position notification, auto-dismissing - used for profile save
+// feedback instead of the plain inline message every other form on this page
+// still uses, per the "toast" requirement for this page specifically.
+function ProfileToast({ toast, onDismiss }) {
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(onDismiss, 4000);
+    return () => clearTimeout(timer);
+  }, [toast, onDismiss]);
+
+  if (!toast) return null;
+  return (
+    <div className={`profile-toast ${toast.tone}`} role="status">
+      {toast.tone === 'success' ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+      <span>{toast.message}</span>
+    </div>
+  );
+}
+
+const ALLOWED_AVATAR_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+const MAX_AVATAR_UPLOAD_BYTES = 8 * 1024 * 1024; // raw upload cap, before resize
+const AVATAR_OUTPUT_SIZE = 256;
+
+function validateAvatarFile(file) {
+  if (!ALLOWED_AVATAR_TYPES.has(file.type)) {
+    throw new Error('Please choose a PNG, JPEG, WEBP, or GIF image.');
+  }
+  if (file.size > MAX_AVATAR_UPLOAD_BYTES) {
+    throw new Error('Image is too large. Please choose a file under 8MB.');
+  }
+}
+
+// Center-crops to a square and downsamples to AVATAR_OUTPUT_SIZE, then
+// re-encodes as JPEG - keeps the stored avatar small (typically a few KB to
+// a few tens of KB) regardless of how large the original photo was, since it
+// ends up stored inline as a data: URL on the user record (see
+// netlify/functions/auth-profile-update.mjs).
+function resizeAvatarFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read the selected file.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Could not read the selected image.'));
+      img.onload = () => {
+        const side = Math.min(img.width, img.height);
+        const sx = (img.width - side) / 2;
+        const sy = (img.height - side) / 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = AVATAR_OUTPUT_SIZE;
+        canvas.height = AVATAR_OUTPUT_SIZE;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, AVATAR_OUTPUT_SIZE, AVATAR_OUTPUT_SIZE);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 // ── User Profile Page ─────────────────────────────────────────────────────────
 function UserProfilePage({ navigate, onOpenAuth }) {
   const { user, logout, updateProfile, fetchUserScans } = useAuth();
@@ -9246,8 +9364,11 @@ function UserProfilePage({ navigate, onOpenAuth }) {
   const [scansLoading, setScansLoading] = useState(false);
   const [editName, setEditName] = useState('');
   const [editAvatar, setEditAvatar] = useState('');
+  const [avatarError, setAvatarError] = useState('');
+  const [avatarProcessing, setAvatarProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [saveMsg, setSaveMsg] = useState('');
+  const [toast, setToast] = useState(null);
+  const avatarInputRef = useRef(null);
 
   useEffect(() => {
     if (!user) return;
@@ -9272,15 +9393,30 @@ function UserProfilePage({ navigate, onOpenAuth }) {
 
   const initial = (user.name || user.email || '?')[0].toUpperCase();
 
+  const handleAvatarPick = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = ''; // allow re-selecting the same file later
+    if (!file) return;
+    setAvatarError('');
+    setAvatarProcessing(true);
+    try {
+      validateAvatarFile(file);
+      const dataUrl = await resizeAvatarFile(file);
+      setEditAvatar(dataUrl);
+    } catch (err) {
+      setAvatarError(err.message || 'Could not process that image.');
+    }
+    setAvatarProcessing(false);
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
-    setSaveMsg('');
     try {
       await updateProfile({ name: editName, avatarUrl: editAvatar });
-      setSaveMsg('Profile updated.');
+      setToast({ tone: 'success', message: 'Profile updated.' });
     } catch (err) {
-      setSaveMsg(err.message || 'Failed to save.');
+      setToast({ tone: 'error', message: err.message || 'Failed to save profile.' });
     }
     setSaving(false);
   };
@@ -9298,6 +9434,7 @@ function UserProfilePage({ navigate, onOpenAuth }) {
   return (
     <section className="page-section">
       <SectionTitle icon={User} eyebrow="Account" title="My Profile" />
+      <ProfileToast toast={toast} onDismiss={() => setToast(null)} />
 
       <div className="profile-card">
         <div className="profile-avatar-section">
@@ -9308,8 +9445,14 @@ function UserProfilePage({ navigate, onOpenAuth }) {
           <div>
             <h2 className="profile-name">{user.name}</h2>
             <p className="profile-email">{user.email}</p>
-            {!user.emailVerified && <span className="auth-unverified-badge">Email not verified</span>}
-            {user.emailVerified && <span className="auth-verified-badge">✓ Email verified</span>}
+            {user.emailVerified
+              ? <span className="auth-verified-badge">✓ Email verified</span>
+              : (
+                <>
+                  <span className="auth-unverified-badge">Email not verified</span>
+                  <EmailVerificationAction />
+                </>
+              )}
             <p className="profile-joined">Member since {new Date(user.createdAt).toLocaleDateString()}</p>
           </div>
         </div>
@@ -9327,14 +9470,48 @@ function UserProfilePage({ navigate, onOpenAuth }) {
         <form className="auth-form" onSubmit={handleSave}>
           <label className="auth-field">
             <span>Full Name</span>
-            <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} required />
+            <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} required disabled={saving} />
           </label>
-          <label className="auth-field">
-            <span>Avatar URL <small>(optional)</small></span>
-            <input type="url" value={editAvatar} onChange={(e) => setEditAvatar(e.target.value)} placeholder="https://…" />
-          </label>
-          {saveMsg && <p className="lookup-message">{saveMsg}</p>}
-          <button className="primary-button" type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
+          <div className="auth-field">
+            <span>Profile Picture</span>
+            <div className="avatar-upload-row">
+              {editAvatar
+                ? <img src={editAvatar} alt="Avatar preview" className="avatar-upload-preview" />
+                : <span className="avatar-upload-preview avatar-upload-preview-fallback">{initial}</span>
+              }
+              <div className="avatar-upload-actions">
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  className="avatar-upload-input"
+                  onChange={handleAvatarPick}
+                  disabled={saving || avatarProcessing}
+                />
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={saving || avatarProcessing}
+                >
+                  <Camera size={16} /> {avatarProcessing ? 'Processing…' : editAvatar ? 'Change photo' : 'Upload photo'}
+                </button>
+                {editAvatar && (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => setEditAvatar('')}
+                    disabled={saving || avatarProcessing}
+                  >
+                    <Trash2 size={16} /> Remove
+                  </button>
+                )}
+              </div>
+            </div>
+            <small className="inline-note">PNG, JPEG, WEBP, or GIF. Automatically resized to {AVATAR_OUTPUT_SIZE}×{AVATAR_OUTPUT_SIZE}. If none is set, your initials are shown instead.</small>
+            {avatarError && <p className="lookup-message error">{avatarError}</p>}
+          </div>
+          <button className="primary-button" type="submit" disabled={saving || avatarProcessing}>{saving ? 'Saving…' : 'Save Changes'}</button>
         </form>
       </div>
 

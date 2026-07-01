@@ -119,6 +119,39 @@ export function AuthProvider({ children }) {
     return data.scans || [];
   }, [token]);
 
+  const resendVerificationEmail = useCallback(async () => {
+    if (!token) throw new Error('Not authenticated');
+    return apiFetch('auth-resend-verification', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+  }, [token]);
+
+  // Re-fetches the current user without a full page reload - used to pick up
+  // a verification completed in another tab (see the visibility effect
+  // below) so the badge updates on its own instead of needing a manual
+  // refresh.
+  const refreshUser = useCallback(async () => {
+    if (!token) return;
+    try {
+      const { user: u } = await apiFetch('auth-me', { headers: { Authorization: `Bearer ${token}` } });
+      setUser(u);
+    } catch {
+      // Leave user state as-is; a genuinely expired/invalid token is already
+      // handled by the session-restore effect on mount.
+    }
+  }, [token]);
+
+  // Email verification commonly happens in a second tab (the user clicks the
+  // link from their email client). Re-check on return to this tab so
+  // "Email verified" appears automatically, without the user needing to
+  // reload or click anything here.
+  useEffect(() => {
+    if (!user || user.emailVerified) return;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshUser();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [user, refreshUser]);
+
   // gate(callback): if logged in, run immediately; otherwise show benefit modal
   // and run callback after the user authenticates.
   const gate = useCallback((callback) => {
@@ -136,7 +169,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, register, login, logout, forgotPassword, resetPassword, verifyEmail, updateProfile, fetchUserScans, gate }}>
+    <AuthContext.Provider value={{ user, token, isLoading, register, login, logout, forgotPassword, resetPassword, verifyEmail, updateProfile, fetchUserScans, resendVerificationEmail, refreshUser, gate }}>
       {children}
       {gateOpen && (
         <AuthGateModal

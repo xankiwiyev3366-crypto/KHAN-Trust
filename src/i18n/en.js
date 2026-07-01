@@ -78,6 +78,19 @@ export default {
     tagline: 'Trust before hype',
     goHome: 'Go to home',
   },
+  // Retention trust alerts (Direction 3) - opt-in on the token report.
+  alerts: {
+    enable: 'Alert me if risk rises',
+    enabled: 'Alerts on',
+    hint: 'Get an email if this token’s KHAN Trust risk increases.',
+  },
+  // Embeddable verification badge (Direction 4) - shown on verified profiles.
+  verifiedEmbed: {
+    eyebrow: 'Verified',
+    title: 'Embed your KHAN Trust badge',
+    description: 'This project is verified by KHAN Trust. Add the badge to your website or docs so visitors can confirm it — it links back to your live trust page.',
+    copy: 'Copy embed code',
+  },
   // My Profile page, plus the two bits of profile UI that also render inside
   // the header/mobile-nav dropdown (email verification badge+action) so both
   // places share one translated source instead of drifting apart.

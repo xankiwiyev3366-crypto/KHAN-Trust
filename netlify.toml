@@ -2,3 +2,25 @@
   command = "npm run build"
   publish = "dist"
   functions = "netlify/functions"
+
+# SEO surface (Direction 2). These are ADDITIVE, path-specific rewrites only -
+# there is deliberately NO catch-all "/*" redirect, so the existing hash-routed
+# SPA (served as the static index.html at "/") is completely untouched. Status
+# 200 = transparent rewrite, so the clean /token/<contract> and /sitemap.xml
+# URLs are what users and crawlers see.
+[[redirects]]
+  from = "/token/:contract"
+  to = "/.netlify/functions/token-page?contract=:contract"
+  status = 200
+
+[[redirects]]
+  from = "/sitemap.xml"
+  to = "/.netlify/functions/sitemap"
+  status = 200
+
+# Verification-as-Network (Direction 4): embeddable "Verified by KHAN Trust"
+# badge SVG. Additive, path-specific - no catch-all.
+[[redirects]]
+  from = "/badge/:projectId"
+  to = "/.netlify/functions/verify-badge?projectId=:projectId"
+  status = 200

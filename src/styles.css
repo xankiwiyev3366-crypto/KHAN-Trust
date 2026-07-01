@@ -6077,6 +6077,33 @@ main {
 .email-verify-message.success { color: var(--success); }
 .email-verify-message.error { color: var(--danger); }
 
+/* Trust-alert opt-in active state (Direction 3) */
+.token-alert-on {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  background: var(--gold-soft);
+}
+
+/* Verified badge embed (Direction 4) */
+.verified-embed-preview {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  margin: 10px 0;
+}
+.verified-embed-code {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 10px;
+  margin-bottom: 10px;
+  resize: vertical;
+}
+
 /* Avatar upload */
 .avatar-upload-row {
   display: flex;

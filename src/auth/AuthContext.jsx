@@ -124,6 +124,39 @@ export function AuthProvider({ children }) {
     return apiFetch('auth-resend-verification', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
   }, [token]);
 
+  // Retention alerts (Direction 3): toggle an email trust-alert for one token,
+  // and read which tokens the user currently has alerts on. Both require auth;
+  // both are best-effort at the call site so a failure never blocks the UI.
+  //
+  // These read the token from localStorage (its source of truth) rather than
+  // only the `token` state closure: toggleTokenAlert is invoked from the gate()
+  // pending-callback that fires right AFTER a user signs in from the alert
+  // button, and that callback captured the logged-out render's closure (token
+  // still null). persist() writes the token to localStorage synchronously
+  // during login, before the callback runs, so reading it here lets the
+  // resumed action succeed - which is exactly what gate() promises.
+  const authToken = useCallback(() => {
+    if (token) return token;
+    try { return localStorage.getItem(TOKEN_KEY) || null; } catch { return null; }
+  }, [token]);
+
+  const toggleTokenAlert = useCallback(async (tokenPayload) => {
+    const tok = authToken();
+    if (!tok) throw new Error('Not authenticated');
+    return apiFetch('alerts-subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+      body: JSON.stringify(tokenPayload),
+    });
+  }, [authToken]);
+
+  const fetchAlertTokens = useCallback(async () => {
+    const tok = authToken();
+    if (!tok) return [];
+    const data = await apiFetch('alerts-status', { headers: { Authorization: `Bearer ${tok}` } });
+    return data.tokens || [];
+  }, [authToken]);
+
   // Re-fetches the current user without a full page reload - used to pick up
   // a verification completed in another tab (see the visibility effect
   // below) so the badge updates on its own instead of needing a manual
@@ -169,7 +202,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, register, login, logout, forgotPassword, resetPassword, verifyEmail, updateProfile, fetchUserScans, resendVerificationEmail, refreshUser, gate }}>
+    <AuthContext.Provider value={{ user, token, isLoading, register, login, logout, forgotPassword, resetPassword, verifyEmail, updateProfile, fetchUserScans, resendVerificationEmail, refreshUser, toggleTokenAlert, fetchAlertTokens, gate }}>
       {children}
       {gateOpen && (
         <AuthGateModal

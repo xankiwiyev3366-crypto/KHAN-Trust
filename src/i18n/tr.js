@@ -76,6 +76,17 @@ export default {
     tagline: 'Hype\'tan önce güven',
     goHome: 'Ana sayfaya git',
   },
+  alerts: {
+    enable: 'Risk artarsa beni uyar',
+    enabled: 'Uyarılar açık',
+    hint: 'Bu tokenin KHAN Trust riski artarsa e-posta al.',
+  },
+  verifiedEmbed: {
+    eyebrow: 'Doğrulandı',
+    title: 'KHAN Trust rozetinizi yerleştirin',
+    description: 'Bu proje KHAN Trust tarafından doğrulandı. Ziyaretçilerin doğrulayabilmesi için rozeti web sitenize veya dokümanlarınıza ekleyin — canlı güven sayfanıza bağlanır.',
+    copy: 'Yerleştirme kodunu kopyala',
+  },
   // My Profile page, plus the two bits of profile UI that also render inside
   // the header/mobile-nav dropdown (email verification badge+action) so both
   // places share one translated source instead of drifting apart.

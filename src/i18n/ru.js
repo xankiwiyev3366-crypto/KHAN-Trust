@@ -76,6 +76,17 @@ export default {
     tagline: 'Доверие важнее хайпа',
     goHome: 'На главную',
   },
+  alerts: {
+    enable: 'Оповестить, если риск вырастет',
+    enabled: 'Оповещения включены',
+    hint: 'Получите письмо, если риск этого токена по KHAN Trust вырастет.',
+  },
+  verifiedEmbed: {
+    eyebrow: 'Проверено',
+    title: 'Разместите значок KHAN Trust',
+    description: 'Этот проект проверен KHAN Trust. Добавьте значок на свой сайт или в документацию, чтобы посетители могли это подтвердить — он ведёт на вашу актуальную страницу доверия.',
+    copy: 'Скопировать код для вставки',
+  },
   // My Profile page, plus the two bits of profile UI that also render inside
   // the header/mobile-nav dropdown (email verification badge+action) so both
   // places share one translated source instead of drifting apart.

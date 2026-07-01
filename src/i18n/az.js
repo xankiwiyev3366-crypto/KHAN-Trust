@@ -76,6 +76,17 @@ export default {
     tagline: 'Hype-dan əvvəl etibar',
     goHome: 'Ana səhifəyə keç',
   },
+  alerts: {
+    enable: 'Risk artarsa məni xəbərdar et',
+    enabled: 'Xəbərdarlıqlar aktivdir',
+    hint: 'Bu tokenin KHAN Trust riski artarsa e-poçt al.',
+  },
+  verifiedEmbed: {
+    eyebrow: 'Təsdiqlənib',
+    title: 'KHAN Trust nişanınızı yerləşdirin',
+    description: 'Bu layihə KHAN Trust tərəfindən təsdiqlənib. Nişanı vebsaytınıza və ya sənədlərinizə əlavə edin ki, ziyarətçilər bunu təsdiq edə bilsin — o, canlı etibar səhifənizə keçid verir.',
+    copy: 'Yerləşdirmə kodunu kopyala',
+  },
   // My Profile page, plus the two bits of profile UI that also render inside
   // the header/mobile-nav dropdown (email verification badge+action) so both
   // places share one translated source instead of drifting apart.

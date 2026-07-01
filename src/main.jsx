@@ -88,6 +88,7 @@ import './styles.css';
 import { WHITEPAPER } from './whitepaperConfig.js';
 import { runRiskAnalysis, classifyAsset, applyAssetTypeRiskModifier } from './scoringEngine.js';
 import { historyKeyFor, fetchScoreHistory, computeScoreDelta, useScoreHistory } from './scoreHistory.js';
+import { useCorpusRecord } from './tokenCorpus.js';
 import { ANALYST_QUESTIONS, answerQuestion } from './khanAnalyst.js';
 import { detectRiskAlerts, useWatchlistAlertCount } from './riskAlerts.js';
 import { computePeerBenchmark, peerLabelFor } from './peerBenchmark.js';
@@ -3493,6 +3494,33 @@ function App() {
     });
   };
 
+  // Deep-link entry for the SEO token pages (Direction 2): a visitor arriving
+  // from Google at /token/<contract> gets an "Open live report" CTA pointing
+  // to /?scan=<contract>. This runs the existing handleTokenCheck() once on
+  // load and strips the param so a refresh doesn't re-scan. ADDITIVE: when the
+  // param is absent this does nothing, so normal home/hash routing is
+  // completely unaffected; any failure falls back silently to the home page.
+  const scanDeepLinkFired = useRef(false);
+  useEffect(() => {
+    if (scanDeepLinkFired.current) return;
+    let contract = '';
+    try {
+      contract = new URLSearchParams(window.location.search).get('scan') || '';
+    } catch {
+      contract = '';
+    }
+    if (!contract) return;
+    scanDeepLinkFired.current = true;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('scan');
+      window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+      // best effort - stripping the param is cosmetic
+    }
+    Promise.resolve(handleTokenCheck(contract)).catch(() => {});
+  }, []);
+
   return (
     <div className="app-shell">
       <Sidebar page={page} navigate={navigate} navTo={navTo} alertCount={alertCount} />
@@ -4112,12 +4140,76 @@ function CompareRow({ label, first, second }) {
   );
 }
 
+// Retention alerts opt-in (Direction 3). Additive control shown on the token
+// report: a logged-in user can ask to be emailed if this token's risk rises
+// (see netlify/functions/alerts-*). Login-gated via the existing gate();
+// hidden for demo tokens. Every network call is best-effort so it can never
+// break the report it sits on.
+function TokenAlertToggle({ project }) {
+  const { t } = useTranslation();
+  const { user, gate, toggleTokenAlert, fetchAlertTokens } = useAuth();
+  const [subscribed, setSubscribed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const identity = historyKeyFor(project);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!user || !identity) {
+      setSubscribed(false);
+      return;
+    }
+    fetchAlertTokens()
+      .then((tokens) => {
+        if (!cancelled) setSubscribed(tokens.some((entry) => entry.identity === identity));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [user, identity, fetchAlertTokens]);
+
+  if (!identity || project.realData?.isDemo) return null;
+
+  const onClick = () => {
+    gate(async () => {
+      if (busy) return;
+      setBusy(true);
+      try {
+        const result = await toggleTokenAlert({
+          identity,
+          contract: project.contract || '',
+          chain: project.chain || '',
+          name: project.name || '',
+          ticker: project.ticker || '',
+        });
+        setSubscribed(Boolean(result?.subscribed));
+      } catch {
+        // best-effort - a failed toggle must not disrupt the report
+      }
+      setBusy(false);
+    });
+  };
+
+  return (
+    <button
+      className={subscribed ? 'secondary-button token-alert-on' : 'secondary-button'}
+      type="button"
+      onClick={onClick}
+      disabled={busy}
+      title={t('alerts.hint')}
+    >
+      <Bell size={18} /> {subscribed ? t('alerts.enabled') : t('alerts.enable')}
+    </button>
+  );
+}
+
 function RiskReportPage({ project, navigate }) {
   const { t } = useTranslation();
   const { gate } = useAuth();
   const reasons = riskSignals(project).slice(0, 3);
   const factors = riskFactors(project);
   const confidence = confidenceScore(project);
+  // Additive: mirror this scanned token into the shared Trust Graph Corpus.
+  // Purely best-effort - never affects the report render (see tokenCorpus.js).
+  useCorpusRecord(project);
   return (
     <section className="page-section report-page">
       <button className="back-button" onClick={() => navigate('home')}>{t('riskReport.checkAnother')}</button>
@@ -4141,6 +4233,7 @@ function RiskReportPage({ project, navigate }) {
           </button>
           <small>{t('riskReport.downloadHint')}</small>
         </div>
+        <TokenAlertToggle project={project} />
       </div>
 
       <div className="report-layout">
@@ -5002,6 +5095,56 @@ function ProjectCard({ project, navigate }) {
   );
 }
 
+// Verification-as-Network (Direction 4): on a VERIFIED project's profile, the
+// owner gets a copyable "Verified by KHAN Trust" badge to embed on their own
+// site/socials. Every embed is a backlink and a trust signal for KHAN, turning
+// verification into a two-sided network. Rendered only for verified projects,
+// so it never appears where it shouldn't; purely additive to the profile.
+function VerifiedBadgeEmbed({ project }) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  if (project.verificationStatus !== VERIFICATION_STATUS.VERIFIED) return null;
+
+  const base = OFFICIAL_KHAN_LINKS.website; // https://khantrust.net
+  const hasContract = project.contract && !['Not provided', 'Not available'].includes(project.contract);
+  const linkUrl = hasContract ? `${base}/token/${encodeURIComponent(project.contract)}` : base;
+  const badgeUrl = `${base}/badge/${encodeURIComponent(project.id)}`;
+  const snippet = `<a href="${linkUrl}" target="_blank" rel="noopener"><img src="${badgeUrl}" alt="Verified by KHAN Trust" height="20" /></a>`;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(snippet);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <section className="detail-section verified-embed-section">
+      <SectionTitle icon={BadgeCheck} eyebrow={t('verifiedEmbed.eyebrow')} title={t('verifiedEmbed.title')} />
+      <p className="inline-note">{t('verifiedEmbed.description')}</p>
+      {/* Relative src so the on-page preview uses the current origin; the
+          copyable snippet below uses the absolute production URL for embedding
+          on other sites. */}
+      <div className="verified-embed-preview">
+        <img src={`/badge/${encodeURIComponent(project.id)}`} alt="Verified by KHAN Trust" height="20" />
+      </div>
+      <textarea
+        className="verified-embed-code"
+        readOnly
+        value={snippet}
+        rows={3}
+        onFocus={(event) => event.target.select()}
+      />
+      <button className="secondary-button" type="button" onClick={copy}>
+        <Copy size={16} /> {copied ? t('common.copied') : t('verifiedEmbed.copy')}
+      </button>
+    </section>
+  );
+}
+
 function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch, onEdit, openMethodology, onRequestVerification }) {
   const { gate } = useAuth();
   const { t } = useTranslation();
@@ -5018,6 +5161,10 @@ function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch
   // Shared by the Phase 1 trend strip and the Phase 2 Ask KHAN analyst below,
   // so both read the same fetched history instead of each fetching its own.
   const history = useScoreHistory(project);
+  // Additive: mirror this token into the shared Trust Graph Corpus (best-effort,
+  // never affects render - see tokenCorpus.js). The once/day/token throttle
+  // means sharing this funnel with RiskReportPage causes no duplicate writes.
+  useCorpusRecord(project);
   // Phase 4 — null until at least a handful of same-category peers are
   // tracked; both RiskSummary and Ask KHAN treat null as "not enough data".
   const peerBenchmark = computePeerBenchmark(project, projects);
@@ -5090,6 +5237,7 @@ function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch
 
       <div className="profile-layout">
         <div className="main-column">
+          <VerifiedBadgeEmbed project={project} />
           <RiskSummary project={project} peerBenchmark={peerBenchmark} />
           <InfoGrid project={project} />
           <LiveMarketChart project={project} data={project.realData} />

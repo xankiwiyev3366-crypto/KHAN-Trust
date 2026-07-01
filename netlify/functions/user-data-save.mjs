@@ -3,7 +3,7 @@
 // Premium or Early Supporter entitlement on record, checked here directly
 // against the same store verify-solana-payment.mjs writes to - never trust
 // the client's own claim of its plan.
-import { getEntitlement } from './_entitlementsStore.mjs';
+import { hasPremiumEntitlement } from './_entitlementsStore.mjs';
 import { getUserData, setUserData, jsonResponse } from './_userDataStore.mjs';
 
 const MAX_SAVED_REPORTS = 100;
@@ -11,11 +11,6 @@ const MAX_WATCHLIST = 200;
 
 function sanitizeText(value, maxLength) {
   return String(value || '').replace(/<[^>]*>/g, '').trim().slice(0, maxLength);
-}
-
-async function requireEntitledWallet(wallet) {
-  const entitlement = await getEntitlement(wallet);
-  return entitlement && (entitlement.plan === 'premium' || entitlement.plan === 'early_supporter');
 }
 
 export async function handler(event) {
@@ -36,7 +31,7 @@ export async function handler(event) {
       return jsonResponse(400, { message: 'wallet is required' });
     }
 
-    const entitled = await requireEntitledWallet(wallet);
+    const entitled = await hasPremiumEntitlement(wallet);
     if (!entitled) {
       return jsonResponse(403, { message: 'This wallet does not have an active Premium or Early Supporter entitlement.' });
     }

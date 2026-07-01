@@ -20,9 +20,12 @@ const SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
 
 const FALLBACK_RPC_URLS = ['https://api.mainnet-beta.solana.com'];
 
+// Premium is the only paid product left - a wallet either has an active
+// Premium/Early Supporter entitlement or it doesn't. Launchpad/token creation
+// no longer collects its own separate fee (see src/main.jsx LaunchpadPage);
+// it is gated purely on this same entitlement, granted here.
 const PLAN_USD_AMOUNT = {
   premium: 9,
-  launchpad_mainnet: 9,
   early_supporter: 29,
 };
 

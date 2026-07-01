@@ -198,13 +198,10 @@ const OFFICIAL_KHAN_LINKS = {
   x: 'https://x.com/KXankiwiyev3366',
   telegram: 'https://t.me/+RXCuwpSNwikzNTE0',
 };
-const LAUNCHPAD_PAYMENT_MODEL = {
-  devnetPrice: '$0',
-  mainnetPriceUsd: 9,
-  mainnetPlan: 'launchpad_mainnet',
-  mainnetPriceLabel: '$9',
-  note: 'Launchpad payments are separate from KHAN Trust Premium plans.',
-};
+// Token creation has no fee of its own - it is a Premium feature (see
+// LaunchpadPage's Premium gate). Mainnet minting still costs real Solana
+// network gas, paid by the connected wallet directly to the network; that is
+// unrelated to any KHAN Trust charge.
 // The public RPC is heavily rate-limited and frequently rejects requests
 // from browser-origin traffic. Setting VITE_SOLANA_RPC_URL to a dedicated
 // provider (Helius, QuickNode, Alchemy, ...) makes holder counts, mint
@@ -1150,7 +1147,25 @@ function resolvedMetadataRows(project = {}) {
 function applyVerificationStatus(project, verificationMap = {}) {
   const entry = verificationMap[project.id];
   if (!entry) return project;
-  return { ...project, verificationStatus: normalizeVerificationStatus(entry.status), verificationNote: entry.adminNote || '' };
+  return {
+    ...project,
+    verificationStatus: normalizeVerificationStatus(entry.status),
+    verificationNote: entry.adminNote || '',
+    ownerWallet: entry.ownerWallet || null,
+  };
+}
+
+// Editing is a Premium-independent, ownership-only permission (a paid plan
+// never grants edit rights on someone else's project). Most user-submitted
+// projects live only in the editor's own browser (see readProjectStorage) so
+// there is no other viewer to protect against yet; the one place a project's
+// identity is genuinely shared across users is once it's Verified, at which
+// point the wallet that proved ownership via signature (see
+// netlify/functions/verification-request.mjs) is the only wallet allowed to
+// edit it.
+function canEditProject(project, connectedWallet) {
+  if (project?.verificationStatus !== VERIFICATION_STATUS.VERIFIED) return true;
+  return Boolean(connectedWallet) && connectedWallet === project.ownerWallet;
 }
 
 // Visible on Explore, Project Profile, and Compare so all three pages and
@@ -4465,7 +4480,7 @@ function PricingPage({ navigate }) {
       <p className="pricing-intro">{t('pricing.intro')}</p>
       <p className="pricing-note">{t('pricing.noInvestmentNote')}</p>
       <p className="pricing-note payment-message">
-        {t('pricing.launchpadNote', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel })}
+        {t('pricing.launchpadNote')}
       </p>
       {hasPremium && (
         <p className="pricing-note payment-message verify-success">
@@ -4953,6 +4968,7 @@ function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch
   const canRequestVerification =
     project.verificationStatus === VERIFICATION_STATUS.UNVERIFIED || project.verificationStatus === VERIFICATION_STATUS.REJECTED;
   const { address: profileWallet } = useKhanWallet();
+  const canEdit = canEditProject(project, profileWallet);
   const unlockPremium = async () => {
     const result = await handleUnlockPremiumClick(project, profileWallet);
     if (!result?.ok) alert(result?.message || stripeUnavailableMessage());
@@ -4991,9 +5007,11 @@ function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch
             <button className={watched ? 'primary-button watched' : 'primary-button'} onClick={toggleWatch}>
               <Bell size={18} /> {watched ? t('projectProfile.watchingProject') : t('projectProfile.watchProject')}
             </button>
-            <button className="secondary-button" onClick={onEdit}>
-              <Plus size={18} /> {t('projectProfile.editProject')}
-            </button>
+            {canEdit && (
+              <button className="secondary-button" onClick={onEdit}>
+                <Plus size={18} /> {t('projectProfile.editProject')}
+              </button>
+            )}
             {canRequestVerification && (
               <button className="primary-button" onClick={onRequestVerification}>
                 <BadgeCheck size={18} /> {t('projectProfile.requestVerification')}
@@ -6077,13 +6095,47 @@ const launchpadInitialForm = {
   riskNotes: '',
 };
 
+// Token creation is Premium-only (see the gate in LaunchpadPage below); a
+// non-Premium wallet sees this instead of the create-token form.
+function LaunchpadUpgradeScreen({ navigate }) {
+  const { t } = useTranslation();
+  const [paymentMessage, setPaymentMessage] = useState('');
+  const { wallet } = useWalletEntitlement();
+  const unlockPremium = async () => {
+    const result = await handleUnlockPremiumClick(undefined, wallet);
+    if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
+  };
+
+  return (
+    <section className="page-section launchpad-page">
+      <SectionTitle icon={Lock} eyebrow={t('launchpad.upgrade.eyebrow')} title={t('launchpad.upgrade.title')} />
+      <p className="section-subtitle">{t('launchpad.upgrade.subtitle')}</p>
+      <section className="detail-section premium-lock-section">
+        <PlanFeatureGrid items={t('premium.items')} locked />
+        <div className="unlock-bar">
+          <strong>{t('premium.unlockBarTitle')}</strong>
+          <div>
+            <button className="primary-button" type="button" onClick={unlockPremium}>
+              {t('premium.unlockPremium')}
+            </button>
+            <button className="secondary-button" type="button" onClick={() => navigate('pricing')}>
+              {t('premium.viewPlans')} <ArrowRight size={18} />
+            </button>
+          </div>
+        </div>
+        {paymentMessage && <p className="inline-note">{paymentMessage}</p>}
+      </section>
+    </section>
+  );
+}
+
 function LaunchpadPage({ onCreateProfile, navigate }) {
   const { t } = useTranslation();
+  const { hasPremium } = useWalletEntitlement();
   const [form, setForm] = useState(launchpadInitialForm);
   const [network, setNetwork] = useState('devnet');
   const [mainnetConfirmations, setMainnetConfirmations] = useState({
     realToken: false,
-    launchpadPayment: false,
     realFees: false,
     verifiedMetadata: false,
     noGuarantee: false,
@@ -6093,18 +6145,10 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
   const [walletMessage, setWalletMessage] = useState('');
   const [status, setStatus] = useState({ state: 'idle', message: '' });
   const [created, setCreated] = useState(null);
-  const [launchpadPaymentHash, setLaunchpadPaymentHash] = useState('');
-  const [launchpadPaymentStatus, setLaunchpadPaymentStatus] = useState('idle');
-  const [launchpadPaymentMessage, setLaunchpadPaymentMessage] = useState('');
-  const [launchpadPaymentCopied, setLaunchpadPaymentCopied] = useState(false);
   const decimals = Number(form.decimals || 0);
   const isMainnet = network === 'mainnet-beta';
   const selectedNetwork = launchpadNetworkConfig(network);
   const mainnetReady = Object.values(mainnetConfirmations).every(Boolean);
-  const launchpadPaymentVerified = launchpadPaymentStatus === 'verified';
-  const mainnetUnlocked = !isMainnet || launchpadPaymentVerified;
-  const walletConfigured = Boolean(CRYPTO_PAYMENT_WALLET);
-  const verificationConfigured = isSolanaVerificationConfigured();
   const socialWarnings = [
     !hasValue(form.website) ? t('launchpad.form.websiteWarning') : '',
     !hasValue(form.twitter) ? t('launchpad.form.twitterWarning') : '',
@@ -6130,10 +6174,6 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
     setNetwork(value);
     setCreated(null);
     setStatus({ state: 'idle', message: '' });
-    if (value !== 'mainnet-beta') {
-      setLaunchpadPaymentStatus('idle');
-      setLaunchpadPaymentMessage('');
-    }
   };
 
   const updateConfirmation = (key, checked) => {
@@ -6153,46 +6193,11 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
     if (walletConnectError) setWalletMessage(launchpadErrorMessage(walletConnectError));
   }, [walletConnectError]);
 
-  const copyLaunchpadPaymentWallet = async () => {
-    if (!walletConfigured) return;
-    try {
-      await navigator.clipboard.writeText(CRYPTO_PAYMENT_WALLET);
-      setLaunchpadPaymentCopied(true);
-      window.setTimeout(() => setLaunchpadPaymentCopied(false), 1600);
-    } catch {
-      setLaunchpadPaymentCopied(false);
-    }
-  };
-
-  const verifyLaunchpadPayment = async () => {
-    if (!verificationConfigured) {
-      setLaunchpadPaymentStatus('not_configured');
-      setLaunchpadPaymentMessage(solanaUnavailableMessage());
-      return;
-    }
-    if (!launchpadPaymentHash.trim()) {
-      setLaunchpadPaymentStatus('idle');
-      setLaunchpadPaymentMessage(t('launchpad.unlock.hashEmpty'));
-      return;
-    }
-
-    trackCryptoVerifyStarted(LAUNCHPAD_PAYMENT_MODEL.mainnetPlan);
-    setLaunchpadPaymentStatus('verifying');
-    setLaunchpadPaymentMessage('');
-
-    const result = await verifySolanaPayment({
-      transactionHash: launchpadPaymentHash,
-      plan: LAUNCHPAD_PAYMENT_MODEL.mainnetPlan,
-    });
-    setLaunchpadPaymentStatus(result.status);
-    setLaunchpadPaymentMessage(result.message || t(verifyStatusMessageKey(result.status)));
-
-    if (result.status === 'verified') {
-      trackCryptoVerifySuccess(LAUNCHPAD_PAYMENT_MODEL.mainnetPlan);
-    } else {
-      trackCryptoVerifyFailed(LAUNCHPAD_PAYMENT_MODEL.mainnetPlan, result.status);
-    }
-  };
+  // Must come after every hook above (rules of hooks) - everything past this
+  // point is the actual token-creation form, gated on Premium.
+  if (!hasPremium) {
+    return <LaunchpadUpgradeScreen navigate={navigate} />;
+  }
 
   const createToken = async (event) => {
     event.preventDefault();
@@ -6206,10 +6211,6 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
     }
     if (isMainnet && !mainnetReady) {
       setStatus({ state: 'error', message: t('launchpad.form.submitMainnetConfirmations') });
-      return;
-    }
-    if (isMainnet && !launchpadPaymentVerified) {
-      setStatus({ state: 'error', message: t('launchpad.form.submitVerifyPayment', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel }) });
       return;
     }
 
@@ -6241,7 +6242,7 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
       <p className="section-subtitle">{t('launchpad.subtitle')}</p>
 
       <div className="launchpad-warning-grid">
-        <WarningBox text={isMainnet ? t('launchpad.warnings.networkMainnet', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel }) : t('launchpad.warnings.networkDevnet')} tone={isMainnet ? 'danger' : 'warning'} />
+        <WarningBox text={isMainnet ? t('launchpad.warnings.networkMainnet') : t('launchpad.warnings.networkDevnet')} tone={isMainnet ? 'danger' : 'warning'} />
         <WarningBox text={t('launchpad.warnings.noGuarantee')} />
         <WarningBox text={t('launchpad.warnings.seedPhrase')} />
         <WarningBox text={t('launchpad.warnings.irreversible')} />
@@ -6254,7 +6255,7 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
       <div className="launchpad-network-panel">
         <div>
           <strong>{t('launchpad.network.label')}</strong>
-          <p>{isMainnet ? t('launchpad.network.mainnetDescription', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel }) : t('launchpad.network.devnetDescription')}</p>
+          <p>{isMainnet ? t('launchpad.network.mainnetDescription') : t('launchpad.network.devnetDescription')}</p>
         </div>
         <div className="network-selector" role="group" aria-label={t('launchpad.network.ariaLabel')}>
           <button className={network === 'devnet' ? 'active' : ''} type="button" onClick={() => updateNetwork('devnet')}>{t('launchpad.network.devnet')}</button>
@@ -6262,79 +6263,10 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
         </div>
         <div className="launchpad-network-row">
           <span className={`network-badge ${isMainnet ? 'danger' : 'active'}`}>{selectedNetwork.label}</span>
-          <span className="network-badge">{t('launchpad.network.launchpadPayment', { price: isMainnet ? LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel : LAUNCHPAD_PAYMENT_MODEL.devnetPrice })}</span>
+          <span className="network-badge active">{t('launchpad.network.premiumIncluded')}</span>
           <span className="network-badge disabled">{t('launchpad.network.phantomRequired')}</span>
         </div>
       </div>
-
-      <section className="launchpad-payment-panel">
-        <SectionTitle icon={WalletCards} eyebrow={t('launchpad.payment.eyebrow')} title={t('launchpad.payment.title')} />
-        <div className="launchpad-payment-grid">
-          <div>
-            <span>{t('launchpad.payment.devnetLabel')}</span>
-            <strong>{LAUNCHPAD_PAYMENT_MODEL.devnetPrice}</strong>
-            <p>{t('launchpad.payment.devnetText')}</p>
-          </div>
-          <div>
-            <span>{t('launchpad.payment.mainnetLabel')}</span>
-            <strong>{LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel}</strong>
-            <p>{t('launchpad.payment.mainnetText')}</p>
-          </div>
-        </div>
-        <p className="inline-note">{t('launchpad.payment.note', { note: LAUNCHPAD_PAYMENT_MODEL.note })}</p>
-      </section>
-
-      {isMainnet && (
-        <section className="launchpad-payment-panel">
-          <SectionTitle icon={Lock} eyebrow={t('launchpad.unlock.eyebrow')} title={t('launchpad.unlock.title')} />
-          <p className="launchpad-message">
-            {t('launchpad.unlock.message', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel })}
-          </p>
-          {walletConfigured ? (
-            <div className="wallet-copy-box">
-              <span>{t('launchpad.unlock.walletLabel')}</span>
-              <strong>{CRYPTO_PAYMENT_WALLET}</strong>
-              <button className="secondary-button" type="button" onClick={copyLaunchpadPaymentWallet}>
-                <Copy size={17} /> {launchpadPaymentCopied ? t('common.copied') : t('pricing.payment.copyWallet')}
-              </button>
-            </div>
-          ) : (
-            <p className="inline-note">{t('launchpad.unlock.notConfigured')}</p>
-          )}
-          {!verificationConfigured && <p className="inline-note">{solanaUnavailableMessage()}</p>}
-          <label className="form-field transaction-field">
-            <span>{t('launchpad.unlock.hashLabel')}</span>
-            <input
-              value={launchpadPaymentHash}
-              onChange={(event) => {
-                setLaunchpadPaymentHash(event.target.value);
-                setLaunchpadPaymentStatus('idle');
-                setLaunchpadPaymentMessage('');
-              }}
-              placeholder={t('launchpad.unlock.hashPlaceholder', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel })}
-              disabled={!walletConfigured || launchpadPaymentStatus === 'verifying'}
-            />
-          </label>
-          <div className="payment-action-row">
-            <button
-              className="primary-button"
-              type="button"
-              onClick={verifyLaunchpadPayment}
-              disabled={!walletConfigured || launchpadPaymentStatus === 'verifying'}
-            >
-              {launchpadPaymentStatus === 'verifying' ? t('launchpad.unlock.verifying') : t('launchpad.unlock.verifyButton')}
-            </button>
-            <span className={launchpadPaymentVerified ? 'network-badge active' : 'network-badge danger'}>
-              {launchpadPaymentVerified ? t('launchpad.unlock.unlocked') : t('launchpad.unlock.locked')}
-            </span>
-          </div>
-          {(launchpadPaymentMessage || launchpadPaymentStatus !== 'idle') && (
-            <p className={launchpadPaymentVerified ? 'inline-note verify-success' : 'inline-note'}>
-              {launchpadPaymentMessage || t(verifyStatusMessageKey(launchpadPaymentStatus))}
-            </p>
-          )}
-        </section>
-      )}
 
       <div className="launchpad-wallet-card">
         <div>
@@ -6381,14 +6313,13 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
           )}
           <div className="launchpad-inline-warning wide">
             <AlertTriangle size={18} />
-            <span>{isMainnet ? t('launchpad.form.mainnetCostWarning', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel }) : t('launchpad.form.devnetFreeWarning')}</span>
+            <span>{isMainnet ? t('launchpad.form.mainnetCostWarning') : t('launchpad.form.devnetFreeWarning')}</span>
           </div>
 
           {isMainnet && (
             <div className="mainnet-confirmations wide">
               <strong>{t('launchpad.form.confirmationsTitle')}</strong>
               <ConfirmationBox checked={mainnetConfirmations.realToken} onChange={(checked) => updateConfirmation('realToken', checked)} text={t('launchpad.form.confirmRealToken')} />
-              <ConfirmationBox checked={mainnetConfirmations.launchpadPayment} onChange={(checked) => updateConfirmation('launchpadPayment', checked)} text={t('launchpad.form.confirmLaunchpadPayment', { price: LAUNCHPAD_PAYMENT_MODEL.mainnetPriceLabel })} />
               <ConfirmationBox checked={mainnetConfirmations.realFees} onChange={(checked) => updateConfirmation('realFees', checked)} text={t('launchpad.form.confirmRealFees')} />
               <ConfirmationBox checked={mainnetConfirmations.verifiedMetadata} onChange={(checked) => updateConfirmation('verifiedMetadata', checked)} text={t('launchpad.form.confirmVerifiedMetadata')} />
               <ConfirmationBox checked={mainnetConfirmations.noGuarantee} onChange={(checked) => updateConfirmation('noGuarantee', checked)} text={t('launchpad.form.confirmNoGuarantee')} />
@@ -6400,7 +6331,7 @@ function LaunchpadPage({ onCreateProfile, navigate }) {
             <p className={`launchpad-status wide ${status.state}`}>{status.message}</p>
           )}
 
-          <button className="primary-button wide-button" type="submit" disabled={!walletAddress || status.state === 'loading' || (isMainnet && (!mainnetReady || !mainnetUnlocked))}>
+          <button className="primary-button wide-button" type="submit" disabled={!walletAddress || status.state === 'loading' || (isMainnet && !mainnetReady)}>
             {status.state === 'loading' ? t('launchpad.form.submitWaiting') : isMainnet ? t('launchpad.form.submitMainnet') : t('launchpad.form.submitDevnet')}
           </button>
         </form>

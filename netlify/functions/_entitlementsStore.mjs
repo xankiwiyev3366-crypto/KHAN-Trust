@@ -38,6 +38,20 @@ export async function revokeEntitlement(walletAddress) {
   await writeEntitlements(entitlements);
 }
 
+// Single definition of "this plan counts as Premium" - Early Supporter is a
+// one-time purchase that includes every Premium tool (see src/entitlements.js
+// hasPlanAccess, the client-side equivalent of this same rule). Every server
+// function gating a Premium feature should check entitlements through this
+// helper instead of re-deriving the plan comparison itself.
+export function isPremiumPlan(plan) {
+  return plan === 'premium' || plan === 'early_supporter';
+}
+
+export async function hasPremiumEntitlement(walletAddress) {
+  const entitlement = await getEntitlement(walletAddress);
+  return Boolean(entitlement && isPremiumPlan(entitlement.plan));
+}
+
 // Stripe webhooks (e.g. subscription cancellation) identify the affected
 // customer/subscription, not the wallet directly - entitlements are keyed by
 // wallet, so look up the wallet by scanning for the matching Stripe id that

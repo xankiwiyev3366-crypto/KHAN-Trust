@@ -36,8 +36,17 @@ export async function handler(event) {
     request.reviewedAt = reviewedAt;
     await writeRequests(requests);
 
+    // ownerWallet rides along on approval so the frontend can restrict
+    // project editing to the verified owner (see canEditProject in
+    // src/main.jsx) without a second round-trip - it's already public data,
+    // shown elsewhere in the admin panel.
     const statuses = await readStatuses();
-    statuses[request.projectId] = { status: payload.decision, updatedAt: reviewedAt, adminNote: request.adminNote };
+    statuses[request.projectId] = {
+      status: payload.decision,
+      updatedAt: reviewedAt,
+      adminNote: request.adminNote,
+      ownerWallet: payload.decision === 'verified' ? request.ownerWallet : null,
+    };
     await writeStatuses(statuses);
 
     await appendEvent({

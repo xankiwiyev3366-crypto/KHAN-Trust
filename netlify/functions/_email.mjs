@@ -12,7 +12,14 @@
 // own endpoints (auth-resend-verification, auth-forgot-password, etc.) -
 // the frontend must never call api.resend.com directly.
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
-const FROM_ADDRESS = process.env.SUPPORT_FROM_EMAIL || 'KHAN Trust <onboarding@resend.dev>';
+// Default sender is the verified khantrust.net domain (DKIM/SPF/DMARC set up
+// in Resend + Netlify DNS). The old default, Resend's shared onboarding@
+// resend.dev sandbox address, could only deliver to the Resend account
+// owner's own email - which is exactly why verification worked for the owner
+// but failed for every other user. SUPPORT_FROM_EMAIL still overrides this if
+// a different verified address is ever wanted; it must stay on a domain
+// verified in Resend or delivery breaks again.
+const FROM_ADDRESS = process.env.SUPPORT_FROM_EMAIL || 'KHAN Trust <noreply@khantrust.net>';
 const ADMIN_NOTIFY_EMAIL = process.env.KHAN_ADMIN_NOTIFY_EMAIL || '';
 const APP_URL = process.env.URL || 'https://khantrust.net';
 

@@ -12,6 +12,7 @@
 // automatically once the corpus re-scan worker lands.
 import { listSubscriptions, saveSubscription } from './_alertsStore.mjs';
 import { getCorpusToken } from './_tokenCorpusStore.mjs';
+import { getHistory } from './_scoreHistoryStore.mjs';
 import { sendEmail, isEmailConfigured } from './_email.mjs';
 
 // Runs hourly. Netlify reads this exported config to schedule the function.
@@ -36,12 +37,65 @@ export function riskWorsened(prev, current) {
   return prevScore - currScore >= SCORE_DROP_THRESHOLD;
 }
 
+// Phase 5: derive plain-language WHY reasons from the two most recent score
+// snapshots (platform memory). Server-local and dependency-free on purpose -
+// the client's riskHistory.js pulls in the i18n bundle, which doesn't belong in
+// a Netlify Function; the email is English-only, so a small self-contained
+// mirror of the same thresholds is the right seam (same pattern as the
+// server-local riskWorsened() above). Tolerant of old/thin snapshots.
+function num(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function changeReasons(prevSnap, currSnap) {
+  const reasons = [];
+  if (!prevSnap || !currSnap) return reasons;
+
+  const prevLiq = num(prevSnap.liquidityUsd);
+  const currLiq = num(currSnap.liquidityUsd);
+  if (prevLiq !== null && currLiq !== null && prevLiq > 0) {
+    const ratio = (currLiq - prevLiq) / prevLiq;
+    if (ratio <= -0.1) reasons.push(`liquidity dropped ${Math.round(Math.abs(ratio) * 100)}%`);
+  }
+
+  const prevHolder = num(prevSnap.topHolderPercent);
+  const currHolder = num(currSnap.topHolderPercent);
+  if (prevHolder !== null && currHolder !== null && currHolder - prevHolder >= 3) {
+    reasons.push(`holder concentration increased ${Math.round(currHolder - prevHolder)} pts`);
+  }
+
+  const catLabels = {
+    contractSecurity: 'contract security',
+    holderHealth: 'holder health',
+    marketActivity: 'market activity',
+    community: 'community score',
+  };
+  const prevCats = prevSnap.categories || {};
+  const currCats = currSnap.categories || {};
+  for (const [key, label] of Object.entries(catLabels)) {
+    const prevVal = num(prevCats[key]);
+    const currVal = num(currCats[key]);
+    if (prevVal !== null && currVal !== null && prevVal - currVal >= 8) {
+      reasons.push(`${label} weakened ${Math.round(prevVal - currVal)} pts`);
+    }
+  }
+
+  const prevSocial = num(prevSnap.socialScore);
+  const currSocial = num(currSnap.socialScore);
+  if (prevSocial !== null && currSocial !== null && prevSocial - currSocial >= 8) {
+    reasons.push(`social score decreased ${Math.round(prevSocial - currSocial)} pts`);
+  }
+
+  return reasons;
+}
+
 function buildDigest(changes) {
   const lines = changes.map((c) => {
     const label = c.token.name || c.token.ticker || c.token.contract || 'Token';
     const now = `now ${c.current.trustScore}/100 (${c.current.riskLevel} risk)`;
     const was = c.prev ? `, was ${c.prev.score}/100 (${c.prev.riskLevel} risk)` : '';
-    return `- ${label}: ${now}${was}`;
+    const why = c.reasons && c.reasons.length ? `\n    Reason: ${c.reasons.join('; ')}` : '';
+    return `- ${label}: ${now}${was}${why}`;
   });
   return `Some tokens you're watching on KHAN Trust have a higher risk profile than before:\n\n${lines.join('\n')}\n\nOpen KHAN Trust for the full explainable breakdown: https://khantrust.net\n\nYou're receiving this because you enabled trust alerts on these tokens.`;
 }
@@ -65,7 +119,20 @@ export async function handler() {
         if (!current) continue;
         const prev = lastNotified[token.identity];
         if (riskWorsened(prev, current)) {
-          changes.push({ token, current, prev });
+          // Enrich with the specific WHY from the token's score history (last
+          // two snapshots). Best-effort: a history read failure just omits the
+          // reasons, the alert itself still sends.
+          let reasons = [];
+          try {
+            const history = await getHistory(token.identity);
+            if (Array.isArray(history) && history.length >= 2) {
+              const sorted = [...history].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+              reasons = changeReasons(sorted[sorted.length - 2], sorted[sorted.length - 1]);
+            }
+          } catch {
+            // history is optional context for the digest; ignore failures
+          }
+          changes.push({ token, current, prev, reasons });
         }
         // Re-baseline to the latest each run so we compare run-over-run and
         // never re-send the same worsening twice.

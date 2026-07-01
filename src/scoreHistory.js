@@ -6,6 +6,7 @@
 // localStorage-fallback pattern in userData.js so this also works against a
 // plain `vite dev` server with no Netlify Functions running.
 import { useEffect, useState } from 'react';
+import { snapshotMetrics } from './riskHistory.js';
 
 const FALLBACK_KEY = 'khan-trust-score-history-fallback-v1';
 const LAST_RECORDED_KEY = 'khan-trust-score-history-lastrecorded-v1';
@@ -93,7 +94,23 @@ export async function recordScoreSnapshot(project, score, riskLevel) {
   const liquidityRaw = realData.totalLiquidityUsd ?? realData.liquidityUsd;
   const liquidityUsd = typeof liquidityRaw === 'number' ? liquidityRaw : null;
 
-  const snapshot = { date: today, score: Math.round(score), riskLevel: riskLevel || 'Medium', topHolderPercent, liquidityUsd };
+  // Phase 5 (Smart Risk History): also capture the per-category breakdown, the
+  // social score, and the AI asset classification so the history timeline and
+  // smart alerts can explain *which* dimension moved - not just the headline
+  // score. All fields are optional; older snapshots simply omit them and the
+  // diff logic (riskHistory.js) treats missing values as "unknown".
+  const { categories, socialScore, assetCategory } = snapshotMetrics(project);
+
+  const snapshot = {
+    date: today,
+    score: Math.round(score),
+    riskLevel: riskLevel || 'Medium',
+    topHolderPercent,
+    liquidityUsd,
+    categories,
+    socialScore,
+    assetCategory,
+  };
   try {
     await callFunction('score-history-record', {
       method: 'POST',

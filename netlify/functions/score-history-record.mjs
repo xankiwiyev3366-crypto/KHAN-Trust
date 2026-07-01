@@ -14,6 +14,16 @@ import { appendSnapshot, jsonResponse } from './_scoreHistoryStore.mjs';
 const MAX_KEY_LENGTH = 150;
 const VALID_RISK_LEVELS = new Set(['Low', 'Medium', 'High']);
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+// Phase 5: the category dimensions a snapshot may carry. Any others in the
+// payload are ignored so a caller can't pad the blob with arbitrary keys.
+const CATEGORY_KEYS = ['contractSecurity', 'liquidity', 'holderHealth', 'marketActivity', 'community'];
+
+// 0-100 score or null. Anything out of range / non-numeric becomes null rather
+// than being rejected, so a partial snapshot still stores its known fields.
+function clampScoreOrNull(value) {
+  const num = Number(value);
+  return Number.isFinite(num) && num >= 0 && num <= 100 ? Math.round(num) : null;
+}
 
 export async function handler(event) {
   try {
@@ -55,7 +65,27 @@ export async function handler(event) {
     const liquidityUsdRaw = Number(snapshot.liquidityUsd);
     const liquidityUsd = Number.isFinite(liquidityUsdRaw) && liquidityUsdRaw >= 0 ? liquidityUsdRaw : null;
 
-    const history = await appendSnapshot(key, { date, score: Math.round(score), riskLevel, topHolderPercent, liquidityUsd });
+    // Optional (Phase 5): per-category breakdown, social score, and AI asset
+    // category. Each is strictly validated/clamped so a public caller cannot
+    // poison the history blob with arbitrary data (same posture as the corpus
+    // recorder). Missing/invalid fields store as null / '' and never reject.
+    const categoriesInput = snapshot.categories && typeof snapshot.categories === 'object' ? snapshot.categories : {};
+    const categories = {};
+    for (const catKey of CATEGORY_KEYS) categories[catKey] = clampScoreOrNull(categoriesInput[catKey]);
+    const socialScore = clampScoreOrNull(snapshot.socialScore);
+    const assetCategory = String(snapshot.assetCategory == null ? '' : snapshot.assetCategory)
+      .replace(/<[^>]*>/g, '').trim().slice(0, 60);
+
+    const history = await appendSnapshot(key, {
+      date,
+      score: Math.round(score),
+      riskLevel,
+      topHolderPercent,
+      liquidityUsd,
+      categories,
+      socialScore,
+      assetCategory,
+    });
     return jsonResponse(200, { ok: true, history });
   } catch (error) {
     return jsonResponse(500, { message: `score-history-record crashed: ${error.message}` });

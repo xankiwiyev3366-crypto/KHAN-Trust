@@ -91,6 +91,7 @@ import { historyKeyFor, fetchScoreHistory, computeScoreDelta, useScoreHistory } 
 import { useCorpusRecord } from './tokenCorpus.js';
 import { ANALYST_QUESTIONS, answerQuestion } from './khanAnalyst.js';
 import { detectRiskAlerts, useWatchlistAlertCount } from './riskAlerts.js';
+import { TRUST_CATEGORIES, buildRiskHistory } from './riskHistory.js';
 import { computePeerBenchmark, peerLabelFor } from './peerBenchmark.js';
 import { I18nProvider, useTranslation } from './i18n/I18nContext.jsx';
 import { translate, getLanguage } from './i18n/index.js';
@@ -717,13 +718,9 @@ function buildScoreBreakdown(project, holders, communitySize, score) {
 // Holder Health, Market Activity, Community). This is purely a display
 // aggregation over scores that calculateLiveScores already computed -
 // it does not change finalTrustScore or any individual score's math.
-const TRUST_CATEGORIES = [
-  { key: 'contractSecurity', labelKey: 'contractSecurity', scoreKeys: ['securityScore'] },
-  { key: 'liquidity', labelKey: 'liquidity', scoreKeys: ['liquidityScore', 'marketCapScore'] },
-  { key: 'holderHealth', labelKey: 'holderHealth', scoreKeys: ['holderScore', 'topHolderScore', 'topTenHolderScore', 'holderGrowthScore'] },
-  { key: 'marketActivity', labelKey: 'marketActivity', scoreKeys: ['marketActivityScore', 'tokenAgeScore'] },
-  { key: 'community', labelKey: 'community', scoreKeys: ['websiteScore', 'twitterScore', 'telegramScore', 'githubScore', 'coingeckoScore', 'founderActivity', 'roadmapClarity', 'transparency'] },
-];
+// Single source of truth now lives in riskHistory.js so the live report and the
+// Risk History timeline can never drift on how a category is composed (imported
+// above as TRUST_CATEGORIES).
 
 function buildCategoryBreakdown(scoreBreakdown = {}) {
   return TRUST_CATEGORIES.map((category) => {
@@ -4210,6 +4207,9 @@ function RiskReportPage({ project, navigate }) {
   // Additive: mirror this scanned token into the shared Trust Graph Corpus.
   // Purely best-effort - never affects the report render (see tokenCorpus.js).
   useCorpusRecord(project);
+  // Phase 5: record today's snapshot and load history so the free report can
+  // also show the Risk History timeline. Best-effort (see scoreHistory.js).
+  const history = useScoreHistory(project);
   return (
     <section className="page-section report-page">
       <button className="back-button" onClick={() => navigate('home')}>{t('riskReport.checkAnother')}</button>
@@ -4290,6 +4290,8 @@ function RiskReportPage({ project, navigate }) {
               ))}
             </div>
           </section>
+
+          <RiskHistoryTimeline history={history} />
 
           <PremiumLockedSection project={project} navigate={navigate} />
         </div>
@@ -5240,6 +5242,7 @@ function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch
         <div className="main-column">
           <VerifiedBadgeEmbed project={project} />
           <RiskSummary project={project} peerBenchmark={peerBenchmark} />
+          <RiskHistoryTimeline history={history} />
           <InfoGrid project={project} />
           <LiveMarketChart project={project} data={project.realData} />
           <TrustBreakdown project={project} />
@@ -8202,6 +8205,114 @@ function ScoreHistoryStrip({ project, history }) {
       )}
     </div>
   );
+}
+
+// Phase 5 — Smart Risk History timeline. Renders the derived change events
+// (buildRiskHistory, riskHistory.js) as a premium black/gold timeline: each
+// entry shows the date, the Trust Score prev->new transition, any risk-level
+// change, an AI explanation of what moved, and the individual prev->current
+// deltas. Reuses the `history` already fetched at the page level (useScoreHistory)
+// so it adds no network calls. Stays silent until there is real drift to show,
+// exactly like ScoreHistoryStrip - a token scanned once never renders an empty
+// shell. Never throws: it only reads already-loaded snapshot data.
+function RiskHistoryTimeline({ history }) {
+  const { t, language } = useTranslation();
+  const events = useMemo(() => buildRiskHistory(history, language), [history, language]);
+
+  // Nothing meaningful to show yet - render the section with a gentle empty
+  // state only if we at least have some history being tracked; otherwise stay
+  // fully silent so brand-new tokens don't show a hollow module.
+  const hasAnyHistory = Array.isArray(history) && history.length >= 1;
+  if (!hasAnyHistory) return null;
+
+  return (
+    <section className="detail-section risk-history">
+      <SectionTitle icon={History} eyebrow={t('riskHistory.eyebrow')} title={t('riskHistory.title')} />
+      <p className="risk-history-subtitle">{t('riskHistory.subtitle')}</p>
+
+      {events.length === 0 ? (
+        <p className="risk-history-empty">{t('riskHistory.empty')}</p>
+      ) : (
+        <ol className="risk-history-list">
+          {events.map((event) => {
+            const dir = event.worse ? 'down' : (typeof event.scoreDelta === 'number' && event.scoreDelta > 0 ? 'up' : 'flat');
+            const dateLabel = formatHistoryDate(event.date, language);
+            return (
+              <li key={event.date} className={`risk-history-item ${dir}`}>
+                <div className="risk-history-marker" aria-hidden="true" />
+                <div className="risk-history-body">
+                  <div className="risk-history-head">
+                    <span className="risk-history-date">{dateLabel}</span>
+                    {typeof event.previousScore === 'number' && typeof event.newScore === 'number' && (
+                      <span className={`risk-history-score ${dir}`}>
+                        {dir === 'down' ? <TrendingDown size={15} /> : dir === 'up' ? <TrendingUp size={15} /> : null}
+                        <strong>{event.previousScore}</strong>
+                        <ArrowRight size={13} />
+                        <strong>{event.newScore}</strong>
+                      </span>
+                    )}
+                    {event.riskChange && (
+                      <span className={`risk-history-risk ${event.riskChange.worse ? 'down' : 'up'}`}>
+                        {t('riskHistory.riskLabel')}: {t(`common.${String(event.riskChange.previous).toLowerCase()}`)}
+                        {' '}<ArrowRight size={11} />{' '}
+                        {t(`common.${String(event.riskChange.current).toLowerCase()}`)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="risk-history-explanation">{event.explanation}</p>
+                  {event.changes.some((change) => CHIP_DIMENSIONS.has(change.key)) && (
+                    <div className="risk-history-chips">
+                      {event.changes
+                        .filter((change) => CHIP_DIMENSIONS.has(change.key) && typeof change.previous === 'number' && typeof change.current === 'number')
+                        .map((change) => (
+                          <span key={change.key} className={`risk-history-chip ${change.worse ? 'worse' : 'better'}`}>
+                            {chipLabelFor(change.key, t)}
+                            {' '}{Math.round(change.previous)} <ArrowRight size={10} /> {Math.round(change.current)}
+                          </span>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+// Only 0-100 score dimensions become "prev -> current" chips; liquidity (shown
+// as a % in the explanation) and holder concentration (a % of supply, not a
+// score) would be misleading as chips, so they stay in the explanation text.
+const CHIP_DIMENSIONS = new Set(['trustScore', 'contractSecurity', 'holderHealth', 'marketActivity', 'community', 'social']);
+
+// Localized, compact chip label for a changed score dimension. Falls back to
+// the raw key if a translation is somehow missing so a chip never renders blank.
+function chipLabelFor(key, t) {
+  const map = {
+    trustScore: 'riskReport.trustScoreLabel',
+    contractSecurity: 'profileSections.categoryLabels.contractSecurity',
+    holderHealth: 'profileSections.categoryLabels.holderHealth',
+    marketActivity: 'profileSections.categoryLabels.marketActivity',
+    community: 'profileSections.categoryLabels.community',
+    social: 'compare.rows.socialScore',
+  };
+  const translationKey = map[key];
+  if (!translationKey) return key;
+  const label = t(translationKey);
+  return label === translationKey ? key : label;
+}
+
+function formatHistoryDate(dateStr, language) {
+  try {
+    const date = new Date(`${dateStr}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return dateStr;
+    const locale = { en: 'en-US', az: 'az-AZ', tr: 'tr-TR', ru: 'ru-RU' }[language] || 'en-US';
+    return date.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+  } catch {
+    return dateStr;
+  }
 }
 
 function RiskPill({ level }) {

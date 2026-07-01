@@ -8,10 +8,28 @@
 import { useEffect, useState } from 'react';
 import { translate as t } from './i18n/index.js';
 import { historyKeyFor, fetchScoreHistory } from './scoreHistory.js';
+import { diffSnapshots } from './riskHistory.js';
 
 const SCORE_DROP_THRESHOLD = 8;
 const HOLDER_CONCENTRATION_INCREASE_THRESHOLD = 5; // percentage points
 const LIQUIDITY_DROP_RATIO_THRESHOLD = 0.25; // 25% drop
+// Phase 5: a category (contract security, community, social, ...) must move by
+// at least this much to raise a dedicated smart alert - higher than the
+// history-timeline threshold so the watchlist surfaces only significant drift.
+const ALERT_CATEGORY_DROP_THRESHOLD = 8; // points
+
+// Phase 5 smart alerts, layered ON TOP of the three original signal alerts
+// above without changing any of their thresholds or messages. Uses the shared
+// diffSnapshots() brain so the watchlist, the on-page history timeline, and the
+// email digest all agree on what counts as a change. Each entry maps a detected
+// category/social drop or risk-level increase to a localized, prev->new alert.
+const CATEGORY_ALERT_KEYS = {
+  contractSecurity: 'contractSecurity',
+  community: 'community',
+  social: 'social',
+  marketActivity: 'marketActivity',
+  holderHealth: 'holderHealth',
+};
 
 export function detectRiskAlerts(history) {
   if (!Array.isArray(history) || history.length < 2) return [];
@@ -49,6 +67,34 @@ export function detectRiskAlerts(history) {
         message: t('watchlist.alerts.liquidityDrop', { percent: Math.round(Math.abs(ratio) * 100) }),
       });
     }
+  }
+
+  // --- Phase 5 additive smart alerts (category, social, risk level) ---
+  const RISK_ORDER = { Low: 0, Medium: 1, High: 2 };
+  if (latest.riskLevel && previous.riskLevel && (RISK_ORDER[latest.riskLevel] ?? 1) > (RISK_ORDER[previous.riskLevel] ?? 1)) {
+    alerts.push({
+      type: 'risk_level_up',
+      severity: 'high',
+      message: t('watchlist.alerts.riskLevelUp', {
+        from: t(`common.${previous.riskLevel.toLowerCase()}`),
+        to: t(`common.${latest.riskLevel.toLowerCase()}`),
+      }),
+    });
+  }
+
+  for (const change of diffSnapshots(previous, latest)) {
+    const alertKey = CATEGORY_ALERT_KEYS[change.key];
+    if (!alertKey || !change.worse) continue;
+    if (Math.abs(change.delta) < ALERT_CATEGORY_DROP_THRESHOLD) continue;
+    alerts.push({
+      type: `category_${change.key}`,
+      severity: 'medium',
+      message: t(`watchlist.alerts.${alertKey}Drop`, {
+        points: Math.abs(Math.round(change.delta)),
+        previous: Math.round(change.previous),
+        latest: Math.round(change.current),
+      }),
+    });
   }
 
   return alerts;

@@ -1664,6 +1664,169 @@ main {
   color: var(--danger);
 }
 
+/* Phase 5 — Smart Risk History timeline (premium black/gold). */
+.risk-history-subtitle {
+  color: var(--muted);
+  margin: 6px 0 18px;
+  font-size: 14px;
+}
+
+.risk-history-empty {
+  color: var(--muted);
+  font-size: 14px;
+  padding: 14px 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.risk-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 8px;
+  position: relative;
+}
+
+/* The vertical spine of the timeline. */
+.risk-history-list::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  background: linear-gradient(180deg, var(--gold-soft), rgba(224, 183, 92, 0.05));
+}
+
+.risk-history-item {
+  position: relative;
+  padding: 0 0 20px 26px;
+}
+
+.risk-history-item:last-child {
+  padding-bottom: 0;
+}
+
+.risk-history-marker {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--panel-3);
+  border: 2px solid var(--gold);
+  box-shadow: 0 0 0 3px rgba(224, 183, 92, 0.12);
+}
+
+.risk-history-item.down .risk-history-marker {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(255, 117, 110, 0.14);
+}
+
+.risk-history-item.up .risk-history-marker {
+  border-color: var(--success);
+  box-shadow: 0 0 0 3px rgba(103, 211, 156, 0.14);
+}
+
+.risk-history-body {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, rgba(32, 29, 20, 0.6), rgba(12, 12, 10, 0.6));
+  padding: 12px 14px;
+}
+
+.risk-history-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.risk-history-date {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+}
+
+.risk-history-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.risk-history-score strong {
+  color: var(--text);
+}
+
+.risk-history-score.down { color: var(--danger); }
+.risk-history-score.down strong { color: var(--danger); }
+.risk-history-score.up { color: var(--success); }
+.risk-history-score.up strong { color: var(--success); }
+
+.risk-history-risk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--gold-soft);
+  color: var(--gold-bright);
+}
+
+.risk-history-risk.down {
+  background: rgba(255, 117, 110, 0.14);
+  color: var(--danger);
+}
+
+.risk-history-risk.up {
+  background: rgba(103, 211, 156, 0.14);
+  color: var(--success);
+}
+
+.risk-history-explanation {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.risk-history-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.risk-history-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  color: var(--muted);
+}
+
+.risk-history-chip.worse {
+  border-color: rgba(255, 117, 110, 0.35);
+  color: var(--danger);
+}
+
+.risk-history-chip.better {
+  border-color: rgba(103, 211, 156, 0.35);
+  color: var(--success);
+}
+
 /* Phase 4 — peer/category percentile bar inside the Risk Summary card. */
 .peer-benchmark {
   margin-top: 14px;

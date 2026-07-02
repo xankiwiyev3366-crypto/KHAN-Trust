@@ -116,21 +116,33 @@ const realCoinGecko = {
   enabled: REAL_ENABLED,
   real: true,
   async fetch({ limit = 20 } = {}) {
-    // Public "recently added" coins. Some plans gate this; on failure -> [].
+    // Trending search: the coins users are actively looking at right now -
+    // genuinely relevant, and each item carries a name, symbol, logo, and
+    // market-cap rank. Free endpoint (a demo key just raises rate limits).
+    // Any failure/paywall -> [] and the run continues.
     const key = process.env.COINGECKO_API_KEY;
     const headers = key ? { 'x-cg-demo-api-key': key } : {};
-    const data = await safeJson('https://api.coingecko.com/api/v3/coins/list?include_platform=true', { headers });
-    if (!Array.isArray(data)) return [];
-    return data.slice(0, limit).map((c) => ({
-      name: c.name,
-      symbol: c.symbol,
-      chain: Object.keys(c.platforms || {})[0] || '',
-      category: 'Token',
-      stage: 'mainnet_live',
-      launchStatus: 'Listed',
-      contractAddress: Object.values(c.platforms || {}).find(Boolean) || '',
-      sourceUrl: `https://www.coingecko.com/en/coins/${c.id}`,
-    }));
+    const data = await safeJson('https://api.coingecko.com/api/v3/search/trending', { headers });
+    const coins = data?.coins;
+    if (!Array.isArray(coins)) return [];
+    return coins
+      .slice(0, limit)
+      .map(({ item }) => {
+        if (!item?.name) return null;
+        const rank = Number.isFinite(item.market_cap_rank) ? item.market_cap_rank : null;
+        return {
+          name: item.name,
+          symbol: item.symbol || '',
+          logoUrl: item.large || item.thumb || '',
+          description: `Trending on CoinGecko${rank ? ` · market-cap rank #${rank}` : ''}.`,
+          category: 'Trending',
+          chain: '',
+          stage: 'mainnet_live',
+          launchStatus: 'Trending',
+          sourceUrl: item.id ? `https://www.coingecko.com/en/coins/${item.id}` : '',
+        };
+      })
+      .filter(Boolean);
   },
 };
 
@@ -186,12 +198,17 @@ const MOCK_PROVIDERS = [
 
 const REAL_PROVIDERS = [realCoinGecko, realGitHub];
 
-// Returns the providers that should run. When REAL_ENABLED, a real provider
-// REPLACES the mock with the same id (so CoinGecko live data supersedes the
-// CoinGecko sample); every other slot keeps its mock so coverage never drops.
+// Returns the providers that should run.
+//   - Flag OFF (default): every mock provider runs, so the feature is fully
+//     functional with no keys.
+//   - Flag ON (EARLY_STAGE_DISCOVERY_REAL=1): ONLY real providers run, so the
+//     cache holds exclusively real discovery. Mock providers stay registered
+//     as scaffolds/fallback; as more real providers are implemented, coverage
+//     grows just by adding them to REAL_PROVIDERS - no other change.
+// The engine's reconciliation (see _discoveryEngine) then prunes any cached
+// records whose provider is no longer running, so flipping the flag on cleanly
+// removes the mock/orphaned entries on the next run.
 export function getProviders() {
   if (!REAL_ENABLED) return MOCK_PROVIDERS.filter((p) => p.enabled);
-  const realIds = new Set(REAL_PROVIDERS.filter((p) => p.enabled).map((p) => p.id));
-  const mocks = MOCK_PROVIDERS.filter((p) => p.enabled && !realIds.has(p.id));
-  return [...REAL_PROVIDERS.filter((p) => p.enabled), ...mocks];
+  return REAL_PROVIDERS.filter((p) => p.enabled);
 }

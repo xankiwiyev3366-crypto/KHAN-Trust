@@ -92,6 +92,10 @@ export function normalizeDiscovered(raw, provider, now = new Date().toISOString(
   return {
     id,
     origin: 'discovered',
+    // Which provider produced this record. Kept internal (not surfaced by the
+    // public list/get) and used by reconciliation to prune orphaned records
+    // when a provider stops running (e.g. mock -> real switch).
+    providerId: provider?.id || '',
     source,
     sourceUrl: clampUrl(raw.sourceUrl || raw.website || raw.github),
     discoveredAt: now,
@@ -130,29 +134,35 @@ export function normalizeDiscovered(raw, provider, now = new Date().toISOString(
   };
 }
 
-// Run every enabled provider, collect + normalize + dedupe.
-// `manualProjects` and `existingDiscovered` seed the signature set so we never
-// duplicate something already shown (manual takes precedence) or already
-// cached. Providers that throw are skipped, not fatal.
+// Run every enabled provider, collect + normalize + dedupe, and RECONCILE the
+// cache so it only ever reflects the current providers.
+//
+// Reconciliation rules (this is what prunes stale/orphaned records):
+//   - manual projects seed the dedupe set, so a discovered dup of a real
+//     submission is always dropped in favor of the human-curated one.
+//   - a provider that produces results this run REPLACES its own cached set
+//     (fresh data wins; its old records are dropped).
+//   - a provider that is registered/running but returned nothing this run
+//     (transient error/empty) keeps its previously cached records, so a blip
+//     doesn't wipe a source.
+//   - everything else is an orphan and is DROPPED: records from a provider no
+//     longer running (e.g. mock entries after the real flag is switched on),
+//     and legacy records with no providerId.
+// discoveredAt is preserved for a record whose id already existed, so the
+// "discovered on" date stays the first-seen date across runs.
 export async function runDiscovery({ manualProjects = [], existingDiscovered = [], limitPerProvider = 20 } = {}) {
   const now = new Date().toISOString();
   const providers = getProviders();
+  const runningIds = new Set(providers.map((p) => p.id));
+  const prevById = new Map((existingDiscovered || []).map((p) => [p.id, p]));
 
-  // Seed with manual signatures first so a discovered project that duplicates
-  // a real submission is dropped in favor of the human-curated one.
+  // Seed with manual signatures first (manual wins on any collision).
   const seen = buildSignatureSet(manualProjects);
 
-  // Preserve previously discovered projects (keep their original discoveredAt),
-  // and register their signatures so this run won't re-add them.
-  const byId = new Map();
-  for (const p of existingDiscovered) {
-    if (!seen.has(`__id:${p.id}`)) {
-      byId.set(p.id, p);
-      for (const s of projectSignatures(p)) seen.add(s);
-    }
-  }
-
+  const kept = [];
+  const producedByProvider = new Set();
   const providerStats = [];
+
   for (const provider of providers) {
     let added = 0;
     let fetched = 0;
@@ -164,33 +174,54 @@ export async function runDiscovery({ manualProjects = [], existingDiscovered = [
         const project = normalizeDiscovered(item, provider, now);
         if (!project) continue;
         const sigs = projectSignatures(project);
-        // Skip if it collides with anything already accepted, unless the only
-        // reason it "exists" is that we already cached this exact project id
-        // (in which case refresh its mutable fields but keep discoveredAt).
-        if (byId.has(project.id)) {
-          const prev = byId.get(project.id);
-          byId.set(project.id, { ...project, discoveredAt: prev.discoveredAt, createdAt: prev.createdAt });
-          continue;
-        }
-        if (sigs.some((s) => seen.has(s))) continue;
+        if (sigs.some((s) => seen.has(s))) continue; // dup vs manual or an earlier-accepted project
         for (const s of sigs) seen.add(s);
-        byId.set(project.id, project);
+        // Keep the original first-seen dates if we've cached this id before.
+        const prev = prevById.get(project.id);
+        if (prev) {
+          project.discoveredAt = prev.discoveredAt || project.discoveredAt;
+          project.createdAt = prev.createdAt || project.createdAt;
+        }
+        kept.push(project);
         added += 1;
       }
+      if (added > 0) producedByProvider.add(provider.id);
     } catch (error) {
-      providerStats.push({ id: provider.id, label: provider.label, error: error.message, fetched, added });
+      providerStats.push({ id: provider.id, label: provider.label, real: Boolean(provider.real), fetched, added, error: error.message });
       continue;
     }
     providerStats.push({ id: provider.id, label: provider.label, real: Boolean(provider.real), fetched, added });
   }
 
-  const projects = [...byId.values()].sort((a, b) => new Date(b.discoveredAt) - new Date(a.discoveredAt));
+  // Reconcile: preserve cached records ONLY for a running provider that did not
+  // produce anything this run (transient protection). All other prior records -
+  // replaced providers, orphaned providers, and legacy (no providerId) entries -
+  // are intentionally left out, which removes stale/mock data from the cache.
+  let prunedOrphans = 0;
+  let preservedOnError = 0;
+  for (const p of existingDiscovered || []) {
+    const pid = p.providerId;
+    const keepOnTransient = pid && runningIds.has(pid) && !producedByProvider.has(pid);
+    if (!keepOnTransient) {
+      prunedOrphans += 1;
+      continue;
+    }
+    const sigs = projectSignatures(p);
+    if (sigs.some((s) => seen.has(s))) { prunedOrphans += 1; continue; }
+    for (const s of sigs) seen.add(s);
+    kept.push(p);
+    preservedOnError += 1;
+  }
+
+  const projects = kept.sort((a, b) => new Date(b.discoveredAt) - new Date(a.discoveredAt));
   return {
     projects,
     stats: {
       lastRunAt: now,
       providerCount: providers.length,
       discoveredCount: projects.length,
+      prunedOrphans,
+      preservedOnError,
       providers: providerStats,
     },
   };

@@ -222,10 +222,15 @@ function useDebouncedValue(value, delay = 250) {
 }
 
 // Match a project against a free-text query on name, symbol, and category.
+// Fields are coerced to strings defensively (guards against non-string data
+// from the API), and every whitespace-separated token in the query must be
+// present, so multi-word queries and stray internal spaces ("aur ora",
+// "gaming quasar") still match. A single-token query behaves as a plain
+// substring test.
 function matchesQuery(project, needle) {
   if (!needle) return true;
-  const haystack = `${project.name || ''} ${project.symbol || ''} ${project.category || ''}`.toLowerCase();
-  return haystack.includes(needle);
+  const haystack = `${String(project.name || '')} ${String(project.symbol || '')} ${String(project.category || '')}`.toLowerCase();
+  return needle.split(/\s+/).filter(Boolean).every((token) => haystack.includes(token));
 }
 
 export function EarlyStageListPage({ navigate }) {

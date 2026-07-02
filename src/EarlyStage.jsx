@@ -610,7 +610,7 @@ export function EarlyStageAdminPage() {
                 <h4>{p.name} {p.featured && <Star size={13} className="es-verified" />}{p.hidden && <EyeOff size={13} />}</h4>
                 <p className="es-admin-meta">
                   <StageBadge stage={p.stage} es={es} />
-                  <span className={`es-status es-status-${p.status}`}>{p.status}</span>
+                  <span className={`es-status es-status-${p.status}`}>{es(`adminStats.${p.status}`, p.status)}</span>
                   {p.chain && <span>{p.chain}</span>}
                   {p.category && <span>{p.category}</span>}
                   {p.contactEmail && <span>{p.contactEmail}</span>}

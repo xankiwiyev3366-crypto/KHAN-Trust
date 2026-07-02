@@ -15,6 +15,8 @@ import {
   Globe2,
   Twitter,
   MessageCircle,
+  Github,
+  Radar,
   Users,
   BadgeCheck,
   ShieldCheck,
@@ -89,6 +91,19 @@ function StageBadge({ stage, es }) {
   return <span className={`es-stage-badge es-stage-${stage}`}>{es(`stages.${stage}`, stageLabel(stage))}</span>;
 }
 
+// Phase 2: clearly distinguishes auto-discovered projects from community
+// submissions. Discovered projects are never verified, so this badge is the
+// primary signal of provenance on both cards and the profile header.
+function OriginBadge({ origin, es }) {
+  const discovered = origin === 'discovered';
+  return (
+    <span className={`es-origin-badge ${discovered ? 'es-origin-discovered' : 'es-origin-community'}`}>
+      {discovered ? <Radar size={12} /> : <Users size={12} />}
+      {discovered ? es('originDiscovered', 'Auto Discovered') : es('originCommunity', 'Community Submitted')}
+    </span>
+  );
+}
+
 function ProgressBar({ value }) {
   const pct = Math.max(0, Math.min(100, Number(value) || 0));
   return (
@@ -116,6 +131,7 @@ function SocialLinks({ project, stop }) {
     { url: project.twitter, Icon: Twitter, label: 'X' },
     { url: project.telegram, Icon: MessageCircle, label: 'Telegram' },
     { url: project.discord, Icon: Users, label: 'Discord' },
+    { url: project.github, Icon: Github, label: 'GitHub' },
   ].filter((l) => l.url);
   if (!links.length) return null;
   return (
@@ -144,7 +160,10 @@ function EarlyStageCard({ project, navigate, es }) {
             {project.symbol && <span className="es-symbol">{project.symbol}</span>}
             {project.teamVerified && <BadgeCheck size={16} className="es-verified" aria-label={es('teamVerified', 'Verified team')} />}
           </h3>
-          <StageBadge stage={project.stage} es={es} />
+          <div className="es-badge-row">
+            <StageBadge stage={project.stage} es={es} />
+            <OriginBadge origin={project.origin} es={es} />
+          </div>
         </div>
       </div>
       <p className="es-card-desc">{project.description}</p>
@@ -154,6 +173,7 @@ function EarlyStageCard({ project, navigate, es }) {
         {project.chain && <span><Globe2 size={13} /> {project.chain}</span>}
         {project.category && <span><ListChecks size={13} /> {project.category}</span>}
         {project.communitySize > 0 && <span><Users size={13} /> {Number(project.communitySize).toLocaleString()}</span>}
+        {project.origin === 'discovered' && project.source && <span><Radar size={13} /> {project.source}</span>}
       </div>
       <div className="es-progress-wrap">
         <span className="es-progress-label">{es('buildingProgress', 'Building progress')} <strong>{project.buildingProgress || 0}%</strong></span>
@@ -179,6 +199,8 @@ function EarlyStageCard({ project, navigate, es }) {
 const NEWLY_ADDED_DAYS = 30;
 const SMART_FILTERS = [
   { id: 'all', match: () => true },
+  { id: 'community', match: (p) => (p.origin || 'community') === 'community' },
+  { id: 'discovered', match: (p) => p.origin === 'discovered' },
   { id: 'newlyAdded', match: (p) => daysSince(p.createdAt) <= NEWLY_ADDED_DAYS },
   { id: 'featured', match: (p) => Boolean(p.featured) },
   { id: 'launchingSoon', match: (p) => p.stage === 'launching_soon' },
@@ -516,11 +538,20 @@ export function EarlyStageProfilePage({ projectId, navigate }) {
           </h1>
           <div className="es-profile-badges">
             <StageBadge stage={project.stage} es={es} />
+            <OriginBadge origin={project.origin} es={es} />
             {project.launchStatus && <span className="status-badge">{project.launchStatus}</span>}
             {project.chain && <span className="status-badge">{project.chain}</span>}
             {project.category && <span className="status-badge">{project.category}</span>}
           </div>
           <p className="es-profile-desc">{project.description}</p>
+          {project.origin === 'discovered' && (project.source || project.discoveredAt) && (
+            <p className="es-discovery-note">
+              <Radar size={14} />
+              {project.source && <span>{es('sourceLabel', 'Source')}: {project.sourceUrl ? <a href={project.sourceUrl} target="_blank" rel="noreferrer">{project.source}</a> : project.source}</span>}
+              {project.discoveredAt && <span>{es('discoveredOn', 'Discovered')}: {new Date(project.discoveredAt).toLocaleDateString()}</span>}
+              <span className="es-discovery-unverified">{es('notVerifiedNote', 'Auto-discovered · not verified')}</span>
+            </p>
+          )}
           <SocialLinks project={project} />
           {project.builtWithLaunchpad && (
             <div className="es-profile-launchpad">

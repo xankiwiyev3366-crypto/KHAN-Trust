@@ -6596,6 +6596,59 @@ main {
 .es-stage-testnet,
 .es-stage-public_beta { color: #6fb6ff; border-color: rgba(111, 182, 255, 0.4); }
 
+/* Phase 2: badge row groups the stage + provenance (origin) badges. */
+.es-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Origin (provenance) badge - distinguishes community submissions from
+   auto-discovered projects. Deliberately visually distinct from stage badges. */
+.es-origin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+}
+
+.es-origin-community {
+  color: var(--success);
+  background: rgba(103, 211, 156, 0.12);
+  border-color: rgba(103, 211, 156, 0.35);
+}
+
+.es-origin-discovered {
+  color: #a99bff;
+  background: rgba(139, 122, 255, 0.12);
+  border-color: rgba(139, 122, 255, 0.4);
+}
+
+/* Discovery provenance line on the profile header. */
+.es-discovery-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.es-discovery-note a { color: var(--gold-bright); }
+
+.es-discovery-unverified {
+  font-weight: 700;
+  color: #a99bff;
+}
+
 .es-card-desc {
   color: var(--muted);
   font-size: 14px;

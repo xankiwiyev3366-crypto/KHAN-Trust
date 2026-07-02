@@ -7,6 +7,7 @@ import {
   isPubliclyVisible,
   jsonResponse,
 } from './_earlyStageStore.mjs';
+import { readDiscoveredProjects } from './_discoveryStore.mjs';
 
 function toPublicProfile(project) {
   return {
@@ -39,6 +40,12 @@ function toPublicProfile(project) {
     featured: project.featured,
     createdAt: project.createdAt,
     updatedAt: project.updatedAt || project.createdAt,
+    // Phase 2 origin/source fields.
+    origin: project.origin || 'community',
+    source: project.source || '',
+    sourceUrl: project.sourceUrl || '',
+    github: project.github || '',
+    discoveredAt: project.discoveredAt || '',
     // Future-ready fields (reserved).
     saleType: project.saleType || '',
     countdownAt: project.countdownAt || '',
@@ -55,6 +62,17 @@ export async function handler(event) {
     if (!id) {
       return jsonResponse(400, { message: 'A project id is required.' });
     }
+    // Discovered project ids are prefixed 'esd-'; look them up in the discovery
+    // cache. Manual ids resolve from the approval store as before.
+    if (id.startsWith('esd-')) {
+      const discovered = await readDiscoveredProjects().catch(() => []);
+      const found = (Array.isArray(discovered) ? discovered : []).find((p) => p.id === id);
+      if (!found) {
+        return jsonResponse(404, { message: 'Project not found.' });
+      }
+      return jsonResponse(200, { project: toPublicProfile({ ...found, origin: 'discovered', teamVerified: false }) });
+    }
+
     const all = await readEarlyStageProjects();
     const project = all.find((p) => p.id === id);
     if (!project || !isPubliclyVisible(project)) {

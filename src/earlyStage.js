@@ -136,6 +136,97 @@ function isVisible(p) {
   return p.status === 'approved' && !p.hidden;
 }
 
+// ---- Auto-discovery (Phase 2) --------------------------------------------
+// The real discovery pipeline lives server-side (netlify/functions/
+// _discoveryProviders + _discoveryEngine + early-stage-discover-run) and the
+// list endpoint returns manual + discovered already merged. This client-side
+// mock set is ONLY used by the dev fallback below (plain `vite dev`, no
+// Netlify Functions) so the merged experience - cards, badges, filters,
+// sorting, search, autocomplete - is fully testable locally without any API.
+const DISCOVERY_MOCK_SEED = [
+  { name: 'Lumen Protocol', symbol: 'LMN', chain: 'Ethereum', category: 'DeFi', stage: 'launching_soon', launchStatus: 'Newly Listed', description: 'Cross-margin lending protocol newly listed on aggregators.', website: 'https://lumenprotocol.io', twitter: 'https://x.com/lumenprotocol', communitySize: 4200, source: 'CoinGecko' },
+  { name: 'Solstice SDK', symbol: '', chain: 'Solana', category: 'Infrastructure', stage: 'building', launchStatus: 'Active development', description: 'Open-source Rust SDK for building Solana programs faster.', github: 'https://github.com/solstice-labs/solstice', website: 'https://solstice.dev', communitySize: 1300, source: 'GitHub' },
+  { name: 'Nova Markets', symbol: 'NOVA', chain: 'Solana', category: 'DEX', stage: 'pre_sale', launchStatus: 'Presale', description: 'High-throughput orderbook DEX built for the Solana ecosystem.', website: 'https://novamarkets.xyz', telegram: 'https://t.me/novamarkets', communitySize: 5600, source: 'Solana Ecosystem' },
+  { name: 'Coral Social', symbol: 'CORAL', chain: 'Base', category: 'SocialFi', stage: 'launching_soon', launchStatus: 'Launching soon', description: 'Onchain social graph and creator monetization on Base.', website: 'https://coral.social', twitter: 'https://x.com/coralsocial', communitySize: 3400, source: 'Base Ecosystem' },
+  { name: 'Frostbyte Games', symbol: 'FRB', chain: 'Avalanche', category: 'Gaming', stage: 'pre_sale', launchStatus: 'Whitelist open', description: 'On-chain strategy game running on an Avalanche subnet.', website: 'https://frostbyte.gg', telegram: 'https://t.me/frostbyte', communitySize: 7200, source: 'Avalanche Ecosystem' },
+  { name: 'Cascade Rollup', symbol: '', chain: 'Ethereum', category: 'Layer 2', stage: 'testnet', launchStatus: 'Devnet', description: 'ZK rollup for high-frequency apps, currently on public testnet.', website: 'https://cascade.build', github: 'https://github.com/cascade-rollup/node', source: 'Testnet Projects' },
+];
+
+function slugifyClient(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'project';
+}
+
+function hashClient(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
+function normNameClient(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function siteHostClient(value) {
+  try { return new URL(String(value)).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; }
+}
+
+function signaturesClient(p) {
+  const sigs = [];
+  const n = normNameClient(p.name); if (n) sigs.push(`name:${n}`);
+  const sym = String(p.symbol || '').trim().toUpperCase(); if (sym) sigs.push(`sym:${sym}`);
+  const host = siteHostClient(p.website); if (host) sigs.push(`site:${host}`);
+  const ca = String(p.contractAddress || '').trim().toLowerCase(); if (ca) sigs.push(`ca:${ca}`);
+  return sigs;
+}
+
+// Build normalized discovered projects and drop any that collide (by name /
+// symbol / website / contract) with the manually submitted ones - mirroring
+// the server engine's dedupe so dev matches production behavior.
+function buildDiscoveredFallback(manualVisible) {
+  const now = new Date().toISOString();
+  const seen = new Set();
+  for (const p of manualVisible) for (const s of signaturesClient(p)) seen.add(s);
+  const out = [];
+  for (const raw of DISCOVERY_MOCK_SEED) {
+    const project = {
+      id: `esd-${slugifyClient(raw.name)}-${hashClient(`${normNameClient(raw.name)}|${raw.source || ''}`)}`,
+      origin: 'discovered',
+      source: raw.source || 'Discovery',
+      sourceUrl: raw.website || raw.github || '',
+      discoveredAt: now,
+      name: raw.name,
+      symbol: String(raw.symbol || '').toUpperCase(),
+      logoUrl: raw.logoUrl || '',
+      description: raw.description || '',
+      stage: raw.stage || 'idea',
+      launchStatus: raw.launchStatus || '',
+      estimatedLaunch: raw.estimatedLaunch || '',
+      chain: raw.chain || '',
+      category: raw.category || '',
+      website: raw.website || '',
+      twitter: raw.twitter || '',
+      telegram: raw.telegram || '',
+      discord: raw.discord || '',
+      github: raw.github || '',
+      contractAddress: raw.contractAddress || '',
+      communitySize: Math.max(0, Number(raw.communitySize) || 0),
+      teamVerified: false,
+      buildingProgress: 0,
+      builtWithLaunchpad: false,
+      launchpadUrl: '',
+      featured: false,
+      overview: '', roadmap: [], team: [], progressTimeline: [], milestones: [],
+      whyEarlyStage: '', riskNotes: '',
+      createdAt: now, updatedAt: now,
+    };
+    const sigs = signaturesClient(project);
+    if (sigs.some((s) => seen.has(s))) continue;
+    for (const s of sigs) seen.add(s);
+    out.push(project);
+  }
+  return out;
+}
+
 // ---- Public API ----------------------------------------------------------
 
 export async function submitEarlyStageProject(payload) {
@@ -155,15 +246,21 @@ export async function submitEarlyStageProject(payload) {
   }
 }
 
-export async function fetchEarlyStageProjects({ stage = 'all', chain = 'all', category = 'all', search = '' } = {}) {
+export async function fetchEarlyStageProjects({ stage = 'all', chain = 'all', category = 'all', search = '', origin = 'all' } = {}) {
   const params = new URLSearchParams({ stage, chain, category });
   if (search) params.set('search', search);
+  if (origin && origin !== 'all') params.set('origin', origin);
   try {
     return await callFunction(`early-stage-list?${params.toString()}`);
   } catch (error) {
     if (!isFunctionUnavailable(error)) throw error;
     const store = readFallbackStore();
-    let visible = store.projects.filter(isVisible);
+    const manualVisible = store.projects.filter(isVisible).map((p) => ({ ...p, origin: p.origin || 'community' }));
+    // Merge in auto-discovered mocks (deduped against manual), mirroring the
+    // server's merged list so the dev experience matches production.
+    const discovered = buildDiscoveredFallback(manualVisible);
+    let visible = [...manualVisible, ...discovered];
+    if (origin !== 'all') visible = visible.filter((p) => (p.origin || 'community') === origin);
     if (stage !== 'all') visible = visible.filter((p) => p.stage === stage);
     if (chain !== 'all') visible = visible.filter((p) => (p.chain || '').toLowerCase() === chain.toLowerCase());
     if (category !== 'all') visible = visible.filter((p) => (p.category || '').toLowerCase() === category.toLowerCase());
@@ -177,12 +274,14 @@ export async function fetchEarlyStageProjects({ stage = 'all', chain = 'all', ca
       if (Boolean(b.featured) !== Boolean(a.featured)) return b.featured ? 1 : -1;
       return new Date(b.createdAt) - new Date(a.createdAt);
     });
+    const merged = [...manualVisible, ...discovered];
     const facets = {
-      stages: [...new Set(store.projects.filter(isVisible).map((p) => p.stage).filter(Boolean))],
-      chains: [...new Set(store.projects.filter(isVisible).map((p) => p.chain).filter(Boolean))],
-      categories: [...new Set(store.projects.filter(isVisible).map((p) => p.category).filter(Boolean))],
+      stages: [...new Set(merged.map((p) => p.stage).filter(Boolean))],
+      chains: [...new Set(merged.map((p) => p.chain).filter(Boolean))],
+      categories: [...new Set(merged.map((p) => p.category).filter(Boolean))],
+      sources: [...new Set(discovered.map((p) => p.source).filter(Boolean))],
     };
-    return { projects: visible, facets, total: visible.length };
+    return { projects: visible, facets, counts: { manual: manualVisible.length, discovered: discovered.length }, total: visible.length };
   }
 }
 
@@ -193,8 +292,15 @@ export async function fetchEarlyStageProject(id) {
   } catch (error) {
     if (!isFunctionUnavailable(error)) throw error;
     const store = readFallbackStore();
+    // Discovered project ids ('esd-') resolve from the same mock discovery set
+    // the list fallback builds (deduped against manual submissions).
+    if (String(id).startsWith('esd-')) {
+      const manualVisible = store.projects.filter(isVisible).map((p) => ({ ...p, origin: p.origin || 'community' }));
+      const found = buildDiscoveredFallback(manualVisible).find((p) => p.id === id);
+      return found || null;
+    }
     const project = store.projects.find((p) => p.id === id);
-    return project && isVisible(project) ? project : null;
+    return project && isVisible(project) ? { ...project, origin: project.origin || 'community' } : null;
   }
 }
 

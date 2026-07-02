@@ -89,6 +89,7 @@ function buildLocalProject(payload, meta = {}) {
   return {
     id: meta.id || `es-${slugify(payload.name)}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
     name: String(payload.name || '').slice(0, 120),
+    symbol: String(payload.symbol || '').slice(0, 20).toUpperCase(),
     logoUrl: clampUrl(payload.logoUrl),
     description: String(payload.description || '').slice(0, 400),
     stage: EARLY_STAGE_STAGES.some((s) => s.id === payload.stage) ? payload.stage : 'idea',
@@ -115,6 +116,13 @@ function buildLocalProject(payload, meta = {}) {
     contactName: String(payload.contactName || '').slice(0, 120),
     contactEmail: String(payload.contactEmail || '').slice(0, 300),
     submittedByWallet: String(payload.wallet || '').slice(0, 64),
+    // Future-ready schema (reserved) - mirrors the server builder.
+    funding: meta.funding ?? null,
+    saleType: String(payload.saleType || '').slice(0, 40),
+    countdownAt: String(payload.countdownAt || '').slice(0, 40),
+    communityVotes: Math.max(0, Number(payload.communityVotes) || 0),
+    aiLaunchReadiness: meta.aiLaunchReadiness ?? null,
+    investorWatchCount: Math.max(0, Number(meta.investorWatchCount) || 0),
     status: meta.status || 'pending',
     featured: meta.featured ?? false,
     hidden: meta.hidden ?? false,

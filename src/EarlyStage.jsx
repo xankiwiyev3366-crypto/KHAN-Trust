@@ -6,7 +6,7 @@
 // plus a small set of dedicated `es-*` classes added to styles.css. It imports
 // nothing from main.jsx, so there is zero risk of a circular import or of
 // touching existing features - `navigate` is passed in as a prop.
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Rocket,
   Sparkles,
@@ -33,6 +33,8 @@ import {
   Milestone,
   ListChecks,
   Info,
+  Search,
+  ArrowUpDown,
 } from 'lucide-react';
 import { useTranslation } from './i18n/I18nContext.jsx';
 import { adminLogin, getStoredAdminToken, clearAdminToken } from './verification.js';
@@ -139,6 +141,7 @@ function EarlyStageCard({ project, navigate, es }) {
         <div className="es-card-titles">
           <h3>
             {project.name}
+            {project.symbol && <span className="es-symbol">{project.symbol}</span>}
             {project.teamVerified && <BadgeCheck size={16} className="es-verified" aria-label={es('teamVerified', 'Verified team')} />}
           </h3>
           <StageBadge stage={project.stage} es={es} />
@@ -169,32 +172,157 @@ function EarlyStageCard({ project, navigate, es }) {
 
 // ---- List page -----------------------------------------------------------
 
+// Investor-focused smart filters. Each is a pure predicate over a project, so
+// filtering is instant and client-side (the full approved list is fetched once
+// on mount). "Newly Added" = created within the last 30 days. "Verified Team"
+// is future-ready: it already works the moment a project carries teamVerified.
+const NEWLY_ADDED_DAYS = 30;
+const SMART_FILTERS = [
+  { id: 'all', match: () => true },
+  { id: 'newlyAdded', match: (p) => daysSince(p.createdAt) <= NEWLY_ADDED_DAYS },
+  { id: 'featured', match: (p) => Boolean(p.featured) },
+  { id: 'launchingSoon', match: (p) => p.stage === 'launching_soon' },
+  { id: 'testnet', match: (p) => p.stage === 'testnet' },
+  { id: 'mainnet', match: (p) => p.stage === 'mainnet_live' },
+  { id: 'verifiedTeam', match: (p) => Boolean(p.teamVerified) },
+];
+
+// Sort comparators keyed by option id. Newest is the default.
+const SORT_OPTIONS = ['newest', 'oldest', 'updated', 'community', 'progress'];
+const SORTERS = {
+  newest: (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+  oldest: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+  updated: (a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt),
+  community: (a, b) => (Number(b.communitySize) || 0) - (Number(a.communitySize) || 0),
+  progress: (a, b) => (Number(b.buildingProgress) || 0) - (Number(a.buildingProgress) || 0),
+};
+
+function daysSince(dateStr) {
+  const then = new Date(dateStr).getTime();
+  if (!then) return Infinity;
+  return Math.floor((Date.now() - then) / 86400000);
+}
+
+// Small debounce hook - keeps the grid filter + autocomplete from recomputing
+// on every keystroke (spec: ~250ms).
+function useDebouncedValue(value, delay = 250) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
+
+// Match a project against a free-text query on name, symbol, and category.
+function matchesQuery(project, needle) {
+  if (!needle) return true;
+  const haystack = `${project.name || ''} ${project.symbol || ''} ${project.category || ''}`.toLowerCase();
+  return haystack.includes(needle);
+}
+
 export function EarlyStageListPage({ navigate }) {
   const { es } = useEs();
-  const [projects, setProjects] = useState([]);
-  const [facets, setFacets] = useState({ stages: [], chains: [], categories: [] });
-  const [stage, setStage] = useState('all');
-  const [search, setSearch] = useState('');
+  const [allProjects, setAllProjects] = useState([]);
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
+  const [query, setQuery] = useState('');
   const [state, setState] = useState({ status: 'loading', message: '' });
 
-  const load = async () => {
+  // Autocomplete state
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const searchWrapRef = useRef(null);
+
+  const debouncedQuery = useDebouncedValue(query, 250);
+  const needle = debouncedQuery.trim().toLowerCase();
+
+  // Fetch the full approved list once; every filter/sort/search below runs
+  // client-side so it stays instant and issues no extra requests.
+  const load = useCallback(async () => {
     setState({ status: 'loading', message: '' });
     try {
-      const data = await fetchEarlyStageProjects({ stage, search });
-      setProjects(data.projects || []);
-      setFacets(data.facets || { stages: [], chains: [], categories: [] });
+      const data = await fetchEarlyStageProjects({});
+      setAllProjects(data.projects || []);
       setState({ status: 'idle', message: '' });
     } catch (error) {
       setState({ status: 'error', message: error.message || 'Could not load projects.' });
     }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Close the suggestions dropdown on any outside click.
+  useEffect(() => {
+    if (!showSuggestions) return undefined;
+    const onDocClick = (e) => {
+      if (searchWrapRef.current && !searchWrapRef.current.contains(e.target)) setShowSuggestions(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [showSuggestions]);
+
+  // Only offer smart filters that actually have at least one project, so users
+  // never tap into a dead end (All is always shown).
+  const availableFilters = useMemo(
+    () => SMART_FILTERS.filter((f) => f.id === 'all' || allProjects.some((p) => f.match(p))),
+    [allProjects]
+  );
+
+  // If the active filter becomes empty (e.g. data reloaded), fall back to All.
+  useEffect(() => {
+    if (!availableFilters.some((f) => f.id === activeFilter)) setActiveFilter('all');
+  }, [availableFilters, activeFilter]);
+
+  const filterMatch = useMemo(
+    () => (SMART_FILTERS.find((f) => f.id === activeFilter) || SMART_FILTERS[0]).match,
+    [activeFilter]
+  );
+
+  const visibleProjects = useMemo(() => {
+    const list = allProjects.filter((p) => filterMatch(p) && matchesQuery(p, needle));
+    return list.sort(SORTERS[sortBy] || SORTERS.newest);
+  }, [allProjects, filterMatch, needle, sortBy]);
+
+  // Autocomplete suggestions: up to 5, from the whole list (ignores the active
+  // filter so search always finds any project), matched on name/symbol/category.
+  const suggestions = useMemo(() => {
+    if (!needle) return [];
+    return allProjects.filter((p) => matchesQuery(p, needle)).slice(0, 5);
+  }, [allProjects, needle]);
+
+  useEffect(() => { setActiveIndex(-1); }, [needle]);
+
+  const openProject = (project) => {
+    if (!project) return;
+    setShowSuggestions(false);
+    navigate(`early-stage/${project.id}`);
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [stage]);
+  const onSearchKeyDown = (e) => {
+    if (!showSuggestions || !suggestions.length) {
+      if (e.key === 'Escape') { setQuery(''); e.currentTarget.blur(); }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex((i) => (i + 1) % suggestions.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex((i) => (i <= 0 ? suggestions.length - 1 : i - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      openProject(suggestions[activeIndex >= 0 ? activeIndex : 0]);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setShowSuggestions(false);
+    }
+  };
 
-  const visibleStages = useMemo(
-    () => EARLY_STAGE_STAGES.filter((s) => facets.stages?.includes(s.id)),
-    [facets.stages]
-  );
+  const clearSearch = () => { setQuery(''); setShowSuggestions(false); };
+
+  const hasAny = allProjects.length > 0;
+  const isFiltered = Boolean(needle) || activeFilter !== 'all';
 
   return (
     <section className="page-section es-page">
@@ -202,45 +330,99 @@ export function EarlyStageListPage({ navigate }) {
       <p className="section-subtitle es-intro">{es('intro', 'Discover crypto projects building in the open - from idea to testnet to launch. Join KHAN Trust before you go public and build trust from day one.')}</p>
 
       <div className="es-toolbar">
-        <div className="es-search">
+        <div className="es-search es-autocomplete" ref={searchWrapRef}>
+          <Search size={16} className="es-search-icon" aria-hidden="true" />
           <input
-            type="search"
-            value={search}
+            type="text"
+            role="combobox"
+            aria-expanded={showSuggestions && suggestions.length > 0}
+            aria-controls="es-suggestion-list"
+            aria-autocomplete="list"
+            autoComplete="off"
+            value={query}
             placeholder={es('searchPlaceholder', 'Search early-stage projects...')}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') load(); }}
+            onChange={(e) => { setQuery(e.target.value); setShowSuggestions(true); }}
+            onFocus={() => setShowSuggestions(true)}
+            onKeyDown={onSearchKeyDown}
           />
-          <button className="secondary-button" type="button" onClick={load}>{es('search', 'Search')}</button>
+          {query && (
+            <button className="es-search-clear" type="button" aria-label={es('clearSearch', 'Clear search')} onClick={clearSearch}>
+              <X size={15} />
+            </button>
+          )}
+          {showSuggestions && suggestions.length > 0 && (
+            <ul className="es-suggestions" id="es-suggestion-list" role="listbox">
+              {suggestions.map((p, i) => (
+                <li
+                  key={p.id}
+                  role="option"
+                  aria-selected={i === activeIndex}
+                  className={i === activeIndex ? 'active' : ''}
+                  onMouseEnter={() => setActiveIndex(i)}
+                  onMouseDown={(e) => { e.preventDefault(); openProject(p); }}
+                >
+                  <span className="es-suggest-logo" aria-hidden="true">
+                    {p.logoUrl ? <img src={p.logoUrl} alt="" loading="lazy" /> : <Rocket size={14} />}
+                  </span>
+                  <span className="es-suggest-main">
+                    <strong>{p.name}{p.symbol ? <em> · {p.symbol}</em> : null}</strong>
+                    {p.category && <small>{p.category}</small>}
+                  </span>
+                  <StageBadge stage={p.stage} es={es} />
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <button className="primary-button" type="button" onClick={() => navigate('early-stage-submit')}>
           <Plus size={16} /> {es('submitCta', 'Submit Your Project')}
         </button>
       </div>
 
-      <div className="filter-row es-filter-row">
-        <button className={stage === 'all' ? 'active' : ''} onClick={() => setStage('all')}>{es('filters.all', 'All Stages')}</button>
-        {visibleStages.map((s) => (
-          <button key={s.id} className={stage === s.id ? 'active' : ''} onClick={() => setStage(s.id)}>
-            {es(`stages.${s.id}`, s.label)}
-          </button>
-        ))}
+      <div className="es-controls">
+        <div className="filter-row es-filter-row">
+          {availableFilters.map((f) => (
+            <button key={f.id} className={activeFilter === f.id ? 'active' : ''} onClick={() => setActiveFilter(f.id)}>
+              {es(`smartFilters.${f.id}`, f.id)}
+            </button>
+          ))}
+        </div>
+        <label className="es-sort">
+          <ArrowUpDown size={15} aria-hidden="true" />
+          <span className="es-sort-label">{es('sort.label', 'Sort')}</span>
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+            {SORT_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>{es(`sort.${opt}`, opt)}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {state.status === 'loading' && <p className="lookup-message">{es('loading', 'Loading projects...')}</p>}
       {state.status === 'error' && <p className="lookup-message error">{state.message}</p>}
 
       {state.status === 'idle' && (
-        projects.length ? (
+        visibleProjects.length ? (
           <div className="project-grid es-grid">
-            {projects.map((project) => (
+            {visibleProjects.map((project) => (
               <EarlyStageCard key={project.id} project={project} navigate={navigate} es={es} />
             ))}
           </div>
-        ) : (
+        ) : !hasAny ? (
           <EsEmptyState
             title={es('emptyTitle', 'No early-stage projects yet')}
             text={es('emptyText', 'Be the first to list your pre-launch project and start building trust with the KHAN community.')}
           />
+        ) : (
+          <div className="empty-state">
+            <Search size={28} />
+            <h3>{es('noMatchTitle', 'No matching early-stage projects found.')}</h3>
+            {isFiltered && (
+              <button className="secondary-button" type="button" onClick={() => { clearSearch(); setActiveFilter('all'); }}>
+                {es('clearSearch', 'Clear Search')}
+              </button>
+            )}
+          </div>
         )
       )}
     </section>
@@ -380,7 +562,7 @@ export function EarlyStageProfilePage({ projectId, navigate }) {
 // ---- Submit page ---------------------------------------------------------
 
 const EMPTY_SUBMIT = {
-  name: '', description: '', stage: 'idea', launchStatus: '', estimatedLaunch: '',
+  name: '', symbol: '', description: '', stage: 'idea', launchStatus: '', estimatedLaunch: '',
   chain: '', category: '', logoUrl: '', website: '', twitter: '', telegram: '', discord: '',
   communitySize: '', buildingProgress: '', teamVerified: false, builtWithLaunchpad: false, launchpadUrl: '',
   overview: '', whyEarlyStage: '', riskNotes: '', contactName: '', contactEmail: '', company: '',
@@ -447,6 +629,7 @@ export function EarlyStageSubmitPage({ navigate }) {
 
         <div className="es-form-grid">
           <Field label={es('f.name', 'Project name')} value={form.name} onChange={set('name')} required />
+          <Field label={es('f.symbol', 'Symbol / Ticker')} value={form.symbol} onChange={set('symbol')} placeholder={es('f.symbolPh', 'e.g. KHAN')} />
           <Field label={es('f.logo', 'Logo URL')} value={form.logoUrl} onChange={set('logoUrl')} placeholder="https://" />
           <label className="form-field">
             <span>{es('f.stage', 'Current stage')}</span>

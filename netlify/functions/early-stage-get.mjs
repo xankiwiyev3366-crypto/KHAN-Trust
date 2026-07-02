@@ -12,6 +12,7 @@ function toPublicProfile(project) {
   return {
     id: project.id,
     name: project.name,
+    symbol: project.symbol || '',
     logoUrl: project.logoUrl,
     description: project.description,
     stage: project.stage,
@@ -37,6 +38,11 @@ function toPublicProfile(project) {
     riskNotes: project.riskNotes,
     featured: project.featured,
     createdAt: project.createdAt,
+    updatedAt: project.updatedAt || project.createdAt,
+    // Future-ready fields (reserved).
+    saleType: project.saleType || '',
+    countdownAt: project.countdownAt || '',
+    communityVotes: project.communityVotes || 0,
   };
 }
 

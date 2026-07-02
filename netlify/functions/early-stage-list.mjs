@@ -14,6 +14,7 @@ function toPublic(project) {
   return {
     id: project.id,
     name: project.name,
+    symbol: project.symbol || '',
     logoUrl: project.logoUrl,
     description: project.description,
     stage: project.stage,
@@ -32,6 +33,11 @@ function toPublic(project) {
     launchpadUrl: project.launchpadUrl,
     featured: project.featured,
     createdAt: project.createdAt,
+    updatedAt: project.updatedAt || project.createdAt,
+    // Future-ready fields (reserved) - safe to expose; empty until populated.
+    saleType: project.saleType || '',
+    countdownAt: project.countdownAt || '',
+    communityVotes: project.communityVotes || 0,
   };
 }
 

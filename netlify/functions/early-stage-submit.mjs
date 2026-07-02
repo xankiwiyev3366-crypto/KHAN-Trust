@@ -26,6 +26,9 @@ const MAX = {
   riskNotes: 2000,
   text: 500,
   launchpadUrl: 300,
+  symbol: 20,
+  saleType: 40,
+  countdownAt: 40,
 };
 
 const URL_PATTERN = /^https?:\/\//i;
@@ -74,6 +77,7 @@ export function buildEarlyStageProject(payload, meta = {}) {
   return {
     id: meta.id || generateId(payload.name),
     name: sanitizeText(payload.name, MAX.name),
+    symbol: sanitizeText(payload.symbol, MAX.symbol).toUpperCase(),
     logoUrl: sanitizeUrl(payload.logoUrl),
     description: sanitizeText(payload.description, MAX.description),
     stage,
@@ -102,6 +106,18 @@ export function buildEarlyStageProject(payload, meta = {}) {
     contactName: sanitizeText(payload.contactName, MAX.name),
     contactEmail: sanitizeText(payload.contactEmail, MAX.url),
     submittedByWallet: sanitizeText(payload.wallet, 64),
+    // Future-ready schema (reserved - not surfaced in the UI yet). These are
+    // stored so upcoming investor features can populate them without a data
+    // migration: funding rounds, sale phase, launch countdown, community
+    // voting, AI launch-readiness analysis, and investor watchlist counts.
+    // Scalars are accepted/sanitized now; structured payloads (funding,
+    // aiLaunchReadiness) stay null until their features define a shape.
+    funding: meta.funding ?? null,               // { round, raisedUsd, targetUsd, currency }
+    saleType: sanitizeText(payload.saleType, MAX.saleType), // 'seed' | 'private_sale' | 'public_sale'
+    countdownAt: sanitizeText(payload.countdownAt, MAX.countdownAt), // ISO launch datetime
+    communityVotes: Math.max(0, Number(payload.communityVotes) || 0),
+    aiLaunchReadiness: meta.aiLaunchReadiness ?? null, // { score, notes }
+    investorWatchCount: Math.max(0, Number(meta.investorWatchCount) || 0),
     // Admin/meta - always server-controlled, never trusted from payload
     status: meta.status || 'pending',
     featured: meta.featured ?? false,

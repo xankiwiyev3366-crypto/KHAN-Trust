@@ -4,7 +4,7 @@
 // pre-bundling, not the production rollup build, so the production bundle
 // never got this without an explicit import here.
 import './bufferShim.js';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import {
@@ -65,6 +65,7 @@ import {
   Paperclip,
   Plus,
   RefreshCw,
+  Rocket,
   Search,
   Scale,
   Send,
@@ -101,6 +102,10 @@ import ConnectWalletButton from './ConnectWalletButton.jsx';
 import { useKhanWallet } from './wallet/useKhanWallet.js';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { AuthModal } from './auth/AuthModal.jsx';
+// Early Stage Projects - additive, lazy-loaded feature. React.lazy keeps this
+// entire module (and its earlyStage.js client) out of the initial bundle; it
+// only downloads when a user opens an /early-stage* route. See EarlyStage.jsx.
+const EarlyStageFeature = lazy(() => import('./EarlyStage.jsx'));
 import { PhantomWalletName } from '@solana/wallet-adapter-phantom';
 import {
   initAnalytics,
@@ -603,6 +608,7 @@ const demoProjects = [
 const navItems = [
   { id: 'home', label: 'Home', icon: Home },
   { id: 'explore', label: 'Explore', icon: Layers3 },
+  { id: 'early-stage', label: 'Early Stage', icon: Rocket },
   { id: 'pricing', label: 'Pricing', icon: WalletCards },
   { id: 'compare', label: 'Compare', icon: Scale },
   { id: 'watchlist', label: 'Watchlist', icon: Bell },
@@ -3675,6 +3681,20 @@ function App() {
             navigate={navigate}
           />
         )}
+        {(page === 'early-stage' || page.startsWith('early-stage/') || page === 'early-stage-submit' || page === 'admin-early-stage') && (
+          <Suspense fallback={<section className="page-section"><p className="lookup-message">{t('common.loading')}</p></section>}>
+            <EarlyStageFeature
+              view={
+                page === 'early-stage-submit' ? 'submit'
+                : page === 'admin-early-stage' ? 'admin'
+                : page.startsWith('early-stage/') ? 'profile'
+                : 'list'
+              }
+              projectId={page.startsWith('early-stage/') ? page.slice('early-stage/'.length) : ''}
+              navigate={navigate}
+            />
+          </Suspense>
+        )}
         {page === 'add' && pageAuthReady && <AddProjectPage onAdd={addProject} navigate={navigate} />}
         {page === 'launchpad' && pageAuthReady && <LaunchpadPage onCreateProfile={saveProjectProfile} navigate={navigate} />}
         {page === 'pricing' && <PricingPage navigate={navigate} />}
@@ -3821,6 +3841,7 @@ function MobileNav({ page, navigate, navTo, setAuthModalMode }) {
 function isActive(page, id) {
   if (id === 'khan') return page === 'khan';
   if (id === 'explore') return page === 'explore' || page.startsWith('project/') || page.startsWith('report/');
+  if (id === 'early-stage') return page === 'early-stage' || page.startsWith('early-stage/') || page === 'early-stage-submit';
   if (id === 'support') return page === 'support' || page === 'admin-support';
   return page === id;
 }
@@ -3837,6 +3858,7 @@ function isActive(page, id) {
 const SIDEBAR_ITEMS = [
   { id: 'home', labelKey: 'sidebar.dashboard', icon: LayoutDashboard },
   { id: 'explore', labelKey: 'sidebar.explore', icon: Layers3 },
+  { id: 'early-stage', labelKey: 'sidebar.earlyStage', icon: Rocket },
   { id: 'watchlist', labelKey: 'sidebar.watchlist', icon: Eye },
   { id: 'alerts', labelKey: 'sidebar.alerts', icon: Bell, badgeFrom: 'alertCount' },
   { id: 'compare', labelKey: 'sidebar.comparison', icon: Scale },
@@ -3852,6 +3874,7 @@ const SIDEBAR_ITEMS = [
 function isSidebarActive(page, id) {
   if (id === 'home') return page === 'home' || page === 'dashboard';
   if (id === 'compare') return page === 'compare' || page === 'comparison';
+  if (id === 'early-stage') return page === 'early-stage' || page.startsWith('early-stage/') || page === 'early-stage-submit';
   return page === id;
 }
 
@@ -4042,6 +4065,13 @@ function ExplorePage({ projects, query, setQuery, searchState, onSearch, onSelec
             {t(`explore.filters.${FILTER_KEY_MAP[filter]}`)}
           </button>
         ))}
+        {/* Optional cross-link to the additive Early Stage Projects section.
+            Deliberately not part of `activeFilter` state - it navigates to the
+            separate feature rather than filtering the existing project list,
+            so existing filters are untouched. */}
+        <button className="es-filter-chip" onClick={() => navigate('early-stage')}>
+          <Rocket size={14} /> {t('explore.filters.earlyStage')}
+        </button>
       </div>
       <div className="project-grid">
         {filtered.map((project) => (

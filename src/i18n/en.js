@@ -52,6 +52,7 @@ export default {
   nav: {
     home: 'Home',
     explore: 'Explore',
+    'early-stage': 'Early Stage',
     pricing: 'Pricing',
     compare: 'Compare',
     watchlist: 'Watchlist',
@@ -65,6 +66,7 @@ export default {
   sidebar: {
     dashboard: 'Dashboard',
     explore: 'Explore',
+    earlyStage: 'Early Stage',
     watchlist: 'Watchlist',
     alerts: 'Alerts',
     comparison: 'Comparison',
@@ -247,6 +249,7 @@ export default {
       newProjects: 'New Projects',
       highRisk: 'High Risk',
       strongCommunity: 'Strong Community',
+      earlyStage: 'Early Stage',
     },
     emptyNoMatchTitle: 'No matching profiles',
     emptyNoMatchText: 'Try another search term or add the project manually.',

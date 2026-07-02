@@ -204,14 +204,21 @@ function daysSince(dateStr) {
 }
 
 // Small debounce hook - keeps the grid filter + autocomplete from recomputing
-// on every keystroke (spec: ~250ms).
+// on every keystroke (spec: ~250ms). Returns the debounced value plus a
+// `flush` that commits the latest value immediately (used by the Search
+// button so a click applies the query without waiting out the debounce).
 function useDebouncedValue(value, delay = 250) {
   const [debounced, setDebounced] = useState(value);
+  const timerRef = useRef(null);
   useEffect(() => {
-    const id = setTimeout(() => setDebounced(value), delay);
-    return () => clearTimeout(id);
+    timerRef.current = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timerRef.current);
   }, [value, delay]);
-  return debounced;
+  const flush = useCallback(() => {
+    clearTimeout(timerRef.current);
+    setDebounced(value);
+  }, [value]);
+  return [debounced, flush];
 }
 
 // Match a project against a free-text query on name, symbol, and category.
@@ -234,7 +241,7 @@ export function EarlyStageListPage({ navigate }) {
   const [activeIndex, setActiveIndex] = useState(-1);
   const searchWrapRef = useRef(null);
 
-  const debouncedQuery = useDebouncedValue(query, 250);
+  const [debouncedQuery, flushQuery] = useDebouncedValue(query, 250);
   const needle = debouncedQuery.trim().toLowerCase();
 
   // Fetch the full approved list once; every filter/sort/search below runs
@@ -321,6 +328,11 @@ export function EarlyStageListPage({ navigate }) {
 
   const clearSearch = () => { setQuery(''); setShowSuggestions(false); };
 
+  // Explicit Search button: apply the current query immediately (bypassing the
+  // debounce) and close the suggestions dropdown. The grid already filters on
+  // the same query, so this simply commits it without waiting.
+  const runSearch = () => { flushQuery(); setShowSuggestions(false); };
+
   const hasAny = allProjects.length > 0;
   const isFiltered = Boolean(needle) || activeFilter !== 'all';
 
@@ -330,7 +342,8 @@ export function EarlyStageListPage({ navigate }) {
       <p className="section-subtitle es-intro">{es('intro', 'Discover crypto projects building in the open - from idea to testnet to launch. Join KHAN Trust before you go public and build trust from day one.')}</p>
 
       <div className="es-toolbar">
-        <div className="es-search es-autocomplete" ref={searchWrapRef}>
+        <div className="es-search-group">
+        <div className="es-autocomplete" ref={searchWrapRef}>
           <Search size={16} className="es-search-icon" aria-hidden="true" />
           <input
             type="text"
@@ -373,6 +386,10 @@ export function EarlyStageListPage({ navigate }) {
               ))}
             </ul>
           )}
+        </div>
+        <button className="secondary-button es-search-btn" type="button" onClick={runSearch}>
+          <Search size={16} /> {es('search', 'Search')}
+        </button>
         </div>
         <button className="primary-button" type="button" onClick={() => navigate('early-stage-submit')}>
           <Plus size={16} /> {es('submitCta', 'Submit Your Project')}

@@ -6967,11 +6967,26 @@ main {
 }
 
 /* --- Search autocomplete (list page) --- */
+/* The input + Search button sit side by side in .es-search-group; the
+   autocomplete wrapper stays position:relative so its suggestions dropdown
+   anchors to the input, not the button. */
+.es-search-group {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  min-width: 220px;
+}
+
+.es-search-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .es-autocomplete {
   position: relative;
   display: block;
   flex: 1;
-  min-width: 220px;
+  min-width: 0;
 }
 
 .es-autocomplete .es-search-icon {

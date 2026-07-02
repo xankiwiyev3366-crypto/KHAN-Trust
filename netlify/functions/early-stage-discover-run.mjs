@@ -45,23 +45,32 @@ export async function handler(event) {
   try {
     const method = event?.httpMethod;
 
-    // Scheduled invocations arrive with no httpMethod - just refresh.
-    if (!method) {
-      const stats = await refresh();
-      return jsonResponse(200, { ok: true, mode: 'scheduled', stats });
-    }
-
+    // GET -> status only, no network work.
     if (method === 'GET') {
       const [meta, discovered] = await Promise.all([readDiscoveryMeta(), readDiscoveredProjects()]);
       return jsonResponse(200, { ok: true, lastRunAt: meta.lastRunAt || null, count: discovered.length, lastRun: meta.lastRun || null });
     }
 
-    if (method === 'POST') {
-      if (!verifyToken(bearerToken(event))) {
-        return jsonResponse(401, { message: 'Unauthorized' });
-      }
+    // Netlify invokes SCHEDULED functions as a POST whose JSON body carries a
+    // `next_run` timestamp (there is no unauthenticated-vs-scheduled header),
+    // so detect the cron invocation by that body. The `!method` case is kept
+    // as a defensive fallback in case the runtime ever omits it.
+    let body = {};
+    if (event?.body) {
+      try { body = JSON.parse(event.body); } catch { body = {}; }
+    }
+    const isScheduled = !method || Boolean(body?.next_run);
+
+    // Admin can force a refresh on demand with a valid bearer token.
+    const isAdmin = method === 'POST' && verifyToken(bearerToken(event));
+
+    if (isScheduled || isAdmin) {
       const stats = await refresh();
-      return jsonResponse(200, { ok: true, mode: 'manual', stats });
+      return jsonResponse(200, { ok: true, mode: isAdmin ? 'manual' : 'scheduled', stats });
+    }
+
+    if (method === 'POST') {
+      return jsonResponse(401, { message: 'Unauthorized' });
     }
 
     return jsonResponse(405, { message: 'Method not allowed' });

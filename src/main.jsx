@@ -129,6 +129,7 @@ import { isStripeConfigured, startStripeCheckout, stripeUnavailableMessage } fro
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
 import { fetchEntitlement, hasPlanAccess, isEarlySupporter } from './entitlements.js';
+import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction } from './premiumAdmin.js';
 import { fetchUserData, saveReport, removeSavedReport, toggleServerWatch } from './userData.js';
 import {
   TICKET_CATEGORIES,
@@ -3742,6 +3743,7 @@ function App() {
         {page === 'admin-support' && <AdminSupportPage />}
         {page === 'admin-report' && <AdminReportPage />}
         {page === 'admin-holders' && <AdminHolderAnalyticsPage />}
+        {page === 'admin-premium' && <AdminPremiumPage />}
         {page === 'profile' && pageAuthReady && <UserProfilePage navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />}
         {page.startsWith('verify-email/') && <EmailVerifyPage token={page.split('/')[1]} navigate={navigate} />}
         {page.startsWith('reset-password/') && <ResetPasswordPage token={page.split('/')[1]} navigate={navigate} />}
@@ -4460,24 +4462,50 @@ function RiskReportPage({ project, navigate }) {
   );
 }
 
+// Ranks an entitlement by Premium tier so two independent sources (paid wallet
+// entitlement + admin-granted manual entitlement) can be merged by strength:
+// Early Supporter (3) > Premium (2) > any other non-null plan (1) > none (0).
+function entitlementRank(e) {
+  if (!e) return 0;
+  if (e.plan === 'early_supporter') return 3;
+  if (hasPlanAccess(e, 'premium')) return 2;
+  return 1;
+}
+
+// In-memory merge only. The winning object is returned as-is; neither the paid
+// record nor the manual record is ever written from the other, keeping payment
+// and manual Premium completely independent (see task spec, section 9).
+function mergeEntitlements(paid, manual) {
+  if (entitlementRank(manual) > entitlementRank(paid)) return manual;
+  return paid || manual || null;
+}
+
 // Polls the server-recorded entitlement (see entitlements.js) for whichever
-// wallet is currently connected, so Premium UI can reflect a real verified
-// payment instead of always showing the locked state.
+// wallet is currently connected, AND the admin-granted manual entitlement for
+// the currently signed-in account (see premiumAdmin.js / premium-me.mjs), so
+// Premium UI reflects either a real verified payment or a manual grant instead
+// of always showing the locked state. A manual grant unlocks Premium with no
+// wallet and no logout required.
 function useWalletEntitlement() {
   const { address, connected } = useKhanWallet();
-  const [entitlement, setEntitlement] = useState(null);
+  const { user } = useAuth();
+  const [walletEnt, setWalletEnt] = useState(null);
+  const [manualEnt, setManualEnt] = useState(null);
 
   const refresh = React.useCallback(async () => {
-    if (!connected || !address) {
-      setEntitlement(null);
-      return;
-    }
-    setEntitlement(await fetchEntitlement(address));
-  }, [connected, address]);
+    const [w, m] = await Promise.all([
+      connected && address ? fetchEntitlement(address) : Promise.resolve(null),
+      user ? fetchMyManualPremium() : Promise.resolve(null),
+    ]);
+    setWalletEnt(w);
+    setManualEnt(m);
+  }, [connected, address, user]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const entitlement = mergeEntitlements(walletEnt, manualEnt);
 
   return {
     entitlement,
@@ -7141,6 +7169,329 @@ function VerificationRequestModal({ project, onClose, onSubmitted }) {
   );
 }
 
+// ── Admin: Premium Management ─────────────────────────────────────────────────
+// Manually grant / revoke / change FREE Premium access for any already
+// registered user. Fully isolated from the payment system: it only ever reads
+// and writes the manual-premium store (see netlify/functions/_premiumStore.mjs)
+// and never touches wallet entitlements, Stripe, or payment records. Reuses the
+// same shared admin token as every other admin page.
+const PREMIUM_PLAN_LABELS = { free: 'Free', premium: 'Premium', early_supporter: 'Early Supporter' };
+const PREMIUM_SOURCE_OPTIONS = ['manual', 'payment', 'giveaway', 'promotion', 'early_supporter'];
+const PREMIUM_DURATION_OPTIONS = ['lifetime', 'none', '7d', '30d', '90d', 'custom'];
+const PREMIUM_REASON_OPTIONS = ['giveaway_winner', 'early_supporter', 'investor', 'partner', 'moderator', 'testing', 'promotion', 'other'];
+
+function planLabel(t, plan) {
+  return t(`adminPremium.plans.${plan}`) || PREMIUM_PLAN_LABELS[plan] || plan;
+}
+
+function PremiumGrantModal({ user, token, onClose, onDone }) {
+  const { t } = useTranslation();
+  const [plan, setPlan] = useState(user.plan && user.plan !== 'free' ? user.plan : 'premium');
+  const [source, setSource] = useState(user.source || 'manual');
+  const [duration, setDuration] = useState('lifetime');
+  const [customExpiry, setCustomExpiry] = useState('');
+  const [reason, setReason] = useState(user.reason || 'giveaway_winner');
+  const [state, setState] = useState({ status: 'idle', message: '' });
+
+  const run = async (action, overridePlan) => {
+    setState({ status: 'loading', message: '' });
+    try {
+      await submitPremiumAction(token, {
+        action,
+        userId: user.id,
+        plan: overridePlan || plan,
+        source,
+        duration,
+        customExpiry: duration === 'custom' ? customExpiry : '',
+        reason,
+      });
+      onDone();
+    } catch (error) {
+      setState({ status: 'error', message: error.message || t('adminPremium.actionFailed') });
+    }
+  };
+
+  const busy = state.status === 'loading';
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="modal-panel premium-grant-modal">
+        <button className="modal-close-btn" type="button" onClick={onClose} aria-label={t('common.close')}><X size={18} /></button>
+        <SectionTitle icon={Crown} eyebrow={t('adminPremium.eyebrow')} title={t('adminPremium.manageFor', { name: user.name || user.email })} />
+        <p className="inline-note">{user.email}</p>
+
+        <label className="form-field">
+          <span>{t('adminPremium.fields.plan')}</span>
+          <select value={plan} onChange={(event) => setPlan(event.target.value)}>
+            <option value="premium">{planLabel(t, 'premium')}</option>
+            <option value="early_supporter">{planLabel(t, 'early_supporter')}</option>
+            <option value="free">{planLabel(t, 'free')}</option>
+          </select>
+        </label>
+
+        <label className="form-field">
+          <span>{t('adminPremium.fields.duration')}</span>
+          <select value={duration} onChange={(event) => setDuration(event.target.value)} disabled={plan === 'free'}>
+            {PREMIUM_DURATION_OPTIONS.map((value) => (
+              <option key={value} value={value}>{t(`adminPremium.durations.${value}`)}</option>
+            ))}
+          </select>
+        </label>
+        {duration === 'custom' && plan !== 'free' && (
+          <FormField label={t('adminPremium.fields.customExpiry')} type="date" value={customExpiry} onChange={setCustomExpiry} />
+        )}
+
+        <label className="form-field">
+          <span>{t('adminPremium.fields.source')}</span>
+          <select value={source} onChange={(event) => setSource(event.target.value)}>
+            {PREMIUM_SOURCE_OPTIONS.map((value) => (
+              <option key={value} value={value}>{t(`adminPremium.sources.${value}`)}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="form-field">
+          <span>{t('adminPremium.fields.reason')}</span>
+          <select value={reason} onChange={(event) => setReason(event.target.value)}>
+            {PREMIUM_REASON_OPTIONS.map((value) => (
+              <option key={value} value={value}>{t(`adminPremium.reasons.${value}`)}</option>
+            ))}
+          </select>
+        </label>
+
+        {state.message && <p className="lookup-message error">{state.message}</p>}
+
+        <div className="premium-grant-actions">
+          <button className="primary-button" type="button" disabled={busy} onClick={() => run('grant', 'premium')}>
+            <BadgeCheck size={18} /> {t('adminPremium.grantPremium')}
+          </button>
+          <button className="secondary-button" type="button" disabled={busy} onClick={() => run('change_plan')}>
+            <CheckCircle2 size={18} /> {t('adminPremium.applyPlan')}
+          </button>
+          <button className="ghost-button danger" type="button" disabled={busy} onClick={() => run('revoke')}>
+            <X size={18} /> {t('adminPremium.revoke')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminPremiumPage() {
+  const { t } = useTranslation();
+  const [token, setToken] = useState(() => getStoredAdminToken());
+  const [passcode, setPasscode] = useState('');
+  const [authState, setAuthState] = useState({ status: 'idle', message: '' });
+  const [data, setData] = useState(null);
+  const [loadState, setLoadState] = useState({ status: 'idle', message: '' });
+  const [search, setSearch] = useState('');
+  const [editingUser, setEditingUser] = useState(null);
+  const [showAudit, setShowAudit] = useState(false);
+  const [audit, setAudit] = useState(null);
+
+  const load = async (activeToken) => {
+    setLoadState({ status: 'loading', message: t('adminPremium.loading') });
+    try {
+      const result = await fetchPremiumUsers(activeToken);
+      setData(result);
+      setLoadState({ status: 'idle', message: '' });
+    } catch (error) {
+      setLoadState({ status: 'error', message: error.message || t('adminPremium.loadFailed') });
+    }
+  };
+
+  const loadAudit = async (activeToken) => {
+    try {
+      setAudit(await fetchPremiumAudit(activeToken));
+    } catch {
+      setAudit([]);
+    }
+  };
+
+  useEffect(() => {
+    if (token) load(token);
+  }, [token]);
+
+  const login = async (event) => {
+    event.preventDefault();
+    setAuthState({ status: 'loading', message: t('adminVerify.checkingPasscode') });
+    try {
+      const newToken = await adminLogin(passcode);
+      setToken(newToken);
+      setAuthState({ status: 'idle', message: '' });
+    } catch (error) {
+      setAuthState({ status: 'error', message: error.message || t('adminVerify.loginFailed') });
+    }
+  };
+
+  const logout = () => {
+    clearAdminToken();
+    setToken('');
+    setData(null);
+  };
+
+  const toggleAudit = () => {
+    const next = !showAudit;
+    setShowAudit(next);
+    if (next && audit === null) loadAudit(token);
+  };
+
+  if (!token) {
+    return (
+      <section className="page-section">
+        <SectionTitle icon={Lock} eyebrow={t('adminVerify.eyebrow')} title={t('adminPremium.title')} />
+        <form className="add-form admin-login-form" onSubmit={login}>
+          <FormField label={t('adminVerify.passcodeLabel')} type="password" value={passcode} onChange={setPasscode} required />
+          <button className="primary-button wide-button" type="submit" disabled={authState.status === 'loading'}>
+            {t('common.signIn')} <ArrowRight size={18} />
+          </button>
+          {authState.message && <p className="lookup-message error">{authState.message}</p>}
+        </form>
+      </section>
+    );
+  }
+
+  const term = search.trim().toLowerCase();
+  const users = (data?.users || []).filter((u) => {
+    if (!term) return true;
+    return [u.name, u.username, u.email].filter(Boolean).some((field) => field.toLowerCase().includes(term));
+  });
+
+  return (
+    <section className="page-section analytics-dashboard">
+      <SectionTitle icon={Crown} eyebrow={t('adminPremium.eyebrow')} title={t('adminPremium.title')} />
+      <p className="inline-note">{t('adminPremium.intro')}</p>
+
+      <div className="analytics-toolbar">
+        <button className="secondary-button" type="button" onClick={() => load(token)}>{t('common.refresh')}</button>
+        <button className="secondary-button" type="button" onClick={toggleAudit}>
+          <Shield size={16} /> {showAudit ? t('adminPremium.hideAudit') : t('adminPremium.showAudit')}
+        </button>
+        <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-analytics'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+          <BarChart3 size={16} /> {t('adminAnalytics.title')}
+        </button>
+        <button className="ghost-button" type="button" onClick={logout}>{t('common.signOut')}</button>
+      </div>
+
+      {data && (
+        <div className="analytics-stat-grid">
+          <StatCard icon={Users} label={t('adminPremium.statRegistered')} numericValue={data.totalRegistered} />
+          <StatCard icon={Crown} label={t('adminPremium.statActivePremium')} numericValue={data.premiumCount} />
+        </div>
+      )}
+
+      <div className="premium-search-bar">
+        <Search size={18} />
+        <input
+          type="search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder={t('adminPremium.searchPlaceholder')}
+          aria-label={t('adminPremium.searchPlaceholder')}
+        />
+      </div>
+
+      {loadState.status === 'loading' && !data && <p className="lookup-message">{t('adminPremium.loading')}</p>}
+      {loadState.status === 'error' && (
+        <>
+          <p className="lookup-message error">{loadState.message}</p>
+          <button className="secondary-button" type="button" onClick={() => load(token)}>{t('common.retry')}</button>
+        </>
+      )}
+
+      {data && !users.length && <EmptyState title={t('adminPremium.emptyTitle')} text={t('adminPremium.emptyText')} />}
+
+      {data && !!users.length && (
+        <div className="analytics-table-card">
+          <table className="analytics-table">
+            <thead>
+              <tr>
+                <th>{t('adminPremium.columns.user')}</th>
+                <th>{t('adminPremium.columns.email')}</th>
+                <th>{t('adminPremium.columns.registered')}</th>
+                <th>{t('adminPremium.columns.plan')}</th>
+                <th>{t('adminPremium.columns.status')}</th>
+                <th>{t('adminPremium.columns.source')}</th>
+                <th>{t('adminPremium.columns.actions')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => (
+                <tr key={u.id}>
+                  <td>
+                    <strong>{u.name || t('adminPremium.unnamed')}</strong>
+                    {u.username && <div className="table-subtext">@{u.username}</div>}
+                  </td>
+                  <td>{u.email}</td>
+                  <td>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
+                  <td><span className="status-badge">{planLabel(t, u.plan)}</span></td>
+                  <td>
+                    <span className={u.status === 'active' ? 'premium-status active' : 'premium-status'}>
+                      {u.status === 'active' ? t('adminPremium.statusActive') : t('adminPremium.statusInactive')}
+                    </span>
+                    {u.expiresAt && <div className="table-subtext">{t('adminPremium.expires', { date: new Date(u.expiresAt).toLocaleDateString() })}</div>}
+                  </td>
+                  <td>{u.source ? t(`adminPremium.sources.${u.source}`) : '—'}</td>
+                  <td>
+                    <button className="secondary-button small-button" type="button" onClick={() => setEditingUser(u)}>
+                      {t('adminPremium.manage')}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showAudit && (
+        <div className="analytics-table-card">
+          <h4>{t('adminPremium.auditTitle')}</h4>
+          {audit === null && <p className="lookup-message">{t('adminPremium.loading')}</p>}
+          {audit !== null && !audit.length && <EmptyState title={t('adminPremium.auditEmptyTitle')} text={t('adminPremium.auditEmptyText')} />}
+          {audit !== null && !!audit.length && (
+            <table className="analytics-table">
+              <thead>
+                <tr>
+                  <th>{t('adminPremium.audit.when')}</th>
+                  <th>{t('adminPremium.audit.admin')}</th>
+                  <th>{t('adminPremium.audit.user')}</th>
+                  <th>{t('adminPremium.audit.change')}</th>
+                  <th>{t('adminPremium.audit.reason')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {audit.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{entry.date} {entry.time}</td>
+                    <td>{entry.administrator}</td>
+                    <td>{entry.userEmail}</td>
+                    <td>{planLabel(t, entry.previousPlan)} → {planLabel(t, entry.newPlan)}</td>
+                    <td>{entry.reason ? t(`adminPremium.reasons.${entry.reason}`) : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {editingUser && (
+        <PremiumGrantModal
+          user={editingUser}
+          token={token}
+          onClose={() => setEditingUser(null)}
+          onDone={() => {
+            setEditingUser(null);
+            load(token);
+            if (showAudit) loadAudit(token);
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
 function AdminVerificationPage({ onReviewed }) {
   const { t } = useTranslation();
   const [token, setToken] = useState(() => getStoredAdminToken());
@@ -7521,6 +7872,9 @@ function AdminAnalyticsPage() {
         </button>
         <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-holders'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
           <WalletCards size={16} /> {t('adminHolders.title')}
+        </button>
+        <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-premium'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+          <Crown size={16} /> {t('adminPremium.title')}
         </button>
         <button className="ghost-button" type="button" onClick={logout}>{t('common.signOut')}</button>
       </div>

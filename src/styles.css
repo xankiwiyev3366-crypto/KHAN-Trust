@@ -7232,3 +7232,68 @@ main {
     justify-content: space-between;
   }
 }
+
+/* ── Admin: Premium Management ──────────────────────────────────────────────── */
+.premium-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 14px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+}
+.premium-search-bar input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 14px;
+}
+.premium-status {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 13px;
+}
+.premium-status.active {
+  color: var(--success);
+}
+.table-subtext {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+.small-button {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.premium-grant-modal {
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.premium-grant-modal .form-field select {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 14px;
+}
+.premium-grant-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+}
+.ghost-button.danger {
+  color: var(--danger);
+}
+.ghost-button.danger:hover {
+  border-color: var(--danger);
+}

@@ -5503,7 +5503,14 @@ function ReportSuggestModal({ project, wallet, onClose }) {
     }
   };
 
-  return (
+  // Portal to <body> so the fixed-position backdrop is not trapped by an
+  // ancestor's containing block. ProjectProfile renders this modal inside a
+  // `.page-section`, which keeps a non-`none` transform from its khanFadeUp
+  // entrance animation (animation-fill-mode: both) - that makes the section the
+  // containing block for `position: fixed`, so without the portal the backdrop
+  // covers the (tall) section while the centered panel lands far below the
+  // viewport. Rendering at document.body restores viewport-relative centering.
+  return createPortal(
     <div className="modal-backdrop" role="dialog" aria-modal="true">
       <div className="modal-panel report-modal">
         <header className="ticket-detail-header">
@@ -5574,7 +5581,8 @@ function ReportSuggestModal({ project, wallet, onClose }) {
           </form>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

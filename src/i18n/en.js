@@ -570,6 +570,7 @@ export default {
     premiumStatus: 'Premium Status',
     premiumSource: 'Premium Source',
     expiration: 'Expiration',
+    plans: { free: 'Free', premium: 'Premium', early_supporter: 'Early Supporter' },
     freeNote: 'You are on the Free plan. Upgrade to Premium or Early Supporter to unlock Premium tools.',
     lifetimePremium: 'Lifetime Premium',
     noExpiration: 'No Expiration',

@@ -10318,14 +10318,14 @@ function PremiumProfilePanel({ entitlement }) {
       <div className="profile-premium-panel">
         <div className="profile-premium-row">
           <span>{t('accountPlan.currentPlan')}</span>
-          <strong>{t('adminPremium.plans.free')}</strong>
+          <strong>{t('accountPlan.plans.free')}</strong>
         </div>
         <p className="inline-note">{t('accountPlan.freeNote')}</p>
       </div>
     );
   }
 
-  const planLabel = d.isEarlySupporter ? t('adminPremium.plans.early_supporter') : t('adminPremium.plans.premium');
+  const planLabel = d.isEarlySupporter ? t('accountPlan.plans.early_supporter') : t('accountPlan.plans.premium');
   const sourceKey = d.reason === 'partner' || d.reason === 'investor' ? d.reason : d.source;
   const expirationValue = d.isLifetime
     ? t('accountPlan.lifetimePremium')

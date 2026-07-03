@@ -7297,3 +7297,170 @@ main {
 .ghost-button.danger:hover {
   border-color: var(--danger);
 }
+
+/* ── Premium AI research cards + account badges ─────────────────────────────── */
+.premium-ai-card h4 {
+  margin: 16px 0 8px;
+  font-size: 14px;
+}
+.premium-ai-badgeline {
+  margin-bottom: 8px;
+}
+.premium-ai-observations {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+.premium-ai-observations > div {
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+}
+.premium-ai-observations span {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.premium-ai-observations p {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+}
+.premium-ai-conclusion {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--gold-soft), rgba(255, 215, 128, 0.08));
+}
+.premium-ai-conclusion strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--gold-bright);
+}
+.premium-ai-conclusion p {
+  margin: 0;
+  color: var(--text);
+}
+.premium-ai-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 14px 0;
+}
+.premium-ai-metric {
+  flex: 1;
+  min-width: 130px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+}
+.premium-ai-metric span {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.premium-ai-metric strong {
+  font-size: 16px;
+  color: var(--text);
+}
+.premium-upgrade-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px;
+  border: 1px dashed var(--gold);
+  border-radius: var(--radius-sm);
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+.premium-upgrade-cta p {
+  margin: 0;
+  color: var(--text);
+}
+
+/* Emoji plan badges (👑 / ⭐ / 🤝) */
+.account-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: middle;
+  border: 1px solid var(--gold);
+  background: linear-gradient(135deg, var(--gold-soft), rgba(255, 215, 128, 0.14));
+  color: var(--gold-bright);
+}
+.account-badge.compact {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+.account-badge.premium {
+  border-color: rgba(103, 211, 156, 0.4);
+  background: rgba(103, 211, 156, 0.12);
+  color: var(--success);
+}
+.account-badge.partner {
+  border-color: rgba(138, 180, 248, 0.5);
+  background: rgba(138, 180, 248, 0.12);
+  color: #a9c6ff;
+}
+
+/* Premium profile indicators panel */
+.profile-premium-panel {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+}
+.profile-premium-panel.active {
+  border-color: var(--gold);
+  background: linear-gradient(135deg, var(--gold-soft), rgba(255, 255, 255, 0.02));
+}
+.profile-premium-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.profile-premium-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.profile-premium-row span {
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.profile-premium-row strong {
+  color: var(--text);
+  font-size: 15px;
+}
+.lifetime-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--gold);
+  background: var(--gold-soft);
+  color: var(--gold-bright);
+}

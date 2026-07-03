@@ -29,3 +29,37 @@ export function hasPlanAccess(entitlement, plan) {
 export function isEarlySupporter(entitlement) {
   return entitlement?.plan === 'early_supporter';
 }
+
+// Normalizes a merged entitlement (paid wallet record OR admin-granted manual
+// grant - see src/main.jsx mergeEntitlements) into the fields the Premium
+// profile indicators and badges need. Pure; safe to call with null.
+//   - Paid records carry no `source`, so they default to 'payment'.
+//   - Manual grants carry source ('manual' | 'giveaway' | 'promotion' | ...),
+//     an optional grant `reason` ('partner' | 'investor' | ...) and `expiresAt`.
+//   - Early Supporter and any non-payment grant with no expiry are Lifetime.
+export function describeEntitlement(entitlement) {
+  if (!entitlement) return null;
+  const plan = entitlement.plan;
+  const source = entitlement.source || 'payment';
+  const reason = entitlement.reason || null;
+  const expiresAt = entitlement.expiresAt || null;
+  const early = plan === 'early_supporter';
+  const isLifetime = early || (source !== 'payment' && !expiresAt);
+  let status;
+  if (isLifetime) status = 'lifetime';
+  else if (expiresAt && Date.parse(expiresAt) < Date.now()) status = 'expired';
+  else status = 'active';
+  return { plan, source, reason, expiresAt, isLifetime, status, isEarlySupporter: early };
+}
+
+// Which badge to show for an entitlement. Early Supporter and special grant
+// reasons (Partner/Investor) take precedence over the plain Premium crown.
+// Returns null when there is no active Premium at all.
+export function premiumBadgeInfo(entitlement) {
+  const d = describeEntitlement(entitlement);
+  if (!d) return null;
+  if (d.isEarlySupporter) return { key: 'earlySupporter', emoji: '⭐', labelKey: 'earlySupporter.badgeLabel', className: 'early' };
+  if (d.reason === 'partner') return { key: 'partner', emoji: '🤝', labelKey: 'accountPlan.badges.partner', className: 'partner' };
+  if (d.reason === 'investor') return { key: 'investor', emoji: '💼', labelKey: 'accountPlan.badges.investor', className: 'investor' };
+  return { key: 'premium', emoji: '👑', labelKey: 'premium.badgeLabel', className: 'premium' };
+}

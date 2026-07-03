@@ -37,6 +37,7 @@ import {
   Camera,
   CheckCircle2,
   ChevronDown,
+  Brain,
   CircleDot,
   Clock3,
   Copy,
@@ -128,7 +129,8 @@ import {
 import { isStripeConfigured, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
-import { fetchEntitlement, hasPlanAccess, isEarlySupporter } from './entitlements.js';
+import { fetchEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
+import { buildAdvancedResearch, buildPremiumAnalysis } from './premiumResearch.js';
 import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction } from './premiumAdmin.js';
 import { fetchUserData, saveReport, removeSavedReport, toggleServerWatch } from './userData.js';
 import {
@@ -4588,6 +4590,140 @@ function PremiumBadge({ compact = false }) {
   );
 }
 
+// Emoji plan badge (👑 Premium / ⭐ Early Supporter / 🤝 Partner) driven by the
+// merged entitlement, shown consistently in the header dropdown, profile, and
+// Premium sections. Renders nothing when there is no active Premium.
+function AccountBadge({ entitlement, compact = false }) {
+  const { t } = useTranslation();
+  const info = premiumBadgeInfo(entitlement);
+  if (!info) return null;
+  return (
+    <span className={`account-badge ${info.className}${compact ? ' compact' : ''}`}>
+      <span aria-hidden="true">{info.emoji}</span> {t(info.labelKey)}
+    </span>
+  );
+}
+
+// Shared locked-state prompt for the Premium-only AI cards.
+function PremiumUpgradeCTA({ navigate, text }) {
+  const { t } = useTranslation();
+  return (
+    <div className="premium-upgrade-cta">
+      <Lock size={20} />
+      <p className="inline-note">{text || t('premiumResearchCommon.upgradeText')}</p>
+      <button className="primary-button" type="button" onClick={() => navigate('pricing')}>
+        {t('premium.unlockPremium')} <ArrowRight size={16} />
+      </button>
+    </div>
+  );
+}
+
+function ResearchList({ items, tone = 'neutral' }) {
+  if (!items?.length) return null;
+  const Icon = tone === 'good' ? CheckCircle2 : tone === 'bad' ? AlertTriangle : Info;
+  return (
+    <ul className="scam-risk-reasons">
+      {items.map((item) => (
+        <li key={item}><Icon size={14} /> {item}</li>
+      ))}
+    </ul>
+  );
+}
+
+// ── Premium feature 1: Advanced AI Research ───────────────────────────────────
+// Premium-only deep dive built deterministically from the same data the free
+// analysis uses (see premiumResearch.js). Free users see an upgrade CTA.
+function AdvancedResearchCard({ project, navigate }) {
+  const { t } = useTranslation();
+  const { hasPremium, entitlement } = useWalletEntitlement();
+  if (!project.assetCategory) return null; // nothing to analyze yet
+  return (
+    <section className="detail-section premium-ai-card">
+      <SectionTitle icon={Sparkles} eyebrow={t('advancedResearch.eyebrow')} title={t('advancedResearch.title')} />
+      {!hasPremium ? (
+        <PremiumUpgradeCTA navigate={navigate} text={t('advancedResearch.lockedText')} />
+      ) : (
+        (() => {
+          const r = buildAdvancedResearch(project);
+          return (
+            <>
+              <div className="premium-ai-badgeline"><AccountBadge entitlement={entitlement} compact /></div>
+              <h4>{t('advancedResearch.strengths')}</h4>
+              <ResearchList items={r.strengths} tone="good" />
+              <h4>{t('advancedResearch.weaknesses')}</h4>
+              <ResearchList items={r.weaknesses} tone="bad" />
+              <h4>{t('advancedResearch.risks')}</h4>
+              <ResearchList items={r.risks} tone="bad" />
+              <div className="premium-ai-observations">
+                <div><span>{t('advancedResearch.community')}</span><p>{r.communitySignals}</p></div>
+                <div><span>{t('advancedResearch.liquidity')}</span><p>{r.liquidity}</p></div>
+                <div><span>{t('advancedResearch.holders')}</span><p>{r.holders}</p></div>
+                <div><span>{t('advancedResearch.outlookLabel')}</span><p>{r.outlook}</p></div>
+              </div>
+              <div className="premium-ai-conclusion">
+                <strong>{t('advancedResearch.conclusionLabel')}</strong>
+                <p>{r.conclusion}</p>
+              </div>
+            </>
+          );
+        })()
+      )}
+    </section>
+  );
+}
+
+// ── Premium feature 2: Premium AI Analysis ────────────────────────────────────
+// An ADDITIONAL section alongside (never replacing) the free AI Risk Summary.
+function PremiumAnalysisCard({ project, navigate }) {
+  const { t } = useTranslation();
+  const { hasPremium, entitlement } = useWalletEntitlement();
+  if (!project.assetCategory) return null;
+  return (
+    <section className="detail-section premium-ai-card">
+      <SectionTitle icon={Brain} eyebrow={t('premiumAnalysis.eyebrow')} title={t('premiumAnalysis.title')} />
+      {!hasPremium ? (
+        <PremiumUpgradeCTA navigate={navigate} text={t('premiumAnalysis.lockedText')} />
+      ) : (
+        (() => {
+          const a = buildPremiumAnalysis(project);
+          return (
+            <>
+              <div className="premium-ai-badgeline"><AccountBadge entitlement={entitlement} compact /></div>
+              <p className="inline-note">{a.explanation}</p>
+              <div className="premium-ai-metrics">
+                <div className="premium-ai-metric">
+                  <span>{t('premiumAnalysis.riskConfidence')}</span>
+                  <strong>{a.riskConfidenceScore}%</strong>
+                </div>
+                <div className="premium-ai-metric">
+                  <span>{t('premiumAnalysis.aiConfidence')}</span>
+                  <strong>{a.aiConfidence.level} ({a.aiConfidence.pct}%)</strong>
+                </div>
+                <div className="premium-ai-metric">
+                  <span>{t('premiumAnalysis.dataQualityLabel')}</span>
+                  <strong>{a.dataQuality.label}</strong>
+                </div>
+              </div>
+              <h4>{t('premiumAnalysis.bullish')}</h4>
+              <ResearchList items={a.bullish} tone="good" />
+              <h4>{t('premiumAnalysis.bearish')}</h4>
+              <ResearchList items={a.bearish} tone="bad" />
+              {a.missingInfo.length > 0 && (
+                <>
+                  <h4>{t('premiumAnalysis.missingInfo')}</h4>
+                  <ResearchList items={a.missingInfo} tone="neutral" />
+                </>
+              )}
+              <h4>{t('premiumAnalysis.recommendations')}</h4>
+              <ResearchList items={a.recommendations} tone="neutral" />
+            </>
+          );
+        })()
+      )}
+    </section>
+  );
+}
+
 // Real, working Saved Reports - the one Premium/Early Supporter feature that
 // previously existed only as marketing copy. Reads/writes go through
 // userData.js, which is rejected server-side for any wallet without an
@@ -5440,6 +5576,8 @@ function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch
           {project.realData && <RealDataSection project={project} data={project.realData} />}
           <ScamRiskCard project={project} />
           <DeepRiskAnalysisCard project={project} />
+          <AdvancedResearchCard project={project} navigate={navigate} />
+          <PremiumAnalysisCard project={project} navigate={navigate} />
           <RiskFlags flags={project.riskFlags} />
           <Timeline items={project.timeline} />
           <Roadmap phases={project.roadmap} />
@@ -10028,6 +10166,7 @@ function EmailVerificationAction({ compact = false }) {
 // ── Auth nav button shown in Header and MobileNav ──────────────────────────
 function AuthNavButton({ navigate, navTo, onOpenAuth, variant = 'desktop' }) {
   const { user, logout } = useAuth();
+  const { entitlement } = useWalletEntitlement();
   const go = navTo || navigate; // navTo applies gating; fall back if not provided
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -10084,6 +10223,7 @@ function AuthNavButton({ navigate, navTo, onOpenAuth, variant = 'desktop' }) {
           <div className="auth-nav-dropdown-header">
             <strong>{user.name}</strong>
             <small>{user.email}</small>
+            <AccountBadge entitlement={entitlement} compact />
             {user.emailVerified
               ? <span className="auth-verified-badge">{t('userProfile.emailVerified')}</span>
               : (
@@ -10166,9 +10306,54 @@ function resizeAvatarFile(file) {
   });
 }
 
+// Premium profile indicators: current plan, status, source, expiration, and
+// Lifetime / Early Supporter recognition. Derived entirely from the merged
+// entitlement (describeEntitlement) - no separate source of truth.
+function PremiumProfilePanel({ entitlement }) {
+  const { t } = useTranslation();
+  const d = describeEntitlement(entitlement);
+
+  if (!d) {
+    return (
+      <div className="profile-premium-panel">
+        <div className="profile-premium-row">
+          <span>{t('accountPlan.currentPlan')}</span>
+          <strong>{t('adminPremium.plans.free')}</strong>
+        </div>
+        <p className="inline-note">{t('accountPlan.freeNote')}</p>
+      </div>
+    );
+  }
+
+  const planLabel = d.isEarlySupporter ? t('adminPremium.plans.early_supporter') : t('adminPremium.plans.premium');
+  const sourceKey = d.reason === 'partner' || d.reason === 'investor' ? d.reason : d.source;
+  const expirationValue = d.isLifetime
+    ? t('accountPlan.lifetimePremium')
+    : d.expiresAt
+      ? new Date(d.expiresAt).toLocaleDateString()
+      : t('accountPlan.noExpiration');
+
+  return (
+    <div className="profile-premium-panel active">
+      <div className="profile-premium-head">
+        <AccountBadge entitlement={entitlement} />
+        {d.isEarlySupporter && <span className="lifetime-pill">👑 {t('accountPlan.earlySupporterRecognition')}</span>}
+        {d.isLifetime && !d.isEarlySupporter && <span className="lifetime-pill">{t('accountPlan.lifetimeMember')}</span>}
+      </div>
+      <div className="profile-premium-grid">
+        <div className="profile-premium-row"><span>{t('accountPlan.currentPlan')}</span><strong>{planLabel}</strong></div>
+        <div className="profile-premium-row"><span>{t('accountPlan.premiumStatus')}</span><strong>{t(`accountPlan.status.${d.status}`)}</strong></div>
+        <div className="profile-premium-row"><span>{t('accountPlan.premiumSource')}</span><strong>{t(`accountPlan.sources.${sourceKey}`)}</strong></div>
+        <div className="profile-premium-row"><span>{t('accountPlan.expiration')}</span><strong>{expirationValue}</strong></div>
+      </div>
+    </div>
+  );
+}
+
 // ── User Profile Page ─────────────────────────────────────────────────────────
 function UserProfilePage({ navigate, onOpenAuth }) {
   const { user, logout, updateProfile, fetchUserScans } = useAuth();
+  const { entitlement } = useWalletEntitlement();
   const { t, language } = useTranslation();
   const [scans, setScans] = useState([]);
   const [scansLoading, setScansLoading] = useState(false);
@@ -10254,7 +10439,7 @@ function UserProfilePage({ navigate, onOpenAuth }) {
             : <span className="profile-avatar-large profile-avatar-fallback">{initial}</span>
           }
           <div>
-            <h2 className="profile-name">{user.name}</h2>
+            <h2 className="profile-name">{user.name} <AccountBadge entitlement={entitlement} compact /></h2>
             <p className="profile-email">{user.email}</p>
             {user.emailVerified
               ? <span className="auth-verified-badge">{t('userProfile.emailVerified')}</span>
@@ -10267,6 +10452,8 @@ function UserProfilePage({ navigate, onOpenAuth }) {
             <p className="profile-joined">{t('userProfile.memberSince', { date: new Date(user.createdAt).toLocaleDateString(dateLocale) })}</p>
           </div>
         </div>
+
+        <PremiumProfilePanel entitlement={entitlement} />
 
         <div className="profile-stats-row">
           <div className="profile-stat"><span>{scans.length}</span><small>{t('userProfile.stats.totalScans')}</small></div>

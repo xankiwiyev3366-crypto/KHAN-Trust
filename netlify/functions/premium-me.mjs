@@ -19,11 +19,13 @@ export async function handler(event) {
     return jsonResponse(200, { entitlement: null });
   }
 
-  // Only expose what the client needs to gate UI - not the full audit trail.
+  // Only expose what the client needs to gate UI and render Premium profile
+  // indicators / badges - not the full audit trail.
   return jsonResponse(200, {
     entitlement: {
       plan: grant.plan,
       source: grant.source || 'manual',
+      reason: grant.reason || null,
       expiresAt: grant.expiresAt ?? null,
     },
   });

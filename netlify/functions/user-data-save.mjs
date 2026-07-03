@@ -1,9 +1,10 @@
-// POST /.netlify/functions/user-data-save - mutates a wallet's saved
-// reports / synced watchlist. Gated server-side: the wallet must have a
-// Premium or Early Supporter entitlement on record, checked here directly
-// against the same store verify-solana-payment.mjs writes to - never trust
-// the client's own claim of its plan.
-import { hasPremiumEntitlement } from './_entitlementsStore.mjs';
+// POST /.netlify/functions/user-data-save - mutates a caller's saved
+// reports / synced watchlist. Gated server-side: the caller must have a
+// Premium or Early Supporter entitlement - either a paid wallet entitlement OR
+// an admin-granted manual grant (see _premiumAccess.mjs) - resolved here
+// directly rather than trusting the client's own claim of its plan. The same
+// resolver decides which storage key the data lives under.
+import { resolvePremiumAccess } from './_premiumAccess.mjs';
 import { getUserData, setUserData, jsonResponse } from './_userDataStore.mjs';
 
 const MAX_SAVED_REPORTS = 100;
@@ -26,17 +27,12 @@ export async function handler(event) {
       return jsonResponse(400, { message: 'Invalid request body' });
     }
 
-    const wallet = (payload.wallet || '').trim();
-    if (!wallet) {
-      return jsonResponse(400, { message: 'wallet is required' });
+    const access = await resolvePremiumAccess(event, payload.wallet);
+    if (!access.entitled) {
+      return jsonResponse(403, { message: 'This account does not have an active Premium or Early Supporter entitlement.' });
     }
 
-    const entitled = await hasPremiumEntitlement(wallet);
-    if (!entitled) {
-      return jsonResponse(403, { message: 'This wallet does not have an active Premium or Early Supporter entitlement.' });
-    }
-
-    const data = await getUserData(wallet);
+    const data = await getUserData(access.storageKey);
 
     switch (payload.action) {
       case 'save_report': {
@@ -72,7 +68,7 @@ export async function handler(event) {
         return jsonResponse(400, { message: 'Unknown action.' });
     }
 
-    const saved = await setUserData(wallet, data);
+    const saved = await setUserData(access.storageKey, data);
     return jsonResponse(200, { ok: true, data: saved });
   } catch (error) {
     return jsonResponse(500, { message: `user-data-save crashed: ${error.message}`, stack: error.stack });

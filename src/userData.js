@@ -1,16 +1,33 @@
 // Client module for Premium/Early Supporter-exclusive user data (saved
 // reports, synced watchlist) - see netlify/functions/user-data-*.mjs.
-// Writes are rejected server-side for wallets without an active
-// entitlement; this module doesn't duplicate that check, it just surfaces
-// whatever the server decides.
+// Writes are rejected server-side for callers without an active entitlement;
+// this module doesn't duplicate that check, it just surfaces whatever the
+// server decides.
+//
+// Every request also carries the auth JWT (when signed in) so the server can
+// honor admin-granted Premium users, who may have no wallet at all - the
+// server resolves identity from wallet OR account (see _premiumAccess.mjs).
 const FALLBACK_KEY = 'khan-trust-userdata-fallback-v1';
+const AUTH_TOKEN_KEY = 'khan-trust-auth-token-v1';
 
 function isFunctionUnavailable(error) {
   return Boolean(error) && (error.status === undefined || error.status === 404);
 }
 
-async function callFunction(path, options) {
-  const response = await fetch(`/.netlify/functions/${path}`, options);
+function authHeaders() {
+  try {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
+async function callFunction(path, options = {}) {
+  const response = await fetch(`/.netlify/functions/${path}`, {
+    ...options,
+    headers: { ...authHeaders(), ...(options.headers || {}) },
+  });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     const error = new Error(body.message || `Request to ${path} failed (${response.status})`);
@@ -38,13 +55,15 @@ function writeFallbackStore(store) {
 }
 
 export async function fetchUserData(wallet) {
-  if (!wallet) return { savedReports: [], watchlist: [] };
+  // A caller with neither a wallet nor a signed-in account has nothing to fetch.
+  const hasToken = Boolean(authHeaders().Authorization);
+  if (!wallet && !hasToken) return { savedReports: [], watchlist: [] };
   try {
-    return await callFunction(`user-data-get?wallet=${encodeURIComponent(wallet)}`, { method: 'GET' });
+    return await callFunction(`user-data-get?wallet=${encodeURIComponent(wallet || '')}`, { method: 'GET' });
   } catch (error) {
     if (!isFunctionUnavailable(error)) throw error;
     const store = readFallbackStore();
-    return store[wallet] || { savedReports: [], watchlist: [] };
+    return store[wallet || 'self'] || { savedReports: [], watchlist: [] };
   }
 }
 
@@ -61,8 +80,9 @@ async function performAction(wallet, body) {
     // flow is testable end-to-end locally - intentionally not gated by
     // entitlement here since there's no local entitlement store to check.
     if (!isFunctionUnavailable(error)) throw error;
+    const key = wallet || 'self';
     const store = readFallbackStore();
-    const data = store[wallet] || { savedReports: [], watchlist: [] };
+    const data = store[key] || { savedReports: [], watchlist: [] };
     if (body.action === 'save_report') {
       const report = body.report || {};
       const entry = { id: `sr-${Date.now()}`, savedAt: new Date().toISOString(), ...report };
@@ -74,7 +94,7 @@ async function performAction(wallet, body) {
         ? data.watchlist.filter((id) => id !== body.projectId)
         : [...data.watchlist, body.projectId];
     }
-    store[wallet] = data;
+    store[key] = data;
     writeFallbackStore(store);
     return { ok: true, data, fallback: true };
   }

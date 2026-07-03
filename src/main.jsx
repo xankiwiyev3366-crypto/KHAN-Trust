@@ -3356,11 +3356,14 @@ function App() {
   const [requestingVerification, setRequestingVerification] = useState(null);
   const { hasPremium, wallet: entitledWallet } = useWalletEntitlement();
 
-  // Synced Watchlist (Premium/Early Supporter only): merge in whatever this
-  // wallet has saved server-side so watchlist follows the wallet across
-  // browsers/devices, on top of the existing free local-only watchlist.
+  // Synced Watchlist (Premium/Early Supporter only): merge in whatever the
+  // account has saved server-side so the watchlist follows the user across
+  // browsers/devices, on top of the existing free local-only watchlist. Works
+  // for both paid-wallet and admin-granted Premium - the server resolves
+  // identity from the wallet OR the auth token (see _premiumAccess.mjs), so an
+  // empty wallet is fine when the user is signed in.
   useEffect(() => {
-    if (!hasPremium || !entitledWallet) return;
+    if (!hasPremium) return;
     fetchUserData(entitledWallet).then((data) => {
       const serverWatchlist = data.watchlist || [];
       if (!serverWatchlist.length) return;
@@ -3619,7 +3622,9 @@ function App() {
   const toggleWatch = (projectId) => {
     gate(() => {
       setWatchlist((items) => (items.includes(projectId) ? items.filter((id) => id !== projectId) : [...items, projectId]));
-      if (hasPremium && entitledWallet) toggleServerWatch(entitledWallet, projectId);
+      // Persist to the server for any Premium user (paid wallet or admin-granted);
+      // the server keys by wallet or auth account, so no wallet is required.
+      if (hasPremium) toggleServerWatch(entitledWallet, projectId);
     });
   };
 
@@ -4597,8 +4602,11 @@ function SavedReportsPanel({ wallet, project }) {
     setReports(data.savedReports || []);
   };
 
+  // This panel only renders for Premium users, so always load - fetchUserData
+  // identifies the account by the auth token when there is no wallet, so
+  // admin-granted Premium users see their saved reports too.
   useEffect(() => {
-    if (wallet) load();
+    load();
   }, [wallet]);
 
   const isSaved = project && reports?.some((report) => report.projectId === project.id);

@@ -1,7 +1,10 @@
-// GET /.netlify/functions/user-data-get?wallet=<address> - returns the
-// saved reports + synced watchlist for a wallet. Public read (harmless: a
-// wallet with no Premium/Early Supporter history just gets empty arrays
-// back); writes are the part gated by entitlement, see user-data-save.mjs.
+// GET /.netlify/functions/user-data-get?wallet=<address> - returns the saved
+// reports + synced watchlist for the caller. Identity is resolved the same way
+// writes are (see _premiumAccess.mjs), so it works for both a paid wallet
+// (?wallet=...) and an admin-granted account (Authorization: Bearer <jwt>).
+// Public read: a caller with no Premium history just gets empty arrays back;
+// data is only ever written when entitled, so nothing sensitive is exposed.
+import { resolvePremiumAccess } from './_premiumAccess.mjs';
 import { getUserData, jsonResponse } from './_userDataStore.mjs';
 
 export async function handler(event) {
@@ -9,9 +12,11 @@ export async function handler(event) {
     return jsonResponse(405, { message: 'Method not allowed' });
   }
   const wallet = (event.queryStringParameters?.wallet || '').trim();
-  if (!wallet) {
-    return jsonResponse(400, { message: 'wallet query parameter is required' });
+  const access = await resolvePremiumAccess(event, wallet);
+  if (!access.storageKey) {
+    // No wallet and no signed-in account - nothing to look up.
+    return jsonResponse(200, { savedReports: [], watchlist: [] });
   }
-  const data = await getUserData(wallet);
+  const data = await getUserData(access.storageKey);
   return jsonResponse(200, data);
 }

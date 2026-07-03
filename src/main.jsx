@@ -4648,10 +4648,8 @@ function AdvancedResearchCard({ project, navigate }) {
           return (
             <>
               <div className="premium-ai-badgeline"><AccountBadge entitlement={entitlement} compact /></div>
-              <h4>{t('advancedResearch.strengths')}</h4>
-              <ResearchList items={r.strengths} tone="good" />
-              <h4>{t('advancedResearch.weaknesses')}</h4>
-              <ResearchList items={r.weaknesses} tone="bad" />
+              {r.strengths.length > 0 && <><h4>{t('advancedResearch.strengths')}</h4><ResearchList items={r.strengths} tone="good" /></>}
+              {r.weaknesses.length > 0 && <><h4>{t('advancedResearch.weaknesses')}</h4><ResearchList items={r.weaknesses} tone="bad" /></>}
               <h4>{t('advancedResearch.risks')}</h4>
               <ResearchList items={r.risks} tone="bad" />
               <div className="premium-ai-observations">
@@ -4704,14 +4702,12 @@ function PremiumAnalysisCard({ project, navigate }) {
                   <strong>{a.dataQuality.label}</strong>
                 </div>
               </div>
-              <h4>{t('premiumAnalysis.bullish')}</h4>
-              <ResearchList items={a.bullish} tone="good" />
-              <h4>{t('premiumAnalysis.bearish')}</h4>
-              <ResearchList items={a.bearish} tone="bad" />
+              {a.bullish.length > 0 && <><h4>{t('premiumAnalysis.bullish')}</h4><ResearchList items={a.bullish} tone="good" /></>}
+              {a.bearish.length > 0 && <><h4>{t('premiumAnalysis.bearish')}</h4><ResearchList items={a.bearish} tone="bad" /></>}
               {a.missingInfo.length > 0 && (
                 <>
                   <h4>{t('premiumAnalysis.missingInfo')}</h4>
-                  <ResearchList items={a.missingInfo} tone="neutral" />
+                  <ResearchList items={friendlyMissingFields(a.missingInfo, t)} tone="neutral" />
                 </>
               )}
               <h4>{t('premiumAnalysis.recommendations')}</h4>
@@ -6410,6 +6406,41 @@ function ScamRiskCard({ project }) {
   );
 }
 
+// Maps the engine's raw EXPECTED_FIELDS names (see scoringEngine.js) to
+// human-readable, translated labels so the Missing Data list never shows
+// developer field names like "mintAuthorityEnabled" to users.
+const MISSING_DATA_LABEL_KEYS = {
+  marketCapUsd: 'marketCap',
+  totalLiquidityUsd: 'liquidity',
+  holderCount: 'holderCount',
+  topHolderPercent: 'topHolder',
+  topTenHolderPercent: 'topTenHolders',
+  tokenAgeDays: 'tokenAge',
+  volume24hUsd: 'volume',
+  mintAuthorityEnabled: 'mintAuthority',
+  freezeAuthorityEnabled: 'freezeAuthority',
+  upgradeable: 'upgradeable',
+  coingeckoListed: 'coingecko',
+  websiteUrl: 'website',
+  twitterUrl: 'twitter',
+  telegramUrl: 'telegram',
+  githubUrl: 'github',
+  priceChange24h: 'priceChange',
+  holderGrowthPercent: 'holderGrowth',
+  supply: 'supply',
+  poolCount: 'pools',
+  ath: 'ath',
+};
+
+function friendlyMissingFields(fields = [], t) {
+  return fields.map((field) => {
+    const key = MISSING_DATA_LABEL_KEYS[field];
+    // Fall back to the raw field only if an unmapped field ever appears, so the
+    // UI degrades to something rather than dropping the entry silently.
+    return key ? t(`missingDataLabels.${key}`) : field;
+  });
+}
+
 function DeepRiskAnalysisCard({ project }) {
   const { t } = useTranslation();
   if (!project.assetCategory) return null;
@@ -6443,7 +6474,7 @@ function DeepRiskAnalysisCard({ project }) {
         </>
       )}
       {project.missingDataFields?.length > 0 && (
-        <p className="inline-note">{t('profileSections.missingDataNote') || 'Missing data points'}: {project.missingDataFields.join(', ')}</p>
+        <p className="inline-note">{t('profileSections.missingDataNote') || 'Missing data points'}: {friendlyMissingFields(project.missingDataFields, t).join(', ')}</p>
       )}
     </section>
   );

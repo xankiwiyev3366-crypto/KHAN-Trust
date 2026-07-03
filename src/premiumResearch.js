@@ -92,29 +92,24 @@ function overallConclusion(project) {
   });
 }
 
-// Derived strengths/weaknesses on top of whatever explicit signals exist, so
-// the lists are never empty for a project that still scored.
+// Strengths and Weaknesses are the real, de-duplicated signals the engine
+// already detected - no generic filler and no restating the Trust Score, so
+// nothing appears without specific data evidence.
 function deriveStrengths(project) {
-  const list = [...(project.positiveSignals || [])];
-  const b = project.scoreBreakdown || {};
-  if (num(b.liquidityScore) !== null && b.liquidityScore >= 15) list.push(t('advancedResearch.derived.deepLiquidity'));
-  if (num(b.topHolderScore) !== null && b.topHolderScore >= 15) list.push(t('advancedResearch.derived.distributedSupply'));
-  if (num(project.trustScore) >= 70) list.push(t('advancedResearch.derived.highTrust'));
-  return [...new Set(list)];
+  return [...new Set(project.positiveSignals || [])];
 }
 
 function deriveWeaknesses(project) {
-  const list = [...(project.hiddenRiskSignals || [])];
-  if (num(project.trustScore) !== null && project.trustScore < 45) list.push(t('advancedResearch.derived.lowTrust'));
-  if ((project.missingDataFields || []).length >= 3) list.push(t('advancedResearch.derived.thinData'));
-  return [...new Set(list)];
+  return [...new Set(project.hiddenRiskSignals || [])];
 }
 
+// Potential Risks must be UNIQUE and must not repeat Weaknesses (which is
+// exactly hiddenRiskSignals). So Risks are the scam-risk reasons only, with any
+// item that already appears in Weaknesses removed.
 function potentialRisks(project) {
-  const scam = project.scamRisk?.reasons || [];
-  const hidden = project.hiddenRiskSignals || [];
-  const merged = [...new Set([...scam, ...hidden])];
-  return merged.length ? merged : [t('advancedResearch.noMajorRisks')];
+  const weaknesses = new Set(project.hiddenRiskSignals || []);
+  const unique = [...new Set(project.scamRisk?.reasons || [])].filter((r) => !weaknesses.has(r));
+  return unique.length ? unique : [t('advancedResearch.noMajorRisks')];
 }
 
 // ── Section 1: Advanced AI Research ───────────────────────────────────────────
@@ -148,6 +143,9 @@ function dataQuality(project) {
   return { key, label: t(`premiumAnalysis.dataQuality.${key}`), missingCount: missing };
 }
 
+// Recommendations are generated dynamically from the specific weak/missing data
+// points detected - never a fixed generic line. When nothing specific fires,
+// a single data-driven "clear areas" note is shown instead of boilerplate.
 function recommendations(project) {
   const recs = [];
   const risk = String(project.riskLevel || 'medium').toLowerCase();
@@ -155,7 +153,7 @@ function recommendations(project) {
   if (num(liquidityUsd(project)) !== null && liquidityUsd(project) < 50000) recs.push(t('premiumAnalysis.recs.thinLiquidity'));
   if (num(realData(project).topHolderPercent) > 40) recs.push(t('premiumAnalysis.recs.concentration'));
   if ((project.missingDataFields || []).length) recs.push(t('premiumAnalysis.recs.verifyMissing'));
-  recs.push(t('premiumAnalysis.recs.alwaysDyor'));
+  if (!recs.length) recs.push(t('premiumAnalysis.recs.monitor'));
   return [...new Set(recs)];
 }
 

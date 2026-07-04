@@ -115,6 +115,23 @@ function NewBadge({ es }) {
   );
 }
 
+// Development Progress is only a real number when we actually have a basis for
+// it: a self-reported progress value (community submissions / curated projects
+// like KHAN). Auto-discovered tokens (Bitcoin, Solana, brand-new tokens, ...)
+// carry no development data, so buildingProgress is 0 by default - which is
+// misleading. In that case we return null and the UI shows a status instead of
+// a fake "0%". We deliberately do NOT derive a percentage from the lifecycle
+// stage: a token that is "mainnet live" the day it launches is not 95% built,
+// so stage alone would invent a number. Returns an integer 0-100, or null when
+// there isn't enough real data.
+function developmentProgress(project) {
+  const reported = Number(project?.buildingProgress);
+  if (Number.isFinite(reported) && reported > 0) {
+    return Math.max(0, Math.min(100, Math.round(reported)));
+  }
+  return null;
+}
+
 function ProgressBar({ value }) {
   const pct = Math.max(0, Math.min(100, Number(value) || 0));
   return (
@@ -187,10 +204,21 @@ function EarlyStageCard({ project, navigate, es }) {
         {project.communitySize > 0 && <span><Users size={13} /> {Number(project.communitySize).toLocaleString()}</span>}
         {project.origin === 'discovered' && project.source && <span><Radar size={13} /> {project.source}</span>}
       </div>
-      <div className="es-progress-wrap">
-        <span className="es-progress-label">{es('buildingProgress', 'Building progress')} <strong>{project.buildingProgress || 0}%</strong></span>
-        <ProgressBar value={project.buildingProgress} />
-      </div>
+      {(() => {
+        const dp = developmentProgress(project);
+        return dp === null ? (
+          <div className="es-progress-wrap">
+            <span className="es-progress-label es-progress-unknown">
+              {es('buildingProgress', 'Development progress')}: <strong>{es('progressUnavailable', 'Development data unavailable')}</strong>
+            </span>
+          </div>
+        ) : (
+          <div className="es-progress-wrap">
+            <span className="es-progress-label">{es('buildingProgress', 'Development progress')} <strong>{dp}%</strong></span>
+            <ProgressBar value={dp} />
+          </div>
+        );
+      })()}
       <div className="es-card-foot">
         <SocialLinks project={project} stop />
         {project.builtWithLaunchpad && <LaunchpadTag url={project.launchpadUrl} label={es('builtWith', 'Built with KHAN Launchpad')} />}
@@ -624,9 +652,18 @@ export function EarlyStageProfilePage({ projectId, navigate }) {
             <strong>{Number(project.communitySize || 0).toLocaleString()}</strong>
           </div>
           <div className="es-side-stat">
-            <span>{es('buildingProgress', 'Building progress')}</span>
-            <strong>{project.buildingProgress || 0}%</strong>
-            <ProgressBar value={project.buildingProgress} />
+            <span>{es('buildingProgress', 'Development progress')}</span>
+            {(() => {
+              const dp = developmentProgress(project);
+              return dp === null ? (
+                <strong className="es-stat-muted">{es('progressUnavailable', 'Development data unavailable')}</strong>
+              ) : (
+                <>
+                  <strong>{dp}%</strong>
+                  <ProgressBar value={dp} />
+                </>
+              );
+            })()}
           </div>
         </div>
       </header>

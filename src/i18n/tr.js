@@ -96,6 +96,7 @@ export default {
     newBadge: 'Yeni',
     notVerifiedNote: 'Otomatik keşfedildi · doğrulanmadı',
     buildingProgress: 'Geliştirme ilerlemesi',
+    progressUnavailable: 'Geliştirme verisi mevcut değil',
     builtWith: 'KHAN Launchpad ile oluşturuldu',
     viewProfile: 'Profili Görüntüle',
     openLaunchpad: 'KHAN Launchpad\'i aç',

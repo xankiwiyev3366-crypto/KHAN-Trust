@@ -96,6 +96,7 @@ export default {
     newBadge: 'Новый',
     notVerifiedNote: 'Найдено автоматически · не проверено',
     buildingProgress: 'Прогресс разработки',
+    progressUnavailable: 'Данные о разработке недоступны',
     builtWith: 'Создано с KHAN Launchpad',
     viewProfile: 'Открыть профиль',
     openLaunchpad: 'Открыть KHAN Launchpad',

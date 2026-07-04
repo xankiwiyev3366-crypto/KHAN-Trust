@@ -6707,6 +6707,19 @@ main {
   color: var(--gold-bright);
 }
 
+/* When there is no real development data, the label + status render muted (no
+   gold %, no progress bar) so an unknown value never looks like a real 0%. */
+.es-progress-unknown strong {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.es-side-stat strong.es-stat-muted {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .es-progress {
   height: 7px;
   border-radius: 999px;

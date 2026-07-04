@@ -12,6 +12,6 @@ export async function handler() {
     const result = await runSyncBatch();
     return jsonResponse(200, result);
   } catch (error) {
-    return jsonResponse(500, { message: `khan-holders-sync crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `khan-holders-sync crashed: ${error.message}` });
   }
 }

@@ -156,6 +156,6 @@ export async function handler(event) {
       ticket: { id: ticket.id, status: ticket.status, createdAt: ticket.createdAt },
     });
   } catch (error) {
-    return jsonResponse(500, { message: `support-submit crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `support-submit crashed: ${error.message}` });
   }
 }

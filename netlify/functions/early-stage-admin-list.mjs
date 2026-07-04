@@ -41,6 +41,6 @@ export async function handler(event) {
 
     return jsonResponse(200, { projects: filtered, stats });
   } catch (error) {
-    return jsonResponse(500, { message: `early-stage-admin-list crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `early-stage-admin-list crashed: ${error.message}` });
   }
 }

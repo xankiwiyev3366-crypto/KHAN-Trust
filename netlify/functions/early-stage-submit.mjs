@@ -175,6 +175,6 @@ export async function handler(event) {
       project: { id: project.id, name: project.name, status: project.status, createdAt: project.createdAt },
     });
   } catch (error) {
-    return jsonResponse(500, { reason: 'server_error', message: `early-stage-submit crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { reason: 'server_error', message: `early-stage-submit crashed: ${error.message}` });
   }
 }

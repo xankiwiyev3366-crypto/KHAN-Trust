@@ -6,7 +6,21 @@ import crypto from 'node:crypto';
 import { getNamedStore, jsonResponse } from './_blobsClient.mjs';
 
 const STORE_NAME = 'khan-trust-auth';
-const AUTH_SECRET = process.env.AUTH_SECRET || 'khan-trust-auth-dev-change-in-prod';
+// Fail closed: NEVER sign or verify tokens with a public fallback secret in a
+// deployed environment. If AUTH_SECRET is unset in production, auth is treated
+// as unconfigured (issueToken throws, verifyJwt returns null) rather than
+// silently using a guessable default that would let anyone forge user JWTs.
+// A clearly-insecure dev secret is allowed ONLY in local dev (netlify dev /
+// tests) so the flow stays runnable without configuring env there.
+const AUTH_SECRET_RAW = process.env.AUTH_SECRET || '';
+const IS_DEPLOYED = (process.env.CONTEXT && process.env.CONTEXT !== 'dev') || process.env.NODE_ENV === 'production';
+const DEV_ONLY_AUTH_SECRET = 'khan-trust-auth-dev-INSECURE-do-not-use-in-prod';
+
+function authSecret() {
+  if (AUTH_SECRET_RAW) return AUTH_SECRET_RAW;
+  return IS_DEPLOYED ? null : DEV_ONLY_AUTH_SECRET;
+}
+
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;   // 7 days
 const RESET_TTL_MS = 60 * 60 * 1000;             // 1 hour
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;       // 24 hours
@@ -38,6 +52,8 @@ function b64u(str) {
 }
 
 export function issueToken(user) {
+  const secret = authSecret();
+  if (!secret) throw new Error('AUTH_SECRET is not configured');
   const header = b64u(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const payload = b64u(JSON.stringify({
     sub: user.id,
@@ -46,17 +62,19 @@ export function issueToken(user) {
     iat: Date.now(),
     exp: Date.now() + TOKEN_TTL_MS,
   }));
-  const sig = crypto.createHmac('sha256', AUTH_SECRET).update(`${header}.${payload}`).digest('base64url');
+  const sig = crypto.createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
   return `${header}.${payload}.${sig}`;
 }
 
 export function verifyJwt(token) {
   if (!token) return null;
+  const secret = authSecret();
+  if (!secret) return null; // unconfigured in production -> reject everything
   try {
     const parts = String(token).split('.');
     if (parts.length !== 3) return null;
     const [header, payload, sig] = parts;
-    const expected = crypto.createHmac('sha256', AUTH_SECRET).update(`${header}.${payload}`).digest('base64url');
+    const expected = crypto.createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
     if (sig.length !== expected.length) return null;
     if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
     const data = JSON.parse(Buffer.from(payload, 'base64url').toString());

@@ -100,6 +100,6 @@ export async function handler(event) {
 
     return jsonResponse(200, { ok: true, request });
   } catch (error) {
-    return jsonResponse(500, { message: `verification-request crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `verification-request crashed: ${error.message}` });
   }
 }

@@ -87,6 +87,6 @@ export async function handler(event) {
 
     return jsonResponse(200, { ok: true, project });
   } catch (error) {
-    return jsonResponse(500, { message: `early-stage-admin-action crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `early-stage-admin-action crashed: ${error.message}` });
   }
 }

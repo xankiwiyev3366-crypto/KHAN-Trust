@@ -91,6 +91,6 @@ export async function handler(event) {
     }
     return jsonResponse(200, { project: toPublicProfile(project) });
   } catch (error) {
-    return jsonResponse(500, { message: `early-stage-get crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `early-stage-get crashed: ${error.message}` });
   }
 }

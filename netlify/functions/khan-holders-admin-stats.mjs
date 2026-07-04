@@ -139,6 +139,6 @@ export async function handler(event) {
       },
     });
   } catch (error) {
-    return jsonResponse(500, { message: `khan-holders-admin-stats crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `khan-holders-admin-stats crashed: ${error.message}` });
   }
 }

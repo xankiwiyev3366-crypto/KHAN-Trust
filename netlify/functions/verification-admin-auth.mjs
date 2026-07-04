@@ -17,6 +17,6 @@ export async function handler(event) {
     }
     return jsonResponse(200, { token: issueToken() });
   } catch (error) {
-    return jsonResponse(500, { message: `verification-admin-auth crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `verification-admin-auth crashed: ${error.message}` });
   }
 }

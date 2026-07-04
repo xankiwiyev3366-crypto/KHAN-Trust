@@ -11,6 +11,6 @@ export async function handler(event) {
     const statuses = await readStatuses();
     return jsonResponse(200, { statuses });
   } catch (error) {
-    return jsonResponse(500, { message: `verification-status crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `verification-status crashed: ${error.message}` });
   }
 }

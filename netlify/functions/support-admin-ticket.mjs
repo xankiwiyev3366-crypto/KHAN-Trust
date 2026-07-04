@@ -22,6 +22,6 @@ export async function handler(event) {
 
     return jsonResponse(200, { ticket });
   } catch (error) {
-    return jsonResponse(500, { message: `support-admin-ticket crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `support-admin-ticket crashed: ${error.message}` });
   }
 }

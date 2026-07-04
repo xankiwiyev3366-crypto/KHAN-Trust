@@ -77,6 +77,6 @@ export async function handler(event) {
 
     return jsonResponse(405, { message: 'Method not allowed' });
   } catch (error) {
-    return jsonResponse(500, { message: `early-stage-discover-run crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `early-stage-discover-run crashed: ${error.message}` });
   }
 }

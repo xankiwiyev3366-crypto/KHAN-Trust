@@ -73,6 +73,6 @@ export async function handler(event) {
 
     return jsonResponse(200, { total, page, pageSize, transactions: pageRows });
   } catch (error) {
-    return jsonResponse(500, { message: `khan-holders-admin-transactions crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `khan-holders-admin-transactions crashed: ${error.message}` });
   }
 }

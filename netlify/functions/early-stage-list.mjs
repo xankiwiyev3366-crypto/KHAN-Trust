@@ -120,6 +120,6 @@ export async function handler(event) {
       total: visible.length,
     });
   } catch (error) {
-    return jsonResponse(500, { message: `early-stage-list crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `early-stage-list crashed: ${error.message}` });
   }
 }

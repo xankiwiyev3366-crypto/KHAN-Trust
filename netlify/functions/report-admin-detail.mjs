@@ -22,6 +22,6 @@ export async function handler(event) {
 
     return jsonResponse(200, { report });
   } catch (error) {
-    return jsonResponse(500, { message: `report-admin-detail crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `report-admin-detail crashed: ${error.message}` });
   }
 }

@@ -18,6 +18,6 @@ export async function handler(event) {
     const sorted = alerts.slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, limit);
     return jsonResponse(200, { alerts: sorted });
   } catch (error) {
-    return jsonResponse(500, { message: `khan-holders-admin-alerts crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `khan-holders-admin-alerts crashed: ${error.message}` });
   }
 }

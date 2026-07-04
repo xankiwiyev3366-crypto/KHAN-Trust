@@ -71,6 +71,6 @@ export async function handler(event) {
     const saved = await setUserData(access.storageKey, data);
     return jsonResponse(200, { ok: true, data: saved });
   } catch (error) {
-    return jsonResponse(500, { message: `user-data-save crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `user-data-save crashed: ${error.message}` });
   }
 }

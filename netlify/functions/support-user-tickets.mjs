@@ -41,6 +41,6 @@ export async function handler(event) {
 
     return jsonResponse(200, { tickets: matched.map(toPublicTicket) });
   } catch (error) {
-    return jsonResponse(500, { message: `support-user-tickets crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `support-user-tickets crashed: ${error.message}` });
   }
 }

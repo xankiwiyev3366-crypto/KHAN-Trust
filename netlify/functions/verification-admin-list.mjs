@@ -14,6 +14,6 @@ export async function handler(event) {
     const filtered = status === 'all' ? requests : requests.filter((item) => item.status === status);
     return jsonResponse(200, { requests: filtered });
   } catch (error) {
-    return jsonResponse(500, { message: `verification-admin-list crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `verification-admin-list crashed: ${error.message}` });
   }
 }

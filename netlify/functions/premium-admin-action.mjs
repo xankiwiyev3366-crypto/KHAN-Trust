@@ -114,6 +114,6 @@ export async function handler(event) {
       effectivePlan: effectivePlan(record),
     });
   } catch (error) {
-    return jsonResponse(500, { message: `premium-admin-action crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `premium-admin-action crashed: ${error.message}` });
   }
 }

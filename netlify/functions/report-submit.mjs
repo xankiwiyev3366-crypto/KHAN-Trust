@@ -188,6 +188,6 @@ export async function handler(event) {
       report: { id: report.id, status: report.status, createdAt: report.createdAt },
     });
   } catch (error) {
-    return jsonResponse(500, { reason: 'server_error', message: `report-submit crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { reason: 'server_error', message: `report-submit crashed: ${error.message}` });
   }
 }

@@ -361,6 +361,6 @@ export async function handler(event) {
       projectsAddedCount: addedEvents.length,
     });
   } catch (error) {
-    return jsonResponse(500, { message: `analytics-summary crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `analytics-summary crashed: ${error.message}` });
   }
 }

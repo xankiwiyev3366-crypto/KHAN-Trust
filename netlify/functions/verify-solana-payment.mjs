@@ -12,6 +12,16 @@ import { grantEntitlement, isSignatureUsed, markSignatureUsed } from './_entitle
 const RPC_URL = process.env.VITE_SOLANA_RPC_URL || '';
 const PAYMENT_WALLET = process.env.VITE_KHAN_PAYMENT_WALLET || '';
 
+// Only these SPL token mints count toward a payment. Both are 6-decimal USD
+// stablecoins whose uiAmount maps 1:1 to USD (the assumption the amount check
+// relies on). Without this allow-list a caller could transfer any worthless
+// custom SPL token to the payment wallet and have its uiAmount counted as USD,
+// unlocking Premium for free. Mirrors src/cryptoPayment.js SPL_TOKEN_CONFIG.
+const ACCEPTED_TOKEN_MINTS = new Set([
+  process.env.VITE_USDC_MINT || 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+  process.env.VITE_USDT_MINT || 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+]);
+
 const LAMPORTS_PER_SOL = 1_000_000_000;
 const RPC_TIMEOUT_MS = 15000;
 const PRICE_TIMEOUT_MS = 5000;
@@ -142,6 +152,8 @@ function findTokenTransferAmount(meta) {
   let total = 0;
   for (const postEntry of meta.postTokenBalances) {
     if (postEntry.owner !== PAYMENT_WALLET) continue;
+    // Reject any non-stablecoin mint: its uiAmount must NOT be treated as USD.
+    if (!ACCEPTED_TOKEN_MINTS.has(postEntry.mint)) continue;
     const preEntry = (meta.preTokenBalances || []).find(
       (entry) => entry.accountIndex === postEntry.accountIndex && entry.owner === PAYMENT_WALLET
     );

@@ -173,19 +173,6 @@ export async function payWithConnectedWallet({ connection, publicKey, sendTransa
       }
     }
 
-    // Temporary diagnostic logging (production debugging only - no secrets,
-    // every value here is already public on-chain data). Safe to remove
-    // once the "Unable to simulate" report is confirmed resolved.
-    console.log('[KHAN Trust] payment tx preflight', {
-      currency,
-      amount,
-      feePayer: transaction.feePayer?.toBase58(),
-      receiver: receiver.toBase58(),
-      recentBlockhash: transaction.recentBlockhash,
-      instructionCount: transaction.instructions.length,
-      programIds: transaction.instructions.map((ix) => ix.programId.toBase58()),
-    });
-
     // Run the same simulateTransaction call Phantom runs internally before
     // it opens its approval popup. If this fails, we know definitively the
     // transaction itself (not Phantom, not Blowfish, not domain reputation)
@@ -193,10 +180,6 @@ export async function payWithConnectedWallet({ connection, publicKey, sendTransa
     // surfaced here instead of as Phantom's generic, undiagnosable message.
     const preflight = await connection.simulateTransaction(transaction);
     if (preflight.value.err) {
-      console.error('[KHAN Trust] payment tx simulation failed', {
-        err: preflight.value.err,
-        logs: preflight.value.logs,
-      });
       return { ok: false, status: 'simulation_failed', message: 'This transaction would fail on-chain. Please try again or use a different payment method.' };
     }
 

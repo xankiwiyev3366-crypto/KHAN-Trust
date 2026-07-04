@@ -91,6 +91,6 @@ export async function handler(event) {
 
     return jsonResponse(200, { total, page, pageSize, totalSupply, solUsdPrice, holders: pageRows });
   } catch (error) {
-    return jsonResponse(500, { message: `khan-holders-admin-list crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `khan-holders-admin-list crashed: ${error.message}` });
   }
 }

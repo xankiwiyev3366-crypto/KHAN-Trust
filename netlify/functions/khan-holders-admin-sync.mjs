@@ -29,6 +29,6 @@ export async function handler(event) {
     } while (!reachedHead && Date.now() - startedAt < TIME_BUDGET_MS);
     return jsonResponse(200, { processed: totalProcessed, reachedHead, holderCount });
   } catch (error) {
-    return jsonResponse(500, { message: `khan-holders-admin-sync crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `khan-holders-admin-sync crashed: ${error.message}` });
   }
 }

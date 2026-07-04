@@ -90,6 +90,6 @@ export async function handler(event) {
 
     return jsonResponse(200, { ok: true, ticket });
   } catch (error) {
-    return jsonResponse(500, { message: `support-admin-action crashed: ${error.message}`, stack: error.stack });
+    return jsonResponse(500, { message: `support-admin-action crashed: ${error.message}` });
   }
 }

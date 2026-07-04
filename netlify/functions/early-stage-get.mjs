@@ -46,6 +46,7 @@ function toPublicProfile(project) {
     sourceUrl: project.sourceUrl || '',
     github: project.github || '',
     discoveredAt: project.discoveredAt || '',
+    launchedAt: project.launchedAt || '',
     // Future-ready fields (reserved).
     saleType: project.saleType || '',
     countdownAt: project.countdownAt || '',

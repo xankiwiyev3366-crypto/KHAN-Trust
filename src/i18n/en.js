@@ -92,6 +92,8 @@ export default {
     originDiscovered: 'Auto Discovered',
     sourceLabel: 'Source',
     discoveredOn: 'Discovered',
+    launchedOn: 'Launched',
+    newBadge: 'New',
     notVerifiedNote: 'Auto-discovered · not verified',
     buildingProgress: 'Building progress',
     builtWith: 'Built with KHAN Launchpad',
@@ -141,6 +143,7 @@ export default {
     filters: { all: 'All Stages' },
     smartFilters: {
       all: 'All',
+      newlyLaunched: 'Newly Launched',
       community: 'Community Submitted',
       discovered: 'Auto Discovered',
       newlyAdded: 'Newly Added',

@@ -18,8 +18,10 @@ import {
 } from './_discoveryStore.mjs';
 import { runDiscovery } from './_discoveryEngine.mjs';
 
-// Refresh every 6 hours. Netlify reads this exported config to schedule it.
-export const config = { schedule: '0 */6 * * *' };
+// Refresh every 2 hours. Frequent enough that tokens launched today/yesterday
+// surface quickly, while still off the request path. Netlify reads this
+// exported config to schedule it.
+export const config = { schedule: '0 */2 * * *' };
 
 async function refresh() {
   const [manualAll, existingDiscovered] = await Promise.all([

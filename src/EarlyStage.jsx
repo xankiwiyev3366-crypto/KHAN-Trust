@@ -104,6 +104,17 @@ function OriginBadge({ origin, es }) {
   );
 }
 
+// "New / Recently launched" badge - only shown when a project has a known,
+// recent launch/discovery date (see isRecentlyLaunched). Never a gate: absence
+// of the badge just means we don't have a recent date, not that it's hidden.
+function NewBadge({ es }) {
+  return (
+    <span className="es-new-badge">
+      <Sparkles size={12} /> {es('newBadge', 'New')}
+    </span>
+  );
+}
+
 function ProgressBar({ value }) {
   const pct = Math.max(0, Math.min(100, Number(value) || 0));
   return (
@@ -161,6 +172,7 @@ function EarlyStageCard({ project, navigate, es }) {
             {project.teamVerified && <BadgeCheck size={16} className="es-verified" aria-label={es('teamVerified', 'Verified team')} />}
           </h3>
           <div className="es-badge-row">
+            {isRecentlyLaunched(project) && <NewBadge es={es} />}
             <StageBadge stage={project.stage} es={es} />
             <OriginBadge origin={project.origin} es={es} />
           </div>
@@ -197,8 +209,14 @@ function EarlyStageCard({ project, navigate, es }) {
 // on mount). "Newly Added" = created within the last 30 days. "Verified Team"
 // is future-ready: it already works the moment a project carries teamVerified.
 const NEWLY_ADDED_DAYS = 30;
+// A project is "recently launched" if its real launch date (launchedAt, from
+// the DexScreener discovery provider) - or, absent that, when we discovered /
+// created it - is within this window. Used ONLY for the New badge and the
+// Newly Launched filter; an unknown date never hides a project.
+const RECENTLY_LAUNCHED_DAYS = 14;
 const SMART_FILTERS = [
   { id: 'all', match: () => true },
+  { id: 'newlyLaunched', match: (p) => isRecentlyLaunched(p) },
   { id: 'community', match: (p) => (p.origin || 'community') === 'community' },
   { id: 'discovered', match: (p) => p.origin === 'discovered' },
   { id: 'newlyAdded', match: (p) => daysSince(p.createdAt) <= NEWLY_ADDED_DAYS },
@@ -209,10 +227,12 @@ const SMART_FILTERS = [
   { id: 'verifiedTeam', match: (p) => Boolean(p.teamVerified) },
 ];
 
-// Sort comparators keyed by option id. Newest is the default.
+// Sort comparators keyed by option id. Newest is the default and prefers the
+// real launch date so tokens launched today/yesterday rank first; it falls back
+// to discoveredAt/createdAt, so community projects order exactly as before.
 const SORT_OPTIONS = ['newest', 'oldest', 'updated', 'community', 'progress'];
 const SORTERS = {
-  newest: (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+  newest: (a, b) => recencyTs(b) - recencyTs(a),
   oldest: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
   updated: (a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt),
   community: (a, b) => (Number(b.communitySize) || 0) - (Number(a.communitySize) || 0),
@@ -223,6 +243,30 @@ function daysSince(dateStr) {
   const then = new Date(dateStr).getTime();
   if (!then) return Infinity;
   return Math.floor((Date.now() - then) / 86400000);
+}
+
+// Best-known "how recent" timestamp for SORTING: real launch date first, then
+// when we discovered it, then when the record was created. 0 when unparseable.
+function recencyTs(p) {
+  const then = new Date(p.launchedAt || p.discoveredAt || p.createdAt).getTime();
+  return Number.isFinite(then) && then > 0 ? then : 0;
+}
+
+// Trustworthy "recently launched/listed" signal for the BADGE: a real on-chain
+// launch date, or - for community submissions - when it was listed here.
+// Discovered records without a launch date are deliberately NOT badged, so an
+// established coin that merely trended today is never mislabeled "New". This is
+// only about the badge; nothing is ever hidden for lacking a date.
+function launchSignalTs(p) {
+  const raw = p.launchedAt || ((p.origin || 'community') === 'community' ? p.createdAt : '');
+  const then = new Date(raw).getTime();
+  return Number.isFinite(then) && then > 0 ? then : 0;
+}
+
+function isRecentlyLaunched(p) {
+  const ts = launchSignalTs(p);
+  if (!ts) return false;
+  return Date.now() - ts <= RECENTLY_LAUNCHED_DAYS * 86400000;
 }
 
 // Small debounce hook - keeps the grid filter + autocomplete from recomputing
@@ -537,6 +581,7 @@ export function EarlyStageProfilePage({ projectId, navigate }) {
             {project.teamVerified && <BadgeCheck size={22} className="es-verified" aria-label={es('teamVerified', 'Verified team')} />}
           </h1>
           <div className="es-profile-badges">
+            {isRecentlyLaunched(project) && <NewBadge es={es} />}
             <StageBadge stage={project.stage} es={es} />
             <OriginBadge origin={project.origin} es={es} />
             {project.launchStatus && <span className="status-badge">{project.launchStatus}</span>}
@@ -544,10 +589,11 @@ export function EarlyStageProfilePage({ projectId, navigate }) {
             {project.category && <span className="status-badge">{project.category}</span>}
           </div>
           <p className="es-profile-desc">{project.description}</p>
-          {project.origin === 'discovered' && (project.source || project.discoveredAt) && (
+          {project.origin === 'discovered' && (project.source || project.discoveredAt || project.launchedAt) && (
             <p className="es-discovery-note">
               <Radar size={14} />
               {project.source && <span>{es('sourceLabel', 'Source')}: {project.sourceUrl ? <a href={project.sourceUrl} target="_blank" rel="noreferrer">{project.source}</a> : project.source}</span>}
+              {project.launchedAt && <span>{es('launchedOn', 'Launched')}: {new Date(project.launchedAt).toLocaleDateString()}</span>}
               {project.discoveredAt && <span>{es('discoveredOn', 'Discovered')}: {new Date(project.discoveredAt).toLocaleDateString()}</span>}
               <span className="es-discovery-unverified">{es('notVerifiedNote', 'Auto-discovered · not verified')}</span>
             </p>

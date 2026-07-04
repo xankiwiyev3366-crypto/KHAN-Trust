@@ -144,6 +144,12 @@ function isVisible(p) {
 // Netlify Functions) so the merged experience - cards, badges, filters,
 // sorting, search, autocomplete - is fully testable locally without any API.
 const DISCOVERY_MOCK_SEED = [
+  // `launchedAgoDays` (dev-only) synthesizes a fresh launch date at build time so
+  // the "New / Recently launched" badge + filter are demonstrable in plain
+  // `vite dev`. Real discovered projects carry a concrete `launchedAt` ISO from
+  // the DexScreener provider instead.
+  { name: 'Aurora Pulse', symbol: 'AURP', chain: 'Solana', category: 'Newly Launched', stage: 'mainnet_live', launchStatus: 'Recently launched', description: 'Freshly launched Solana token just detected on DexScreener.', website: 'https://aurorapulse.xyz', twitter: 'https://x.com/aurorapulse', source: 'DexScreener', launchedAgoDays: 0 },
+  { name: 'Nimbus Cash', symbol: 'NMBS', chain: 'Base', category: 'Newly Launched', stage: 'mainnet_live', launchStatus: 'Recently launched', description: 'New Base token with a live pool, launched in the last 24 hours.', website: 'https://nimbus.cash', source: 'DexScreener', launchedAgoDays: 1 },
   { name: 'Lumen Protocol', symbol: 'LMN', chain: 'Ethereum', category: 'DeFi', stage: 'launching_soon', launchStatus: 'Newly Listed', description: 'Cross-margin lending protocol newly listed on aggregators.', website: 'https://lumenprotocol.io', twitter: 'https://x.com/lumenprotocol', communitySize: 4200, source: 'CoinGecko' },
   { name: 'Solstice SDK', symbol: '', chain: 'Solana', category: 'Infrastructure', stage: 'building', launchStatus: 'Active development', description: 'Open-source Rust SDK for building Solana programs faster.', github: 'https://github.com/solstice-labs/solstice', website: 'https://solstice.dev', communitySize: 1300, source: 'GitHub' },
   { name: 'Nova Markets', symbol: 'NOVA', chain: 'Solana', category: 'DEX', stage: 'pre_sale', launchStatus: 'Presale', description: 'High-throughput orderbook DEX built for the Solana ecosystem.', website: 'https://novamarkets.xyz', telegram: 'https://t.me/novamarkets', communitySize: 5600, source: 'Solana Ecosystem' },
@@ -194,6 +200,7 @@ function buildDiscoveredFallback(manualVisible) {
       source: raw.source || 'Discovery',
       sourceUrl: raw.website || raw.github || '',
       discoveredAt: now,
+      launchedAt: raw.launchedAt || (raw.launchedAgoDays != null ? new Date(Date.now() - raw.launchedAgoDays * 86400000).toISOString() : ''),
       name: raw.name,
       symbol: String(raw.symbol || '').toUpperCase(),
       logoUrl: raw.logoUrl || '',

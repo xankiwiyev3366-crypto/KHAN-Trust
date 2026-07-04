@@ -99,6 +99,10 @@ export function normalizeDiscovered(raw, provider, now = new Date().toISOString(
     source,
     sourceUrl: clampUrl(raw.sourceUrl || raw.website || raw.github),
     discoveredAt: now,
+    // Real on-chain launch timestamp (ISO) when a provider can supply one (e.g.
+    // DexScreener pairCreatedAt). Distinct from discoveredAt (when WE first saw
+    // it). Empty when unknown - the UI must never hide a project for lacking it.
+    launchedAt: clampText(raw.launchedAt, 40),
     name,
     symbol: clampText(raw.symbol, 20).toUpperCase(),
     logoUrl: clampUrl(raw.logoUrl),
@@ -181,6 +185,8 @@ export async function runDiscovery({ manualProjects = [], existingDiscovered = [
         if (prev) {
           project.discoveredAt = prev.discoveredAt || project.discoveredAt;
           project.createdAt = prev.createdAt || project.createdAt;
+          // Keep a previously-known launch date if this run couldn't re-derive one.
+          project.launchedAt = project.launchedAt || prev.launchedAt || '';
         }
         kept.push(project);
         added += 1;

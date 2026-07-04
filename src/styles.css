@@ -6631,6 +6631,23 @@ main {
   border-color: rgba(139, 122, 255, 0.4);
 }
 
+/* "New / Recently launched" badge - shares the pill sizing of the stage/origin
+   badges and uses the success accent so freshly launched tokens stand out. */
+.es-new-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--success);
+  background: rgba(103, 211, 156, 0.14);
+  border: 1px solid rgba(103, 211, 156, 0.4);
+}
+
 /* Discovery provenance line on the profile header. */
 .es-discovery-note {
   display: flex;

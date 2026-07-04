@@ -35,6 +35,13 @@ const MOCK = {
     { name: 'Lumen Protocol', symbol: 'LMN', chain: 'Ethereum', category: 'DeFi', stage: 'launching_soon', launchStatus: 'Newly Listed', description: 'Cross-margin lending protocol newly listed on aggregators.', website: 'https://lumenprotocol.io', twitter: 'https://x.com/lumenprotocol', communitySize: 4200, contractAddress: '0xLUMEN00000000000000000000000000000000abcd' },
     { name: 'Zephyr Finance', symbol: 'ZPH', chain: 'Arbitrum', category: 'Perps', stage: 'mainnet_live', launchStatus: 'Recently Added', description: 'On-chain perpetuals exchange with community-owned liquidity.', website: 'https://zephyr.fi', twitter: 'https://x.com/zephyrfi', communitySize: 8800 },
   ],
+  // Mirror of the real DexScreener "newly launched" feed for mock mode. No fixed
+  // launchedAt (would go stale) - discoveredAt drives the New badge here, which
+  // is correct since these are "just discovered".
+  dexscreener: [
+    { name: 'Aurora Pulse', symbol: 'AURP', chain: 'Solana', category: 'Newly Launched', stage: 'mainnet_live', launchStatus: 'Recently launched', description: 'Freshly launched Solana token just detected on DexScreener.', website: 'https://aurorapulse.xyz', twitter: 'https://x.com/aurorapulse', contractAddress: 'AURP1111111111111111111111111111111111pump' },
+    { name: 'Nimbus Cash', symbol: 'NMBS', chain: 'Base', category: 'Newly Launched', stage: 'mainnet_live', launchStatus: 'Recently launched', description: 'New Base token with a live pool, launched in the last 24 hours.', website: 'https://nimbus.cash', contractAddress: '0xNIMBUS0000000000000000000000000000000cash' },
+  ],
   github: [
     { name: 'Solstice SDK', symbol: '', chain: 'Solana', category: 'Infrastructure', stage: 'building', launchStatus: 'Active development', description: 'Open-source Rust SDK for building Solana programs faster.', github: 'https://github.com/solstice-labs/solstice', website: 'https://solstice.dev', communitySize: 1300 },
     { name: 'Helios Bridge', symbol: '', chain: 'Ethereum', category: 'Bridge', stage: 'testnet', launchStatus: 'Testnet live', description: 'Trust-minimized messaging bridge, currently in public testnet.', github: 'https://github.com/helios-bridge/helios', twitter: 'https://x.com/heliosbridge' },
@@ -146,6 +153,93 @@ const realCoinGecko = {
   },
 };
 
+// Chain id (DexScreener slug) -> friendly display label for discovered cards.
+const CHAIN_LABELS = {
+  solana: 'Solana', ethereum: 'Ethereum', bsc: 'BNB Chain', base: 'Base',
+  arbitrum: 'Arbitrum', polygon: 'Polygon', avalanche: 'Avalanche', optimism: 'Optimism',
+  sui: 'Sui', ton: 'TON', tron: 'Tron', pulsechain: 'PulseChain', blast: 'Blast', sei: 'Sei',
+};
+function chainLabel(id) {
+  const key = String(id || '').toLowerCase();
+  if (!key) return '';
+  return CHAIN_LABELS[key] || (key.charAt(0).toUpperCase() + key.slice(1));
+}
+
+// DexScreener exposes links loosely across profile.links ({type|label,url}) and
+// pair.info.socials/websites. Pull the first valid website/twitter/telegram/
+// discord out of whichever arrays are present.
+function pickLinks(profileLinks, info = {}) {
+  const out = { website: '', twitter: '', telegram: '', discord: '' };
+  const consider = (type, url) => {
+    const u = String(url || '');
+    if (!/^https?:\/\//i.test(u)) return;
+    const key = String(type || '').toLowerCase();
+    if ((key.includes('twitter') || key === 'x') && !out.twitter) out.twitter = u;
+    else if (key.includes('telegram') && !out.telegram) out.telegram = u;
+    else if (key.includes('discord') && !out.discord) out.discord = u;
+    else if ((key.includes('website') || key.includes('web')) && !out.website) out.website = u;
+  };
+  for (const l of Array.isArray(profileLinks) ? profileLinks : []) consider(l.type || l.label, l.url);
+  for (const s of Array.isArray(info.socials) ? info.socials : []) consider(s.type || s.label, s.url);
+  for (const w of Array.isArray(info.websites) ? info.websites : []) if (!out.website) consider('website', w.url);
+  return out;
+}
+
+// THE "newly launched" feed. DexScreener's latest token profiles are the newest
+// tokens gaining an on-chain presence - exactly the "launched today/yesterday"
+// projects the trending/repo sources never surface. Each profile is enriched
+// via token-pairs to recover a display name, symbol, real launch timestamp
+// (pairCreatedAt), and socials. Free, keyless endpoints; every network call is
+// wrapped so any failure yields [] (or a thinner record) and never breaks a run.
+const realDexScreener = {
+  id: 'dexscreener',
+  label: 'DexScreener',
+  kind: 'listing',
+  enabled: REAL_ENABLED,
+  real: true,
+  async fetch({ limit = 20 } = {}) {
+    const profiles = await safeJson('https://api.dexscreener.com/token-profiles/latest/v1');
+    const list = Array.isArray(profiles) ? profiles : [];
+    const picked = list.filter((p) => p?.tokenAddress && p?.chainId).slice(0, limit);
+    if (!picked.length) return [];
+    const enriched = await Promise.all(picked.map(async (p) => {
+      const pairs = await safeJson(
+        `https://api.dexscreener.com/token-pairs/v1/${encodeURIComponent(p.chainId)}/${encodeURIComponent(p.tokenAddress)}`
+      );
+      const arr = Array.isArray(pairs) ? pairs : (Array.isArray(pairs?.pairs) ? pairs.pairs : []);
+      // Earliest-created pair gives the most stable launch timestamp.
+      const pair = arr.filter(Boolean).sort((a, b) => (a.pairCreatedAt || Infinity) - (b.pairCreatedAt || Infinity))[0] || null;
+      const base = pair?.baseToken || {};
+      const info = pair?.info || {};
+      // Fall back through pair name -> profile header so a token is only dropped
+      // when there is genuinely nothing renderable (requirement: don't hide new
+      // projects just because some metadata is missing).
+      const name = String(base.name || p.header || '').trim();
+      if (!name) return null;
+      const links = pickLinks(p.links, info);
+      const launchedAt = Number.isFinite(pair?.pairCreatedAt) ? new Date(pair.pairCreatedAt).toISOString() : '';
+      return {
+        name,
+        symbol: base.symbol || '',
+        logoUrl: p.icon || info.imageUrl || '',
+        description: String(p.description || '').slice(0, 400),
+        chain: chainLabel(p.chainId),
+        category: 'Newly Launched',
+        stage: 'mainnet_live',
+        launchStatus: 'Recently launched',
+        website: links.website,
+        twitter: links.twitter,
+        telegram: links.telegram,
+        discord: links.discord,
+        contractAddress: p.tokenAddress,
+        launchedAt,
+        sourceUrl: p.url || '',
+      };
+    }));
+    return enriched.filter(Boolean);
+  },
+};
+
 const realGitHub = {
   id: 'github',
   label: 'GitHub',
@@ -180,6 +274,7 @@ const realGitHub = {
 // To add a source later: append a provider here (mock and/or real). Order is
 // only cosmetic; the engine dedupes across all of them.
 const MOCK_PROVIDERS = [
+  mockProvider('dexscreener', 'DexScreener', 'listing'),
   mockProvider('coingecko', 'CoinGecko', 'listing'),
   mockProvider('github', 'GitHub', 'github'),
   mockProvider('solana', 'Solana Ecosystem', 'ecosystem'),
@@ -196,7 +291,9 @@ const MOCK_PROVIDERS = [
   mockProvider('hackathon', 'Hackathon / Demo', 'hackathon'),
 ];
 
-const REAL_PROVIDERS = [realCoinGecko, realGitHub];
+// DexScreener leads: it is the source of genuinely newly-launched tokens, so it
+// should populate the freshest records first each run.
+const REAL_PROVIDERS = [realDexScreener, realCoinGecko, realGitHub];
 
 // Returns the providers that should run.
 //   - Flag OFF (default): every mock provider runs, so the feature is fully

@@ -43,6 +43,9 @@ function toPublic(project) {
     sourceUrl: project.sourceUrl || '',
     github: project.github || '',
     discoveredAt: project.discoveredAt || '',
+    // Real on-chain launch date (ISO) when known; drives the "New / Recently
+    // launched" badge. Empty for manual/older records - never used to hide.
+    launchedAt: project.launchedAt || '',
     // Future-ready fields (reserved) - safe to expose; empty until populated.
     saleType: project.saleType || '',
     countdownAt: project.countdownAt || '',

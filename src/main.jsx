@@ -91,7 +91,7 @@ import { WHITEPAPER } from './whitepaperConfig.js';
 import { runRiskAnalysis, classifyAsset, applyAssetTypeRiskModifier } from './scoringEngine.js';
 import { historyKeyFor, fetchScoreHistory, computeScoreDelta, useScoreHistory } from './scoreHistory.js';
 import { useCorpusRecord } from './tokenCorpus.js';
-import { ANALYST_QUESTIONS, answerQuestion } from './khanAnalyst.js';
+import { ANALYST_QUESTIONS, answerQuestion, translateSignalKeys, translatedCategory } from './khanAnalyst.js';
 import { detectRiskAlerts, useWatchlistAlertCount } from './riskAlerts.js';
 import { TRUST_CATEGORIES, buildRiskHistory } from './riskHistory.js';
 import { computePeerBenchmark, peerLabelFor } from './peerBenchmark.js';
@@ -130,7 +130,7 @@ import { isStripeConfigured, startStripeCheckout, stripeUnavailableMessage } fro
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
 import { fetchEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
-import { buildAdvancedResearch, buildPremiumAnalysis } from './premiumResearch.js';
+import { buildAdvancedResearch, buildPremiumAnalysis, buildLocalizedRiskSummary, friendlyMissingFields } from './premiumResearch.js';
 import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction } from './premiumAdmin.js';
 import { fetchUserData, saveReport, removeSavedReport, toggleServerWatch } from './userData.js';
 import {
@@ -814,45 +814,65 @@ function buildCategoryBreakdown(scoreBreakdown = {}) {
 // without a specialized API (honeypot simulation, LP lock/burn, clone-site
 // detection) are intentionally left out rather than guessed - see
 // SCAM_RISK_COVERAGE_NOTE below for what's not covered.
+// `reasons` (English, interpolated) is kept for backward compatibility with
+// existing consumers (PDF export, premiumResearch.js dedup-by-string). The
+// parallel `reasonKeys` array (translation key + params, no English baked in)
+// is what the UI renders, via t(), so it re-translates instantly on language
+// switch instead of freezing whatever language was active when the project
+// was last normalized (see ScamRiskCard).
 function calculateScamRisk(project = {}, data = {}) {
   const reasons = [];
+  const reasonKeys = [];
   let riskPoints = 0;
 
-  const addRisk = (points, reason) => {
+  const addRisk = (points, reason, key, params) => {
     riskPoints += points;
     reasons.push(reason);
+    reasonKeys.push({ key, params });
   };
 
   if (typeof data.topHolderPercent === 'number' && data.topHolderPercent > 50) {
-    addRisk(25, `Largest holder controls ${formatPercent(data.topHolderPercent)} of supply`);
+    addRisk(25, `Largest holder controls ${formatPercent(data.topHolderPercent)} of supply`, 'topHolderConcentration', { pct: formatPercent(data.topHolderPercent) });
   }
   if (typeof data.topTenHolderPercent === 'number' && data.topTenHolderPercent > 80) {
-    addRisk(20, `Top 10 holders control ${formatPercent(data.topTenHolderPercent)} of supply`);
+    addRisk(20, `Top 10 holders control ${formatPercent(data.topTenHolderPercent)} of supply`, 'topTenConcentration', { pct: formatPercent(data.topTenHolderPercent) });
   }
 
   const liquidity = Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0);
   if (data.socialMetadataAvailable && !liquidity) {
-    addRisk(15, 'No public liquidity was found for this token');
+    addRisk(15, 'No public liquidity was found for this token', 'noLiquidityFound');
   } else if (liquidity > 0 && liquidity < 2000) {
-    addRisk(15, 'Liquidity is extremely low (under $2,000)');
+    addRisk(15, 'Liquidity is extremely low (under $2,000)', 'extremelyLowLiquidity');
   }
 
   const noSocial = !hasValue(project.website) && !hasValue(project.twitter) && !hasValue(project.telegram);
   if (noSocial && data.socialMetadataAvailable) {
-    addRisk(15, 'No website, X/Twitter, or Telegram presence found');
+    addRisk(15, 'No website, X/Twitter, or Telegram presence found', 'noSocialPresence');
   }
 
-  if (data.mintAuthorityEnabled === true) addRisk(10, 'Mint authority is still enabled');
-  if (data.freezeAuthorityEnabled === true) addRisk(10, 'Freeze authority is still enabled');
-  if (data.upgradeable === true) addRisk(10, 'Contract is upgradeable');
+  if (data.mintAuthorityEnabled === true) addRisk(10, 'Mint authority is still enabled', 'mintAuthorityEnabled');
+  if (data.freezeAuthorityEnabled === true) addRisk(10, 'Freeze authority is still enabled', 'freezeAuthorityEnabled');
+  if (data.upgradeable === true) addRisk(10, 'Contract is upgradeable', 'contractUpgradeable');
 
   if (typeof data.tokenAgeDays === 'number' && data.tokenAgeDays < 3) {
-    addRisk(10, 'Token is less than 3 days old');
+    addRisk(10, 'Token is less than 3 days old', 'veryNewToken');
   }
 
   const riskScore = clamp(riskPoints, 0, 100);
   const level = riskScore >= 50 ? 'High' : riskScore >= 25 ? 'Medium' : 'Low';
-  return { riskScore, level, reasons };
+  return { riskScore, level, reasons, reasonKeys };
+}
+
+// Render-time translation of scam-risk reasons - always uses the current
+// language via t(), unlike the frozen `reasons` array baked in at normalize
+// time. Falls back to the raw English reason only if a reasonKeys entry is
+// somehow missing (should not happen for anything produced by
+// calculateScamRisk above).
+function translatedScamReasons(scamRisk, t) {
+  if (scamRisk?.reasonKeys?.length) {
+    return scamRisk.reasonKeys.map(({ key, params }) => t(`scamRisk.reasons.${key}`, params));
+  }
+  return scamRisk?.reasons || [];
 }
 
 // Deliberately NOT implemented (would require fabricating data or a paid
@@ -4707,7 +4727,7 @@ function PremiumAnalysisCard({ project, navigate }) {
               {a.missingInfo.length > 0 && (
                 <>
                   <h4>{t('premiumAnalysis.missingInfo')}</h4>
-                  <ResearchList items={friendlyMissingFields(a.missingInfo, t)} tone="neutral" />
+                  <ResearchList items={friendlyMissingFields(a.missingInfo)} tone="neutral" />
                 </>
               )}
               <h4>{t('premiumAnalysis.recommendations')}</h4>
@@ -6385,6 +6405,7 @@ function ScamRiskCard({ project }) {
   const scamRisk = project.scamRisk;
   if (!scamRisk) return null;
   const toneClass = scamRisk.level === 'High' ? 'high' : scamRisk.level === 'Medium' ? 'medium' : 'low';
+  const reasons = translatedScamReasons(scamRisk, t);
   return (
     <section className="detail-section">
       <SectionTitle icon={AlertTriangle} eyebrow={t('profileSections.scamRiskEyebrow')} title={t('profileSections.scamRiskTitle')} />
@@ -6392,9 +6413,9 @@ function ScamRiskCard({ project }) {
         <span className={`risk-pill ${toneClass}`}>{t(`profileSections.scamRiskLevel.${toneClass}`)}</span>
         <strong>{scamRisk.riskScore}/100</strong>
       </div>
-      {scamRisk.reasons.length ? (
+      {reasons.length ? (
         <ul className="scam-risk-reasons">
-          {scamRisk.reasons.map((reason) => (
+          {reasons.map((reason) => (
             <li key={reason}><AlertTriangle size={14} /> {reason}</li>
           ))}
         </ul>
@@ -6409,72 +6430,50 @@ function ScamRiskCard({ project }) {
 // Maps the engine's raw EXPECTED_FIELDS names (see scoringEngine.js) to
 // human-readable, translated labels so the Missing Data list never shows
 // developer field names like "mintAuthorityEnabled" to users.
-const MISSING_DATA_LABEL_KEYS = {
-  marketCapUsd: 'marketCap',
-  totalLiquidityUsd: 'liquidity',
-  holderCount: 'holderCount',
-  topHolderPercent: 'topHolder',
-  topTenHolderPercent: 'topTenHolders',
-  tokenAgeDays: 'tokenAge',
-  volume24hUsd: 'volume',
-  mintAuthorityEnabled: 'mintAuthority',
-  freezeAuthorityEnabled: 'freezeAuthority',
-  upgradeable: 'upgradeable',
-  coingeckoListed: 'coingecko',
-  websiteUrl: 'website',
-  twitterUrl: 'twitter',
-  telegramUrl: 'telegram',
-  githubUrl: 'github',
-  priceChange24h: 'priceChange',
-  holderGrowthPercent: 'holderGrowth',
-  supply: 'supply',
-  poolCount: 'pools',
-  ath: 'ath',
-};
-
-function friendlyMissingFields(fields = [], t) {
-  return fields.map((field) => {
-    const key = MISSING_DATA_LABEL_KEYS[field];
-    // Fall back to the raw field only if an unmapped field ever appears, so the
-    // UI degrades to something rather than dropping the entry silently.
-    return key ? t(`missingDataLabels.${key}`) : field;
-  });
-}
+// friendlyMissingFields / MISSING_DATA_LABEL_KEYS now live in premiumResearch.js
+// (imported above) so the profile card and Premium research share one mapping.
 
 function DeepRiskAnalysisCard({ project }) {
   const { t } = useTranslation();
   if (!project.assetCategory) return null;
   const confidenceTone = project.confidenceLabel === 'High' ? 'good' : project.confidenceLabel === 'Medium' ? 'medium' : 'limited';
+  // Everything below is translated at render time so the whole breakdown -
+  // category badge, confidence badge, AI explanation, and both signal lists -
+  // follows the selected language instead of the English values baked in at
+  // scoring time.
+  const positiveSignals = translateSignalKeys(project.positiveSignalKeys, project.positiveSignals || []);
+  const hiddenRiskSignals = translateSignalKeys(project.hiddenRiskSignalKeys, project.hiddenRiskSignals || []);
+  const confidenceLabel = t(`common.${String(project.confidenceLabel || 'medium').toLowerCase()}`);
   return (
     <section className="detail-section">
-      <SectionTitle icon={Layers3} eyebrow={t('profileSections.deepAnalysisEyebrow') || 'Deep Risk Analysis'} title={t('profileSections.deepAnalysisTitle') || 'Intelligent Risk Breakdown'} />
+      <SectionTitle icon={Layers3} eyebrow={t('profileSections.deepAnalysisEyebrow')} title={t('profileSections.deepAnalysisTitle')} />
       <div className="result-score-row">
-        <span className="status-badge">{project.assetCategory}</span>
-        <span className={`risk-pill ${confidenceTone}`}>{project.confidenceLabel} confidence ({project.confidenceScore}%)</span>
+        <span className="status-badge">{translatedCategory(project.assetCategory)}</span>
+        <span className={`risk-pill ${confidenceTone}`}>{t('profileSections.confidencePill', { label: confidenceLabel, score: project.confidenceScore })}</span>
       </div>
-      {project.aiRiskSummary && <p className="inline-note">{project.aiRiskSummary}</p>}
-      {project.positiveSignals?.length > 0 && (
+      {project.assetCategory && <p className="inline-note">{buildLocalizedRiskSummary(project)}</p>}
+      {positiveSignals.length > 0 && (
         <>
-          <h4>{t('profileSections.positiveSignalsTitle') || 'Positive Signals'}</h4>
+          <h4>{t('profileSections.positiveSignalsTitle')}</h4>
           <ul className="scam-risk-reasons">
-            {project.positiveSignals.map((signal) => (
+            {positiveSignals.map((signal) => (
               <li key={signal}><CheckCircle2 size={14} /> {signal}</li>
             ))}
           </ul>
         </>
       )}
-      {project.hiddenRiskSignals?.length > 0 && (
+      {hiddenRiskSignals.length > 0 && (
         <>
-          <h4>{t('profileSections.hiddenRiskSignalsTitle') || 'Hidden Risk Signals'}</h4>
+          <h4>{t('profileSections.hiddenRiskSignalsTitle')}</h4>
           <ul className="scam-risk-reasons">
-            {project.hiddenRiskSignals.map((signal) => (
+            {hiddenRiskSignals.map((signal) => (
               <li key={signal}><AlertTriangle size={14} /> {signal}</li>
             ))}
           </ul>
         </>
       )}
       {project.missingDataFields?.length > 0 && (
-        <p className="inline-note">{t('profileSections.missingDataNote') || 'Missing data points'}: {friendlyMissingFields(project.missingDataFields, t).join(', ')}</p>
+        <p className="inline-note">{t('profileSections.missingDataNote')}: {friendlyMissingFields(project.missingDataFields).join(', ')}</p>
       )}
     </section>
   );

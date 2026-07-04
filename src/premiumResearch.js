@@ -6,6 +6,91 @@
 // for Premium users (see AdvancedResearchCard / PremiumAnalysisCard in
 // src/main.jsx); this module itself does no gating, it just builds the text.
 import { translate as t } from './i18n/index.js';
+import { translateSignalKeys, translatedCategory, translatedModifier } from './khanAnalyst.js';
+
+// Canonical mapping from raw scoring-engine field names to the humanized
+// `missingDataLabels.*` translation keys. Lives here (a plain module) so both
+// the Premium research and the profile card in main.jsx translate missing-data
+// fields identically in the selected language.
+export const MISSING_DATA_LABEL_KEYS = {
+  marketCapUsd: 'marketCap',
+  totalLiquidityUsd: 'liquidity',
+  holderCount: 'holderCount',
+  topHolderPercent: 'topHolder',
+  topTenHolderPercent: 'topTenHolders',
+  tokenAgeDays: 'tokenAge',
+  volume24hUsd: 'volume',
+  mintAuthorityEnabled: 'mintAuthority',
+  freezeAuthorityEnabled: 'freezeAuthority',
+  upgradeable: 'upgradeable',
+  coingeckoListed: 'coingecko',
+  websiteUrl: 'website',
+  twitterUrl: 'twitter',
+  telegramUrl: 'telegram',
+  githubUrl: 'github',
+  priceChange24h: 'priceChange',
+  holderGrowthPercent: 'holderGrowth',
+  supply: 'supply',
+  poolCount: 'pools',
+  ath: 'ath',
+};
+
+export function friendlyMissingFields(fields = []) {
+  return fields.map((field) => {
+    const key = MISSING_DATA_LABEL_KEYS[field];
+    // Fall back to the raw field only if an unmapped field ever appears, so the
+    // UI degrades to something rather than dropping the entry silently.
+    return key ? t(`missingDataLabels.${key}`) : field;
+  });
+}
+
+// Render-time translation of scam-risk reasons: prefers the language-agnostic
+// reasonKeys (+params) produced by calculateScamRisk, falling back to the
+// English `reasons` array only for older records that predate reasonKeys.
+function translatedScamReasons(project) {
+  const scamRisk = project.scamRisk;
+  if (scamRisk?.reasonKeys?.length) {
+    return scamRisk.reasonKeys.map(({ key, params }) => t(`scamRisk.reasons.${key}`, params));
+  }
+  return scamRisk?.reasons || [];
+}
+
+// Rebuilds the free "AI Risk Summary" narrative in the currently selected
+// language from the structured fields the scoring engine already produced,
+// rather than reusing project.aiRiskSummary (which is frozen English). Mirrors
+// buildRiskSummary() in scoringEngine.js piece for piece.
+export function buildLocalizedRiskSummary(project = {}) {
+  const parts = [];
+  const risk = t(`common.${String(project.riskLevel || 'medium').toLowerCase()}`);
+  parts.push(t('riskSummary.compose.classified', {
+    category: translatedCategory(project.assetCategory),
+    risk,
+  }));
+  const modifier = project.assetTypeRiskModifier;
+  const modifierNote = translatedModifier(modifier, project.assetCategory);
+  if (modifierNote) {
+    parts.push(modifierNote);
+    if (modifier?.capApplied) {
+      parts.push(t('riskSummary.compose.capApplied', { raw: modifier.rawScore, adjusted: modifier.adjustedScore }));
+    }
+  }
+  const positives = deriveStrengths(project);
+  if (positives.length) {
+    parts.push(t('riskSummary.compose.strengths', { signals: positives.slice(0, 3).join('; ') }));
+  }
+  const risks = deriveWeaknesses(project);
+  if (risks.length) {
+    parts.push(t('riskSummary.compose.concerns', { signals: risks.slice(0, 3).join('; ') }));
+  } else {
+    parts.push(t('riskSummary.compose.noConcerns'));
+  }
+  const confidence = t(`common.${String(project.confidenceLabel || 'medium').toLowerCase()}`);
+  const missing = friendlyMissingFields((project.missingDataFields || []).slice(0, 5));
+  parts.push(missing.length
+    ? t('riskSummary.compose.confidenceWithMissing', { confidence, score: project.confidenceScore ?? 0, fields: missing.join(', ') })
+    : t('riskSummary.compose.confidence', { confidence, score: project.confidenceScore ?? 0 }));
+  return parts.join(' ');
+}
 
 function num(value) {
   const n = Number(value);
@@ -96,19 +181,20 @@ function overallConclusion(project) {
 // already detected - no generic filler and no restating the Trust Score, so
 // nothing appears without specific data evidence.
 function deriveStrengths(project) {
-  return [...new Set(project.positiveSignals || [])];
+  return [...new Set(translateSignalKeys(project.positiveSignalKeys, project.positiveSignals || []))];
 }
 
 function deriveWeaknesses(project) {
-  return [...new Set(project.hiddenRiskSignals || [])];
+  return [...new Set(translateSignalKeys(project.hiddenRiskSignalKeys, project.hiddenRiskSignals || []))];
 }
 
 // Potential Risks must be UNIQUE and must not repeat Weaknesses (which is
 // exactly hiddenRiskSignals). So Risks are the scam-risk reasons only, with any
-// item that already appears in Weaknesses removed.
+// item that already appears in Weaknesses removed. All comparison and output
+// is done on the translated strings so dedup holds in every language.
 function potentialRisks(project) {
-  const weaknesses = new Set(project.hiddenRiskSignals || []);
-  const unique = [...new Set(project.scamRisk?.reasons || [])].filter((r) => !weaknesses.has(r));
+  const weaknesses = new Set(deriveWeaknesses(project));
+  const unique = [...new Set(translatedScamReasons(project))].filter((r) => !weaknesses.has(r));
   return unique.length ? unique : [t('advancedResearch.noMajorRisks')];
 }
 
@@ -161,16 +247,13 @@ export function buildPremiumAnalysis(project) {
   const conf = aiConfidenceLevel(project);
   const dq = dataQuality(project);
   return {
-    explanation: project.aiRiskSummary
-      ? t('premiumAnalysis.explanationWithSummary', { summary: project.aiRiskSummary })
-      : t('premiumAnalysis.explanationFallback', {
-          score: num(project.trustScore) ?? 0,
-          risk: t(`common.${String(project.riskLevel || 'medium').toLowerCase()}`),
-        }),
+    // Localized, render-time summary so the detailed read switches language
+    // with the rest of the UI instead of freezing the English aiRiskSummary.
+    explanation: t('premiumAnalysis.explanationWithSummary', { summary: buildLocalizedRiskSummary(project) }),
     riskConfidenceScore: num(project.confidenceScore) ?? 0,
     aiConfidence: { level: t(`premiumAnalysis.confidence.${conf.key}`), pct: conf.pct },
-    bullish: project.positiveSignals || [],
-    bearish: [...new Set([...(project.hiddenRiskSignals || []), ...(project.scamRisk?.reasons || [])])],
+    bullish: deriveStrengths(project),
+    bearish: [...new Set([...deriveWeaknesses(project), ...translatedScamReasons(project)])],
     dataQuality: dq,
     missingInfo: project.missingDataFields || [],
     recommendations: recommendations(project),

@@ -892,6 +892,35 @@ export default {
       below: 'below',
       at: 'at',
     },
+    // Render-time pieces for the main AI explanation shown in the Intelligent
+    // Risk Breakdown and Premium AI Analysis. Composed via t() so the whole
+    // narrative re-translates instantly on language switch instead of freezing
+    // the English text baked in at scoring time.
+    compose: {
+      classified: 'Classified as a {{category}} asset with an overall {{risk}} risk rating.',
+      capApplied: 'The raw data-driven score of {{raw}} was capped to {{adjusted}} to reflect this asset-type risk ceiling.',
+      strengths: 'Strengths: {{signals}}.',
+      concerns: 'Areas of concern: {{signals}}.',
+      noConcerns: 'No significant hidden risk patterns were detected in the available data.',
+      confidence: 'Confidence in this analysis is {{confidence}} ({{score}}% of expected data points were available).',
+      confidenceWithMissing: 'Confidence in this analysis is {{confidence}} ({{score}}% of expected data points were available); missing: {{fields}}.',
+    },
+  },
+  // Reasons rendered by the Scam Risk Indicators card and reused as Potential /
+  // Bearish signals in the Premium research. Keyed (with params) so they follow
+  // the selected language, unlike the English `reasons` array kept for exports.
+  scamRisk: {
+    reasons: {
+      topHolderConcentration: 'Largest holder controls {{pct}} of supply',
+      topTenConcentration: 'Top 10 holders control {{pct}} of supply',
+      noLiquidityFound: 'No public liquidity was found for this token',
+      extremelyLowLiquidity: 'Liquidity is extremely low (under $2,000)',
+      noSocialPresence: 'No website, X/Twitter, or Telegram presence found',
+      mintAuthorityEnabled: 'Mint authority is still enabled',
+      freezeAuthorityEnabled: 'Freeze authority is still enabled',
+      contractUpgradeable: 'Contract is upgradeable',
+      veryNewToken: 'Token is less than 3 days old',
+    },
   },
   scoreHistory: {
     thisWeek: 'this week',
@@ -1107,6 +1136,7 @@ export default {
     scamRiskCoverage: 'Covers holder concentration, liquidity, social presence, mint/freeze/upgrade authority, and token age only. Honeypot simulation, LP lock/burn status, and clone-site detection are not yet covered.',
     deepAnalysisEyebrow: 'Deep Risk Analysis',
     deepAnalysisTitle: 'Intelligent Risk Breakdown',
+    confidencePill: '{{label}} confidence ({{score}}%)',
     positiveSignalsTitle: 'Positive Signals',
     hiddenRiskSignalsTitle: 'Hidden Risk Signals',
     missingDataNote: 'Missing data points',

@@ -18,7 +18,7 @@ function joinSignals(signals, max = 2) {
   return signals.slice(0, max).join(t('askKhan.answers.signalSeparator'));
 }
 
-function translateSignalKeys(keys = [], fallbackSignals = []) {
+export function translateSignalKeys(keys = [], fallbackSignals = []) {
   if (keys.length) {
     return keys.map((key) => t(`askKhan.answers.signals.${key}`));
   }
@@ -53,11 +53,11 @@ function inferSignalKey(signal = '') {
   return matchers.find(([prefix]) => signal.startsWith(prefix))?.[1] || null;
 }
 
-function translatedCategory(category) {
+export function translatedCategory(category) {
   return t(`askKhan.answers.assetCategories.${category || 'Other'}`);
 }
 
-function translatedModifier(modifier, category) {
+export function translatedModifier(modifier, category) {
   if (!modifier?.explanationKey) {
     const inferredKey = inferModifierKey(modifier);
     if (!inferredKey) return modifier?.explanation || '';

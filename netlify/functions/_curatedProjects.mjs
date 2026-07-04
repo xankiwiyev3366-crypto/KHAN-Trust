@@ -25,7 +25,11 @@ export const CURATED_PROJECTS = [
     symbol: 'KHAN',
     logoUrl: '/favicon.svg',
     description: 'AI-powered crypto trust scoring, community-first project profiles, and public risk signals - plus the $KHAN token powering future holder utility across the KHAN ecosystem.',
-    stage: 'launching_soon',
+    // 'live_platform' is a curated-only status: the KHAN Trust platform is live
+    // while the $KHAN token is still pre-launch. It is not part of the
+    // submission stage vocabulary (VALID_STAGES) - curated records bypass that
+    // validation - and its badge label lives under i18n stages.live_platform.
+    stage: 'live_platform',
     launchStatus: 'Building in public',
     estimatedLaunch: '',
     chain: 'Solana',

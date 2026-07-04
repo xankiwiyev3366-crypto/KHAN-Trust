@@ -6591,7 +6591,8 @@ main {
   text-transform: uppercase;
 }
 
-.es-stage-mainnet_live { color: var(--success); border-color: rgba(103, 211, 156, 0.4); }
+.es-stage-mainnet_live,
+.es-stage-live_platform { color: var(--success); border-color: rgba(103, 211, 156, 0.4); }
 .es-stage-launching_soon { color: var(--warning); border-color: rgba(247, 190, 82, 0.4); }
 .es-stage-testnet,
 .es-stage-public_beta { color: #6fb6ff; border-color: rgba(111, 182, 255, 0.4); }

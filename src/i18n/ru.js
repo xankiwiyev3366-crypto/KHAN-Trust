@@ -173,6 +173,7 @@ export default {
       pre_sale: 'Пресейл',
       launching_soon: 'Скоро запуск',
       mainnet_live: 'Mainnet запущен',
+      live_platform: 'Действующая платформа',
     },
     adminStats: {
       pending: 'Ожидают',

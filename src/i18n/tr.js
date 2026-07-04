@@ -173,6 +173,7 @@ export default {
       pre_sale: 'Ön Satış',
       launching_soon: 'Yakında Lansman',
       mainnet_live: 'Mainnet Aktif',
+      live_platform: 'Canlı Platform',
     },
     adminStats: {
       pending: 'Bekleyen',

@@ -173,6 +173,7 @@ export default {
       pre_sale: 'Pre-Sale',
       launching_soon: 'Launching Soon',
       mainnet_live: 'Mainnet Live',
+      live_platform: 'Live Platform',
     },
     adminStats: {
       pending: 'Pending',

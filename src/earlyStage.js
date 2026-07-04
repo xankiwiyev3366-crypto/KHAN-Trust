@@ -151,7 +151,7 @@ const CURATED_PROJECTS = [
     symbol: 'KHAN',
     logoUrl: '/favicon.svg',
     description: 'AI-powered crypto trust scoring, community-first project profiles, and public risk signals - plus the $KHAN token powering future holder utility across the KHAN ecosystem.',
-    stage: 'launching_soon',
+    stage: 'live_platform',
     launchStatus: 'Building in public',
     estimatedLaunch: '',
     chain: 'Solana',

@@ -173,6 +173,7 @@ export default {
       pre_sale: 'Ön Satış',
       launching_soon: 'Tezliklə Start',
       mainnet_live: 'Mainnet Aktiv',
+      live_platform: 'Canlı Platforma',
     },
     adminStats: {
       pending: 'Gözləyən',

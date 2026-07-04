@@ -136,6 +136,67 @@ function isVisible(p) {
   return p.status === 'approved' && !p.hidden;
 }
 
+// ---- Curated first-party projects ----------------------------------------
+// Mirror of netlify/functions/_curatedProjects.mjs (same pattern the discovery
+// mock seed uses): the server merges these into the real list at read time;
+// this copy powers the no-Functions dev fallback so KHAN is present and
+// searchable in plain `vite dev` too. KHAN is genuinely pre-launch ($KHAN
+// contract "coming soon"), so it belongs in Early Stage.
+const CURATED_PROJECTS = [
+  {
+    id: 'esc-khan-trust',
+    origin: 'community',
+    curated: true,
+    name: 'KHAN Trust',
+    symbol: 'KHAN',
+    logoUrl: '/favicon.svg',
+    description: 'AI-powered crypto trust scoring, community-first project profiles, and public risk signals - plus the $KHAN token powering future holder utility across the KHAN ecosystem.',
+    stage: 'launching_soon',
+    launchStatus: 'Building in public',
+    estimatedLaunch: '',
+    chain: 'Solana',
+    category: 'Infrastructure',
+    website: 'https://khantrust.net',
+    twitter: 'https://x.com/KXankiwiyev3366',
+    telegram: 'https://t.me/+RXCuwpSNwikzNTE0',
+    discord: '',
+    github: 'https://github.com/khantrust',
+    contractAddress: '',
+    communitySize: 1280,
+    teamVerified: true,
+    buildingProgress: 65,
+    builtWithLaunchpad: false,
+    launchpadUrl: '',
+    featured: true,
+    overview: 'KHAN Trust turns raw on-chain and social data into explainable trust scores and public profiles for crypto projects. The $KHAN token underpins future holder utility across the ecosystem and is not live yet, so KHAN is building trust in the open ahead of its public token launch.',
+    roadmap: [
+      { title: 'Phase 1 - KHAN Community', detail: 'In progress' },
+      { title: 'Phase 2 - KHAN Trust Portal', detail: 'Completed', done: true },
+      { title: 'Phase 3 - Project trust profiles', detail: 'In progress' },
+    ],
+    team: [], progressTimeline: [], milestones: [],
+    whyEarlyStage: 'The $KHAN token contract is not live yet ("coming soon"), so KHAN is listed here as a pre-launch project building trust in the open ahead of its public token launch.',
+    riskNotes: '',
+    source: '', sourceUrl: '', discoveredAt: '', launchedAt: '',
+    createdAt: '2026-06-01T00:00:00.000Z', updatedAt: '2026-06-01T00:00:00.000Z',
+  },
+];
+
+function curatedSigs() {
+  const set = new Set();
+  for (const p of CURATED_PROJECTS) {
+    const n = normNameClient(p.name); if (n) set.add(`name:${n}`);
+    const s = String(p.symbol || '').trim().toUpperCase(); if (s) set.add(`sym:${s}`);
+  }
+  return set;
+}
+
+function collidesCurated(p, sigs) {
+  const n = normNameClient(p.name); if (n && sigs.has(`name:${n}`)) return true;
+  const s = String(p.symbol || '').trim().toUpperCase(); if (s && sigs.has(`sym:${s}`)) return true;
+  return false;
+}
+
 // ---- Auto-discovery (Phase 2) --------------------------------------------
 // The real discovery pipeline lives server-side (netlify/functions/
 // _discoveryProviders + _discoveryEngine + early-stage-discover-run) and the
@@ -262,11 +323,18 @@ export async function fetchEarlyStageProjects({ stage = 'all', chain = 'all', ca
   } catch (error) {
     if (!isFunctionUnavailable(error)) throw error;
     const store = readFallbackStore();
-    const manualVisible = store.projects.filter(isVisible).map((p) => ({ ...p, origin: p.origin || 'community' }));
+    // Curated first-party projects (KHAN) are always present and win over any
+    // manual/discovered collision, mirroring the server.
+    const sigs = curatedSigs();
+    const manualVisible = store.projects
+      .filter(isVisible)
+      .map((p) => ({ ...p, origin: p.origin || 'community' }))
+      .filter((p) => !collidesCurated(p, sigs));
     // Merge in auto-discovered mocks (deduped against manual), mirroring the
     // server's merged list so the dev experience matches production.
-    const discovered = buildDiscoveredFallback(manualVisible);
-    let visible = [...manualVisible, ...discovered];
+    const discovered = buildDiscoveredFallback([...CURATED_PROJECTS, ...manualVisible])
+      .filter((p) => !collidesCurated(p, sigs));
+    let visible = [...CURATED_PROJECTS, ...manualVisible, ...discovered];
     if (origin !== 'all') visible = visible.filter((p) => (p.origin || 'community') === origin);
     if (stage !== 'all') visible = visible.filter((p) => p.stage === stage);
     if (chain !== 'all') visible = visible.filter((p) => (p.chain || '').toLowerCase() === chain.toLowerCase());
@@ -281,7 +349,7 @@ export async function fetchEarlyStageProjects({ stage = 'all', chain = 'all', ca
       if (Boolean(b.featured) !== Boolean(a.featured)) return b.featured ? 1 : -1;
       return new Date(b.createdAt) - new Date(a.createdAt);
     });
-    const merged = [...manualVisible, ...discovered];
+    const merged = [...CURATED_PROJECTS, ...manualVisible, ...discovered];
     const facets = {
       stages: [...new Set(merged.map((p) => p.stage).filter(Boolean))],
       chains: [...new Set(merged.map((p) => p.chain).filter(Boolean))],
@@ -299,6 +367,10 @@ export async function fetchEarlyStageProject(id) {
   } catch (error) {
     if (!isFunctionUnavailable(error)) throw error;
     const store = readFallbackStore();
+    // Curated project ids ('esc-') resolve from the in-code curated list.
+    if (String(id).startsWith('esc-')) {
+      return CURATED_PROJECTS.find((p) => p.id === id) || null;
+    }
     // Discovered project ids ('esd-') resolve from the same mock discovery set
     // the list fallback builds (deduped against manual submissions).
     if (String(id).startsWith('esd-')) {

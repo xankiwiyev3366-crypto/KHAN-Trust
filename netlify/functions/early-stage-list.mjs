@@ -8,6 +8,7 @@ import {
   jsonResponse,
 } from './_earlyStageStore.mjs';
 import { readDiscoveredProjects } from './_discoveryStore.mjs';
+import { CURATED_PROJECTS, curatedSignatureSet, collidesWithCurated } from './_curatedProjects.mjs';
 
 // Fields safe to expose publicly - deliberately omits contactName/contactEmail
 // /submittedByWallet/adminNotes.
@@ -73,15 +74,20 @@ export async function handler(event) {
     const search = (event.queryStringParameters?.search || '').trim().toLowerCase();
     const origin = event.queryStringParameters?.origin || 'all';
 
-    const manualVisible = all.filter(isPubliclyVisible).map((p) => ({ ...p, origin: p.origin || 'community' }));
+    // Curated first-party projects (e.g. KHAN) are always present. Manual and
+    // discovered records that collide with a curated one (by name/symbol) are
+    // dropped so curated is the single source of truth and never duplicated.
+    const curatedSigs = curatedSignatureSet();
+    const manualVisible = all
+      .filter(isPubliclyVisible)
+      .map((p) => ({ ...p, origin: p.origin || 'community' }))
+      .filter((p) => !collidesWithCurated(p, curatedSigs));
     // Discovered projects are inherently public (sourced from public data) and
     // are never auto-verified. Guard teamVerified just in case a provider set it.
-    const discovered = (Array.isArray(discoveredRaw) ? discoveredRaw : []).map((p) => ({
-      ...p,
-      origin: 'discovered',
-      teamVerified: false,
-    }));
-    let visible = [...manualVisible, ...discovered];
+    const discovered = (Array.isArray(discoveredRaw) ? discoveredRaw : [])
+      .map((p) => ({ ...p, origin: 'discovered', teamVerified: false }))
+      .filter((p) => !collidesWithCurated(p, curatedSigs));
+    let visible = [...CURATED_PROJECTS, ...manualVisible, ...discovered];
     if (origin !== 'all') visible = visible.filter((p) => (p.origin || 'community') === origin);
     if (stage !== 'all') visible = visible.filter((p) => p.stage === stage);
     if (chain !== 'all') visible = visible.filter((p) => (p.chain || '').toLowerCase() === chain.toLowerCase());
@@ -101,7 +107,7 @@ export async function handler(event) {
 
     // Facets reflect the full merged public set (manual + discovered) so the
     // UI can offer every stage/chain/category/source that actually exists.
-    const merged = [...manualVisible, ...discovered];
+    const merged = [...CURATED_PROJECTS, ...manualVisible, ...discovered];
     const stages = [...new Set(merged.map((p) => p.stage).filter(Boolean))];
     const chains = [...new Set(merged.map((p) => p.chain).filter(Boolean))];
     const categories = [...new Set(merged.map((p) => p.category).filter(Boolean))];

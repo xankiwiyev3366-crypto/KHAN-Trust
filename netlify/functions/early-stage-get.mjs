@@ -8,6 +8,7 @@ import {
   jsonResponse,
 } from './_earlyStageStore.mjs';
 import { readDiscoveredProjects } from './_discoveryStore.mjs';
+import { findCuratedById } from './_curatedProjects.mjs';
 
 function toPublicProfile(project) {
   return {
@@ -62,6 +63,15 @@ export async function handler(event) {
     const id = event.queryStringParameters?.id || '';
     if (!id) {
       return jsonResponse(400, { message: 'A project id is required.' });
+    }
+    // Curated first-party project ids are prefixed 'esc-' (e.g. KHAN); they are
+    // served from the in-code curated list, not the Blobs store.
+    if (id.startsWith('esc-')) {
+      const curated = findCuratedById(id);
+      if (!curated) {
+        return jsonResponse(404, { message: 'Project not found.' });
+      }
+      return jsonResponse(200, { project: toPublicProfile(curated) });
     }
     // Discovered project ids are prefixed 'esd-'; look them up in the discovery
     // cache. Manual ids resolve from the approval store as before.

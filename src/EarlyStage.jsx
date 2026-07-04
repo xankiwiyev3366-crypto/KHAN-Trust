@@ -359,7 +359,13 @@ export function EarlyStageListPage({ navigate }) {
 
   const visibleProjects = useMemo(() => {
     const list = allProjects.filter((p) => filterMatch(p) && matchesQuery(p, needle));
-    return list.sort(SORTERS[sortBy] || SORTERS.newest);
+    const sorter = SORTERS[sortBy] || SORTERS.newest;
+    // Featured (curated/first-party, e.g. KHAN) sorts first, then the chosen
+    // order - matching the server list so provenance stays consistent.
+    return list.sort((a, b) => {
+      if (Boolean(b.featured) !== Boolean(a.featured)) return b.featured ? 1 : -1;
+      return sorter(a, b);
+    });
   }, [allProjects, filterMatch, needle, sortBy]);
 
   // Autocomplete suggestions: up to 5, from the whole list (ignores the active

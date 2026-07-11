@@ -8040,8 +8040,15 @@ function AdminAnalyticsPage() {
     { label: t('adminAnalytics.deviceDesktop'), value: summary.visitorAnalytics.desktop, color: 'var(--gold)' },
     { label: t('adminAnalytics.deviceMobile'), value: summary.visitorAnalytics.mobile, color: 'var(--gold-bright)' },
   ];
+  const trafficLabels = {
+    direct: t('adminAnalytics.trafficDirect'),
+    google: 'Google',
+    x: 'X (Twitter)',
+    telegram: 'Telegram',
+    other: t('adminAnalytics.trafficOther'),
+  };
   const trafficData = Object.entries(summary.visitorAnalytics.trafficSources).map(([label, value]) => ({
-    label: label === 'x' ? 'X (Twitter)' : label.charAt(0).toUpperCase() + label.slice(1),
+    label: trafficLabels[label] || (label.charAt(0).toUpperCase() + label.slice(1)),
     value,
   }));
   const c = t('adminAnalytics.columns');
@@ -8082,14 +8089,14 @@ function AdminAnalyticsPage() {
 
       {summary.userAnalytics && (
         <>
-          <h3 className="analytics-section-heading">Registered User Analytics</h3>
+          <h3 className="analytics-section-heading">{t('adminAnalytics.userAnalyticsHeading')}</h3>
           <div className="analytics-stat-grid">
-            <StatCard icon={UserPlus} label="Registered Users" numericValue={summary.userAnalytics.registeredTotal} />
-            <StatCard icon={User} label="New Registrations Today" numericValue={summary.userAnalytics.registeredToday} />
-            <StatCard icon={Activity} label="Active Users Today" numericValue={summary.userAnalytics.activeUsersToday} />
-            <StatCard icon={Users} label="Returning Users" numericValue={summary.userAnalytics.returningUsers} sublabel="logged in 2+ times" />
-            <StatCard icon={Users} label="Logged-in Visitors" numericValue={summary.userAnalytics.loggedInVisitors} sublabel="distinct user accounts" />
-            <StatCard icon={BarChart3} label="Avg Scans per User" numericValue={summary.userAnalytics.avgScansPerUser} sublabel="registered users only" />
+            <StatCard icon={UserPlus} label={t('adminAnalytics.registeredUsers')} numericValue={summary.userAnalytics.registeredTotal} />
+            <StatCard icon={User} label={t('adminAnalytics.newRegistrationsToday')} numericValue={summary.userAnalytics.registeredToday} />
+            <StatCard icon={Activity} label={t('adminAnalytics.activeUsersToday')} numericValue={summary.userAnalytics.activeUsersToday} />
+            <StatCard icon={Users} label={t('adminAnalytics.returningUsers')} numericValue={summary.userAnalytics.returningUsers} sublabel={t('adminAnalytics.returningUsersSub')} />
+            <StatCard icon={Users} label={t('adminAnalytics.loggedInVisitors')} numericValue={summary.userAnalytics.loggedInVisitors} sublabel={t('adminAnalytics.loggedInVisitorsSub')} />
+            <StatCard icon={BarChart3} label={t('adminAnalytics.avgScansPerUser')} numericValue={summary.userAnalytics.avgScansPerUser} sublabel={t('adminAnalytics.avgScansPerUserSub')} />
           </div>
         </>
       )}
@@ -8167,8 +8174,8 @@ function AdminAnalyticsPage() {
             <span><strong>{summary.visitorAnalytics.uniqueVisitors}</strong> {t('adminAnalytics.uniqueVisitors')}</span>
             <span>{t('adminAnalytics.newVisitors')} <strong>{summary.visitorAnalytics.newVisitors}</strong></span>
             <span>{t('adminAnalytics.returningVisitors')} <strong>{summary.visitorAnalytics.returningVisitors}</strong></span>
-            <span>Logged-in visitors <strong>{summary.visitorAnalytics.loggedInVisitors ?? 0}</strong></span>
-            <span>Guest visitors <strong>{summary.visitorAnalytics.guestVisitors ?? 0}</strong></span>
+            <span>{t('adminAnalytics.loggedInVisitors')} <strong>{summary.visitorAnalytics.loggedInVisitors ?? 0}</strong></span>
+            <span>{t('adminAnalytics.guestVisitors')} <strong>{summary.visitorAnalytics.guestVisitors ?? 0}</strong></span>
           </div>
           <MiniBarChart data={deviceData} />
         </div>

@@ -7958,7 +7958,12 @@ function AdminAnalyticsPage() {
   };
 
   useEffect(() => {
-    if (token) loadSummary(token);
+    if (!token) return undefined;
+    loadSummary(token);
+    // Auto-refresh so the dashboard reflects new user activity in near real
+    // time without a manual reload (matches the 30s cadence used elsewhere).
+    const interval = setInterval(() => loadSummary(token), 30000);
+    return () => clearInterval(interval);
   }, [token]);
 
   const login = async (event) => {

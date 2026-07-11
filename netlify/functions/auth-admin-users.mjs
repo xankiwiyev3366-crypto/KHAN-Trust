@@ -4,8 +4,6 @@ import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { listRegisteredUsers, countRegisteredUsers, jsonResponse } from './_authStore.mjs';
 import { readEvents } from './_analyticsStore.mjs';
 
-const DAY_MS = 86400000;
-
 export async function handler(event) {
   if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
   if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });
@@ -16,35 +14,42 @@ export async function handler(event) {
     countRegisteredUsers(),
   ]);
 
-  const now = Date.now();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10); // UTC calendar day; timestamps are UTC ISO too.
+  const dayKey = (ts) => String(ts || '').slice(0, 10);
 
-  // Events in last 24h grouped by userId
+  // Active users today: unique authenticated accounts active on today's
+  // calendar day (not a rolling 24h window).
   const activeUserIds = new Set(
-    events
-      .filter((e) => e.userId && now - new Date(e.timestamp).getTime() <= DAY_MS)
-      .map((e) => e.userId)
+    events.filter((e) => e.userId && dayKey(e.timestamp) === today).map((e) => e.userId)
   );
 
-  // Login events per userId
+  // Login count per userId (raw event count, shown per-user below).
   const loginsByUser = new Map();
+  // Distinct login DAYS per userId (used to define "returning").
+  const loginDaysByUser = new Map();
   events.filter((e) => e.type === 'user_login' && e.userId).forEach((e) => {
     loginsByUser.set(e.userId, (loginsByUser.get(e.userId) || 0) + 1);
+    const days = loginDaysByUser.get(e.userId) || new Set();
+    days.add(dayKey(e.timestamp));
+    loginDaysByUser.set(e.userId, days);
   });
 
-  // Registrations today
+  // Registrations today (UTC calendar day).
   const registeredToday = events.filter(
-    (e) => e.type === 'user_registered' && e.timestamp?.startsWith(today)
+    (e) => e.type === 'user_registered' && dayKey(e.timestamp) === today
   ).length;
 
-  // Scans per userId
+  // Scans per userId (for per-user display / ranking).
+  const scanEvents = events.filter((e) => e.type === 'token_scan');
   const scansByUser = new Map();
-  events.filter((e) => e.type === 'token_scan' && e.userId).forEach((e) => {
+  scanEvents.filter((e) => e.userId).forEach((e) => {
     scansByUser.set(e.userId, (scansByUser.get(e.userId) || 0) + 1);
   });
 
-  const totalScansWithUser = Array.from(scansByUser.values()).reduce((a, b) => a + b, 0);
-  const avgScansPerUser = totalCount > 0 ? Math.round(totalScansWithUser / totalCount) : 0;
+  // Average scans per user = total successful scans / total registered users.
+  const avgScansPerUser = totalCount > 0
+    ? Math.round((scanEvents.length / totalCount) * 10) / 10
+    : 0;
 
   // Top active users by scan count
   const topUsers = users
@@ -64,7 +69,7 @@ export async function handler(event) {
     totalRegistered: totalCount,
     registeredToday,
     activeUsersToday: activeUserIds.size,
-    returningUsers: Array.from(loginsByUser.values()).filter((n) => n > 1).length,
+    returningUsers: Array.from(loginDaysByUser.values()).filter((days) => days.size > 1).length,
     avgScansPerUser,
     users: topUsers,
   });

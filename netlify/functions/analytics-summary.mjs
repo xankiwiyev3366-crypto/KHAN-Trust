@@ -302,29 +302,56 @@ export async function handler(event) {
     const verificationAnalytics = await buildVerificationAnalytics();
     const visitorAnalytics = buildVisitorAnalytics(pageViewEvents);
 
-    // Registered-user analytics derived from auth events + auth store count
+    // Registered-user analytics. Every value below is derived from the same
+    // event log plus the auth store's real user count - no counters, no mocks.
+    // "Today" is the UTC calendar day; event timestamps are UTC ISO strings
+    // too, so all day comparisons are timezone-consistent (no local/UTC drift).
     const registeredTotal = await countRegisteredUsers().catch(() => 0);
     const today = new Date().toISOString().slice(0, 10);
-    const registeredToday = events.filter((e) => e.type === 'user_registered' && e.timestamp?.startsWith(today)).length;
+
+    // New registrations today: user_registered events stamped with today (UTC).
+    const registeredToday = events.filter(
+      (e) => e.type === 'user_registered' && dateKey(e.timestamp) === today
+    ).length;
+
+    // Active users today: unique authenticated accounts with ANY activity on
+    // today's calendar day (scan, view, page_view, login...). Requires a
+    // userId, so only authenticated activity is counted - a calendar-day match,
+    // not a rolling 24h window.
     const activeUserIds = new Set(
-      events.filter((e) => e.userId && withinDays(e.timestamp, 1)).map((e) => e.userId)
+      events.filter((e) => e.userId && dateKey(e.timestamp) === today).map((e) => e.userId)
     );
-    const loginsByUser = new Map();
+
+    // Returning users: accounts that logged in on 2+ DIFFERENT calendar days.
+    // A set of distinct day-keys per user means multiple logins on the same
+    // day count once (fixes over-counting same-day repeat requests).
+    const loginDaysByUser = new Map();
     events.filter((e) => e.type === 'user_login' && e.userId).forEach((e) => {
-      loginsByUser.set(e.userId, (loginsByUser.get(e.userId) || 0) + 1);
+      const days = loginDaysByUser.get(e.userId) || new Set();
+      days.add(dateKey(e.timestamp));
+      loginDaysByUser.set(e.userId, days);
     });
-    const returningUsers = Array.from(loginsByUser.values()).filter((n) => n > 1).length;
+    const returningUsers = Array.from(loginDaysByUser.values()).filter((days) => days.size > 1).length;
+
+    // Logged-in visitors: unique authenticated accounts (distinct userIds).
     const loggedInVisitors = new Set(events.filter((e) => e.userId).map((e) => e.userId)).size;
+
+    // Per-user scan counts, used only for the top-active-users ranking.
     const scansByUser = new Map();
-    events.filter((e) => e.type === 'token_scan' && e.userId).forEach((e) => {
+    scanEvents.filter((e) => e.userId).forEach((e) => {
       scansByUser.set(e.userId, (scansByUser.get(e.userId) || 0) + 1);
     });
-    const totalUserScans = Array.from(scansByUser.values()).reduce((a, b) => a + b, 0);
-    const avgScansPerUser = registeredTotal > 0 ? Math.round(totalUserScans / registeredTotal) : 0;
     const topActiveUsers = Array.from(scansByUser.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([userId, count]) => ({ userId, scanCount: count }));
+
+    // Average scans per user = total successful scans / total registered users.
+    // Uses the full scan total (every successful token_scan event), not just
+    // scans attributed to a logged-in user, per the required definition.
+    const avgScansPerUser = registeredTotal > 0
+      ? Math.round((scanEvents.length / registeredTotal) * 10) / 10
+      : 0;
 
     const userAnalytics = {
       registeredTotal,

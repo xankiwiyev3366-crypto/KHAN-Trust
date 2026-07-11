@@ -46,6 +46,13 @@ export async function handler(event) {
       contract: clampString(payload.contract),
       trustScore: Number.isFinite(payload.trustScore) ? Math.max(0, Math.min(100, Math.round(payload.trustScore))) : null,
       query: clampString(payload.query),
+      // Authenticated-user context. The client attaches these to every event
+      // once a user is signed in (see platformAnalytics.setAnalyticsUserId).
+      // Without persisting them here, all per-user dashboard metrics
+      // (active users today, avg scans/user, logged-in visitors) collapse to
+      // zero because the userId never reaches the event log.
+      userId: payload.userId ? clampString(payload.userId) : null,
+      isLoggedIn: Boolean(payload.isLoggedIn),
     };
 
     const total = await appendEvent(record);

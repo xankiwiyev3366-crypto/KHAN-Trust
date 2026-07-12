@@ -38,6 +38,16 @@ export async function submitPremiumAction(token, body) {
   });
 }
 
+// Bulk grant/remove Premium for many users at once.
+// action: 'bulk_grant' | 'bulk_revoke'; body carries userIds[] + duration.
+export async function submitBulkPremiumAction(token, body) {
+  return callAdmin('premium-admin-bulk-action', token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 // ── Current user: read own manual premium entitlement ─────────────────────────
 // Best-effort: any failure (logged out, endpoint unavailable) resolves to null
 // so it can never block or break the Premium UI.

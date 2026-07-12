@@ -131,7 +131,7 @@ import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaP
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
 import { fetchEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
 import { buildAdvancedResearch, buildPremiumAnalysis, buildLocalizedRiskSummary, friendlyMissingFields } from './premiumResearch.js';
-import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction } from './premiumAdmin.js';
+import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction, submitBulkPremiumAction } from './premiumAdmin.js';
 import { fetchUserData, saveReport, removeSavedReport, toggleServerWatch } from './userData.js';
 import {
   TICKET_CATEGORIES,
@@ -7461,6 +7461,30 @@ function PremiumGrantModal({ user, token, onClose, onDone }) {
   );
 }
 
+// Bulk-action dropdown values -> how the backend should interpret them. Grants
+// map onto the fixed billing windows _premiumStore.computeExpiry understands;
+// 'remove' is a bulk revoke.
+const BULK_ACTION_OPTIONS = [
+  { value: '30d', kind: 'grant', duration: '30d' },
+  { value: '90d', kind: 'grant', duration: '90d' },
+  { value: '180d', kind: 'grant', duration: '180d' },
+  { value: '365d', kind: 'grant', duration: '365d' },
+  { value: 'remove', kind: 'remove', duration: null },
+];
+
+const PREMIUM_FILTER_OPTIONS = ['all', 'free', 'premium', 'early_supporter', 'verified'];
+
+function matchesPremiumFilter(user, filter) {
+  switch (filter) {
+    case 'free': return user.plan === 'free';
+    case 'premium': return user.plan === 'premium';
+    case 'early_supporter': return user.plan === 'early_supporter';
+    case 'verified': return Boolean(user.emailVerified);
+    case 'all':
+    default: return true;
+  }
+}
+
 function AdminPremiumPage() {
   const { t } = useTranslation();
   const [token, setToken] = useState(() => getStoredAdminToken());
@@ -7472,6 +7496,12 @@ function AdminPremiumPage() {
   const [editingUser, setEditingUser] = useState(null);
   const [showAudit, setShowAudit] = useState(false);
   const [audit, setAudit] = useState(null);
+  // ── Bulk Premium Management state ──
+  const [filterPlan, setFilterPlan] = useState('all');
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [bulkChoice, setBulkChoice] = useState('');
+  const [bulkConfirm, setBulkConfirm] = useState(null); // { kind, duration, count }
+  const [bulkState, setBulkState] = useState({ status: 'idle', message: '' });
 
   const load = async (activeToken) => {
     setLoadState({ status: 'loading', message: t('adminPremium.loading') });
@@ -7512,6 +7542,7 @@ function AdminPremiumPage() {
     clearAdminToken();
     setToken('');
     setData(null);
+    setSelectedIds(new Set());
   };
 
   const toggleAudit = () => {
@@ -7537,9 +7568,78 @@ function AdminPremiumPage() {
 
   const term = search.trim().toLowerCase();
   const users = (data?.users || []).filter((u) => {
+    if (!matchesPremiumFilter(u, filterPlan)) return false;
     if (!term) return true;
     return [u.name, u.username, u.email].filter(Boolean).some((field) => field.toLowerCase().includes(term));
   });
+
+  // Selection is tracked by user id; derive counts against the *currently
+  // visible* rows so "Select all" and the selected count stay meaningful when
+  // a search/filter is applied.
+  const visibleIds = users.map((u) => u.id);
+  const selectedVisible = visibleIds.filter((id) => selectedIds.has(id));
+  const allVisibleSelected = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+
+  const toggleOne = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        visibleIds.forEach((id) => next.delete(id));
+      } else {
+        visibleIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const openBulkConfirm = () => {
+    const option = BULK_ACTION_OPTIONS.find((o) => o.value === bulkChoice);
+    if (!option || !selectedVisible.length) return;
+    setBulkState({ status: 'idle', message: '' });
+    setBulkConfirm({ kind: option.kind, duration: option.duration, count: selectedVisible.length });
+  };
+
+  const runBulk = async () => {
+    if (!bulkConfirm) return;
+    const targetIds = visibleIds.filter((id) => selectedIds.has(id));
+    setBulkState({ status: 'loading', message: '' });
+    try {
+      const result = await submitBulkPremiumAction(token, {
+        action: bulkConfirm.kind === 'remove' ? 'bulk_revoke' : 'bulk_grant',
+        userIds: targetIds,
+        duration: bulkConfirm.duration || undefined,
+        source: 'manual',
+        reason: 'promotion',
+      });
+      const successCount = result.successCount ?? targetIds.length;
+      const failedCount = result.failedCount ?? 0;
+      const message = bulkConfirm.kind === 'remove'
+        ? t('adminPremium.bulk.successRemove', { count: successCount })
+        : t('adminPremium.bulk.successGrant', { count: successCount });
+      const withFailures = failedCount > 0
+        ? `${message} ${t('adminPremium.bulk.someFailed', { count: failedCount })}`
+        : message;
+      setBulkState({ status: 'success', message: withFailures });
+      setBulkConfirm(null);
+      setBulkChoice('');
+      clearSelection();
+      await load(token);
+      if (showAudit) await loadAudit(token);
+    } catch (error) {
+      setBulkState({ status: 'error', message: error.message || t('adminPremium.bulk.failed') });
+      setBulkConfirm(null);
+    }
+  };
 
   return (
     <section className="page-section analytics-dashboard">
@@ -7564,16 +7664,60 @@ function AdminPremiumPage() {
         </div>
       )}
 
-      <div className="premium-search-bar">
-        <Search size={18} />
-        <input
-          type="search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder={t('adminPremium.searchPlaceholder')}
-          aria-label={t('adminPremium.searchPlaceholder')}
-        />
+      <div className="premium-filter-row">
+        <div className="premium-search-bar">
+          <Search size={18} />
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={t('adminPremium.searchPlaceholder')}
+            aria-label={t('adminPremium.searchPlaceholder')}
+          />
+        </div>
+        <label className="premium-filter-select">
+          <ListFilter size={16} />
+          <select value={filterPlan} onChange={(event) => setFilterPlan(event.target.value)} aria-label={t('adminPremium.filterLabel')}>
+            {PREMIUM_FILTER_OPTIONS.map((value) => (
+              <option key={value} value={value}>{t(`adminPremium.filters.${value}`)}</option>
+            ))}
+          </select>
+        </label>
       </div>
+
+      {data && (
+        <div className="bulk-premium-panel">
+          <h3 className="admin-section-heading">{t('adminPremium.bulk.title')}</h3>
+          <p className="inline-note">{t('adminPremium.bulk.intro')}</p>
+          <div className="bulk-action-bar">
+            <span className="bulk-selected-count">{t('adminPremium.bulk.selectedCount', { count: selectedVisible.length })}</span>
+            <label className="premium-filter-select">
+              <Crown size={16} />
+              <select value={bulkChoice} onChange={(event) => setBulkChoice(event.target.value)} aria-label={t('adminPremium.bulk.actionLabel')}>
+                <option value="">{t('adminPremium.bulk.choosePlaceholder')}</option>
+                {BULK_ACTION_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{t(`adminPremium.bulk.options.${option.value}`)}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="primary-button"
+              type="button"
+              disabled={!bulkChoice || !selectedVisible.length || bulkState.status === 'loading'}
+              onClick={openBulkConfirm}
+            >
+              <BadgeCheck size={16} /> {t('adminPremium.bulk.apply')}
+            </button>
+            {!!selectedVisible.length && (
+              <button className="ghost-button" type="button" onClick={clearSelection}>
+                {t('adminPremium.bulk.clear')}
+              </button>
+            )}
+          </div>
+          {bulkState.status === 'success' && <p className="lookup-message success">{bulkState.message}</p>}
+          {bulkState.status === 'error' && <p className="lookup-message error">{bulkState.message}</p>}
+        </div>
+      )}
 
       {loadState.status === 'loading' && !data && <p className="lookup-message">{t('adminPremium.loading')}</p>}
       {loadState.status === 'error' && (
@@ -7590,6 +7734,15 @@ function AdminPremiumPage() {
           <table className="analytics-table">
             <thead>
               <tr>
+                <th className="bulk-check-col">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleAllVisible}
+                    aria-label={t('adminPremium.bulk.selectAll')}
+                    title={t('adminPremium.bulk.selectAll')}
+                  />
+                </th>
                 <th>{t('adminPremium.columns.user')}</th>
                 <th>{t('adminPremium.columns.email')}</th>
                 <th>{t('adminPremium.columns.registered')}</th>
@@ -7601,7 +7754,15 @@ function AdminPremiumPage() {
             </thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.id}>
+                <tr key={u.id} className={selectedIds.has(u.id) ? 'row-selected' : undefined}>
+                  <td className="bulk-check-col">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(u.id)}
+                      onChange={() => toggleOne(u.id)}
+                      aria-label={t('adminPremium.bulk.selectUser', { name: u.name || u.email })}
+                    />
+                  </td>
                   <td>
                     <strong>{u.name || t('adminPremium.unnamed')}</strong>
                     {u.username && <div className="table-subtext">@{u.username}</div>}
@@ -7646,13 +7807,34 @@ function AdminPremiumPage() {
               </thead>
               <tbody>
                 {audit.map((entry) => (
-                  <tr key={entry.id}>
-                    <td>{entry.date} {entry.time}</td>
-                    <td>{entry.administrator}</td>
-                    <td>{entry.userEmail}</td>
-                    <td>{planLabel(t, entry.previousPlan)} → {planLabel(t, entry.newPlan)}</td>
-                    <td>{entry.reason ? t(`adminPremium.reasons.${entry.reason}`) : '—'}</td>
-                  </tr>
+                  entry.kind === 'bulk' ? (
+                    <tr key={entry.id} className="audit-bulk-row">
+                      <td>{entry.date} {entry.time}</td>
+                      <td>{entry.administrator}</td>
+                      <td>
+                        <span className="status-badge">{t('adminPremium.audit.bulkTag')}</span>{' '}
+                        {t('adminPremium.bulk.auditUsers', {
+                          success: entry.successCount ?? 0,
+                          total: entry.userCount ?? 0,
+                          failed: entry.failedCount ?? 0,
+                        })}
+                      </td>
+                      <td>
+                        {entry.action === 'bulk_revoke'
+                          ? t('adminPremium.bulk.auditRevoke')
+                          : t('adminPremium.bulk.auditGrant', { duration: t(`adminPremium.durations.${entry.duration}`) })}
+                      </td>
+                      <td>{entry.reason ? t(`adminPremium.reasons.${entry.reason}`) : '—'}</td>
+                    </tr>
+                  ) : (
+                    <tr key={entry.id}>
+                      <td>{entry.date} {entry.time}</td>
+                      <td>{entry.administrator}</td>
+                      <td>{entry.userEmail}</td>
+                      <td>{planLabel(t, entry.previousPlan)} → {planLabel(t, entry.newPlan)}</td>
+                      <td>{entry.reason ? t(`adminPremium.reasons.${entry.reason}`) : '—'}</td>
+                    </tr>
+                  )
                 ))}
               </tbody>
             </table>
@@ -7671,6 +7853,47 @@ function AdminPremiumPage() {
             if (showAudit) loadAudit(token);
           }}
         />
+      )}
+
+      {bulkConfirm && (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          onClick={(event) => { if (event.target === event.currentTarget && bulkState.status !== 'loading') setBulkConfirm(null); }}
+        >
+          <div className="modal-panel bulk-confirm-modal">
+            <SectionTitle
+              icon={bulkConfirm.kind === 'remove' ? Trash2 : Crown}
+              eyebrow={t('adminPremium.bulk.title')}
+              title={bulkConfirm.kind === 'remove' ? t('adminPremium.bulk.confirmRemoveTitle') : t('adminPremium.bulk.confirmGrantTitle')}
+            />
+            <p className="bulk-confirm-text">
+              {bulkConfirm.kind === 'remove'
+                ? t('adminPremium.bulk.confirmRemove', { count: bulkConfirm.count })
+                : t('adminPremium.bulk.confirmGrant', { count: bulkConfirm.count, duration: t(`adminPremium.bulk.options.${bulkChoice}`) })}
+            </p>
+            {bulkState.status === 'error' && <p className="lookup-message error">{bulkState.message}</p>}
+            <div className="premium-grant-actions">
+              <button
+                className={bulkConfirm.kind === 'remove' ? 'primary-button danger' : 'primary-button'}
+                type="button"
+                disabled={bulkState.status === 'loading'}
+                onClick={runBulk}
+              >
+                {bulkState.status === 'loading' ? t('adminPremium.bulk.working') : t('adminPremium.bulk.confirmYes')}
+              </button>
+              <button
+                className="ghost-button"
+                type="button"
+                disabled={bulkState.status === 'loading'}
+                onClick={() => setBulkConfirm(null)}
+              >
+                {t('common.cancel')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );

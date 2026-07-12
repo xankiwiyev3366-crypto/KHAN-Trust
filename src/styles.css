@@ -7329,6 +7329,108 @@ main {
   border-color: var(--danger);
 }
 
+/* ── Bulk Premium Management ─────────────────────────────────────────────────── */
+.premium-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 14px;
+}
+.premium-filter-row .premium-search-bar {
+  flex: 1 1 260px;
+  margin: 0;
+}
+.premium-filter-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+}
+.premium-filter-select select {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+.premium-filter-select select option {
+  background: var(--panel);
+  color: var(--text);
+}
+.bulk-premium-panel {
+  margin: 8px 0 18px;
+  padding: 16px 18px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.bulk-premium-panel .admin-section-heading {
+  margin: 0 0 4px;
+}
+.bulk-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+.bulk-selected-count {
+  font-weight: 600;
+  color: var(--gold);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.bulk-check-col {
+  width: 40px;
+  text-align: center;
+}
+.bulk-check-col input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--gold);
+}
+.analytics-table tr.row-selected {
+  background: rgba(212, 175, 55, 0.08);
+}
+.lookup-message.success {
+  color: var(--success);
+}
+.bulk-confirm-modal {
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.bulk-confirm-text {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--text);
+}
+.primary-button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.audit-bulk-row {
+  background: rgba(212, 175, 55, 0.05);
+}
+@media (max-width: 640px) {
+  .bulk-action-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .premium-filter-row .premium-search-bar {
+    flex-basis: 100%;
+  }
+}
+
 /* ── Premium AI research cards + account badges ─────────────────────────────── */
 .premium-ai-card h4 {
   margin: 16px 0 8px;

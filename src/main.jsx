@@ -33,6 +33,7 @@ import {
   BarChart3,
   Bell,
   BookOpen,
+  CalendarClock,
   CalendarDays,
   Camera,
   CheckCircle2,
@@ -131,7 +132,8 @@ import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaP
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
 import { fetchEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
 import { buildAdvancedResearch, buildPremiumAnalysis, buildLocalizedRiskSummary, friendlyMissingFields } from './premiumResearch.js';
-import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction, submitBulkPremiumAction } from './premiumAdmin.js';
+import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction, submitBulkPremiumAction, fetchUserActivity, fetchUserActivityDetail } from './premiumAdmin.js';
+import { recordWalletLink } from './walletLink.js';
 import { fetchUserData, saveReport, removeSavedReport, toggleServerWatch } from './userData.js';
 import {
   TICKET_CATEGORIES,
@@ -4532,6 +4534,13 @@ function useWalletEntitlement() {
     refresh();
   }, [refresh]);
 
+  // Best-effort: once a signed-in account has a wallet connected, tell the
+  // server so the admin panel can show "Wallet Connected". Fully isolated
+  // telemetry (see src/walletLink.js) - never gates or changes entitlements.
+  useEffect(() => {
+    if (user?.id && connected && address) recordWalletLink(address);
+  }, [user?.id, connected, address]);
+
   const entitlement = mergeEntitlements(walletEnt, manualEnt);
 
   return {
@@ -7461,6 +7470,145 @@ function PremiumGrantModal({ user, token, onClose, onDone }) {
   );
 }
 
+// Read-only "User Details" modal: the full activity history for one account,
+// loaded on demand from premium-admin-user-detail. Analysis only - it shows
+// what the account actually did; it never classifies or bans anyone.
+function UserDetailsModal({ user, token, onClose, onManage }) {
+  const { t } = useTranslation();
+  const [state, setState] = useState({ status: 'loading', message: '' });
+  const [detail, setDetail] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setState({ status: 'loading', message: '' });
+      try {
+        const result = await fetchUserActivityDetail(token, user.id);
+        if (!cancelled) { setDetail(result); setState({ status: 'idle', message: '' }); }
+      } catch (error) {
+        if (!cancelled) setState({ status: 'error', message: error.message || t('adminPremium.details.loadFailed') });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [token, user.id]);
+
+  const m = detail?.metrics || {};
+  const history = detail?.history || {};
+  const wallet = detail?.wallet || {};
+
+  const summaryRows = [
+    [t('adminPremium.columns.registered'), fmtDateTime(detail?.user?.createdAt) || '—'],
+    [t('adminPremium.columns.lastLogin'), fmtDateTime(m.lastLogin) || t('adminPremium.never')],
+    [t('adminPremium.columns.lastActivity'), fmtDateTime(m.lastActivity) || t('adminPremium.never')],
+    [t('adminPremium.columns.logins'), m.loginCount ?? 0],
+    [t('adminPremium.columns.scans'), m.scanCount ?? 0],
+    [t('adminPremium.columns.compares'), m.compareCount ?? 0],
+    [t('adminPremium.columns.watchlist'), m.watchlistCount ?? 0],
+    [t('adminPremium.columns.projectsViewed'), m.projectsViewed ?? 0],
+    [t('adminPremium.columns.accountAge'), formatAccountAge(m.accountAgeDays)],
+  ];
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="modal-panel user-details-modal">
+        <button className="modal-close-btn" type="button" onClick={onClose} aria-label={t('common.close')}><X size={18} /></button>
+        <SectionTitle icon={Activity} eyebrow={t('adminPremium.eyebrow')} title={t('adminPremium.details.title', { name: user.name || user.email })} />
+        <p className="inline-note">{user.email}</p>
+        <p className="inline-note details-disclaimer">{t('adminPremium.details.disclaimer')}</p>
+
+        {state.status === 'loading' && <p className="lookup-message">{t('adminPremium.details.loading')}</p>}
+        {state.status === 'error' && <p className="lookup-message error">{state.message}</p>}
+
+        {detail && (
+          <>
+            <div className="details-topline">
+              <ActivityBadge score={m.activityScore} level={m.activityLevel} t={t} />
+              <YesNo value={detail.user.emailVerified} t={t} />
+              <span className="status-badge">{planLabel(t, detail.premium?.plan)}</span>
+              <span className={wallet.connected ? 'yesno yes' : 'yesno no'}>
+                <WalletCards size={13} /> {wallet.connected ? t('common.yes') : t('common.no')}
+              </span>
+            </div>
+
+            <div className="details-grid">
+              {summaryRows.map(([label, value]) => (
+                <div className="details-cell" key={label}>
+                  <span className="details-label">{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+
+            {wallet.connected && (
+              <p className="inline-note">
+                {t('adminPremium.details.walletAddress')}: <code>{wallet.address}</code>
+                {wallet.firstLinkedAt && <> — {t('adminPremium.details.firstSeen', { date: fmtDateTime(wallet.firstLinkedAt) })}</>}
+              </p>
+            )}
+
+            <DetailHistorySection title={t('adminPremium.details.loginHistory')} count={history.logins?.length}>
+              {history.logins?.map((e, i) => (
+                <li key={i}>{fmtDateTime(e.timestamp)}</li>
+              ))}
+            </DetailHistorySection>
+
+            <DetailHistorySection title={t('adminPremium.details.scanHistory')} count={history.scans?.length}>
+              {history.scans?.map((e, i) => (
+                <li key={i}>
+                  <span>{fmtDateTime(e.timestamp)}</span>
+                  <span className="details-hist-name">{e.projectName || e.ticker || e.contract || '—'}</span>
+                  {e.trustScore !== null && <span className="details-hist-score">{e.trustScore}</span>}
+                </li>
+              ))}
+            </DetailHistorySection>
+
+            <DetailHistorySection title={t('adminPremium.details.compareHistory')} count={history.compares?.length}>
+              {history.compares?.map((e, i) => (
+                <li key={i}><span>{fmtDateTime(e.timestamp)}</span><span className="details-hist-name">{e.projectName || '—'}</span></li>
+              ))}
+            </DetailHistorySection>
+
+            <DetailHistorySection title={t('adminPremium.details.watchlistActivity')} count={history.watchlist?.length}>
+              {history.watchlist?.map((w, i) => (
+                <li key={i}>{typeof w === 'string' ? w : (w.name || w.ticker || w.contract || w.id || '—')}</li>
+              ))}
+            </DetailHistorySection>
+
+            <DetailHistorySection title={t('adminPremium.details.premiumHistory')} count={history.premium?.length}>
+              {history.premium?.map((entry) => (
+                <li key={entry.id}>
+                  <span>{entry.date} {entry.time}</span>
+                  <span className="details-hist-name">{planLabel(t, entry.previousPlan)} → {planLabel(t, entry.newPlan)}</span>
+                  <span className="details-hist-score">{entry.administrator}</span>
+                </li>
+              ))}
+            </DetailHistorySection>
+
+            <div className="premium-grant-actions">
+              <button className="secondary-button" type="button" onClick={onManage}>
+                <Crown size={16} /> {t('adminPremium.manage')}
+              </button>
+              <button className="ghost-button" type="button" onClick={onClose}>{t('common.close')}</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// One collapsible-free history list with a count and an empty state.
+function DetailHistorySection({ title, count, children }) {
+  const { t } = useTranslation();
+  const items = React.Children.toArray(children).filter(Boolean);
+  return (
+    <div className="details-history">
+      <h4>{title} <span className="details-count">{count ?? items.length}</span></h4>
+      {items.length ? <ul className="details-hist-list">{items}</ul> : <p className="muted-cell">{t('adminPremium.details.noneYet')}</p>}
+    </div>
+  );
+}
+
 // Bulk-action dropdown values -> how the backend should interpret them. Grants
 // map onto the fixed billing windows _premiumStore.computeExpiry understands;
 // 'remove' is a bulk revoke.
@@ -7472,17 +7620,86 @@ const BULK_ACTION_OPTIONS = [
   { value: 'remove', kind: 'remove', duration: null },
 ];
 
-const PREMIUM_FILTER_OPTIONS = ['all', 'free', 'premium', 'early_supporter', 'verified'];
+const PREMIUM_FILTER_OPTIONS = [
+  'all', 'verified', 'unverified', 'active_today', 'active_week',
+  'never_logged_in', 'never_scanned', 'wallet', 'no_wallet', 'premium', 'free',
+];
 
-function matchesPremiumFilter(user, filter) {
+const DAY_MS_UI = 86400000;
+
+function isActiveWithin(lastActivity, days, now) {
+  if (!lastActivity) return false;
+  const ts = Date.parse(lastActivity);
+  return !Number.isNaN(ts) && now - ts <= days * DAY_MS_UI;
+}
+
+function matchesPremiumFilter(user, filter, now, today) {
   switch (filter) {
-    case 'free': return user.plan === 'free';
-    case 'premium': return user.plan === 'premium';
-    case 'early_supporter': return user.plan === 'early_supporter';
     case 'verified': return Boolean(user.emailVerified);
+    case 'unverified': return !user.emailVerified;
+    case 'active_today': return (user.lastActivity || '').slice(0, 10) === today;
+    case 'active_week': return isActiveWithin(user.lastActivity, 7, now);
+    case 'never_logged_in': return (user.loginCount || 0) === 0;
+    case 'never_scanned': return (user.scanCount || 0) === 0;
+    case 'wallet': return Boolean(user.walletConnected);
+    case 'no_wallet': return !user.walletConnected;
+    case 'premium': return user.status === 'active';
+    case 'free': return user.status !== 'active';
     case 'all':
     default: return true;
   }
+}
+
+// Requirement 5: activity-based pre-filters that narrow which users are
+// *eligible* for a bulk Premium grant, so Premium can be limited to accounts
+// that actually used the platform. Each returns true when the user passes.
+const BULK_PREFILTERS = [
+  { key: 'verified_only', test: (u) => Boolean(u.emailVerified) },
+  { key: 'active_only', test: (u, now) => isActiveWithin(u.lastActivity, 7, now) },
+  { key: 'min_1_scan', test: (u) => (u.scanCount || 0) >= 1 },
+  { key: 'min_3_scans', test: (u) => (u.scanCount || 0) >= 3 },
+  { key: 'logged_in_30d', test: (u, now) => isActiveWithin(u.lastLogin, 30, now) },
+  { key: 'wallet_connected', test: (u) => Boolean(u.walletConnected) },
+  { key: 'exclude_never_logged_in', test: (u) => (u.loginCount || 0) > 0 },
+];
+
+// Small display helpers for the activity columns.
+function activityLevelKey(level) {
+  return level === 'high' ? 'high' : level === 'medium' ? 'medium' : 'low';
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return null;
+  const ts = Date.parse(iso);
+  if (Number.isNaN(ts)) return null;
+  return new Date(ts).toLocaleString();
+}
+
+function formatAccountAge(days) {
+  if (days === null || days === undefined) return '—';
+  if (days < 1) return '<1d';
+  if (days < 30) return `${days}d`;
+  if (days < 365) return `${Math.floor(days / 30)}mo`;
+  return `${Math.floor(days / 365)}y`;
+}
+
+function YesNo({ value, t }) {
+  return (
+    <span className={value ? 'yesno yes' : 'yesno no'}>
+      {value ? t('common.yes') : t('common.no')}
+    </span>
+  );
+}
+
+// Activity indicator badge (Low / Medium / High) - an engagement signal only,
+// never a moderation or bot label (see _userActivity.computeActivityScore).
+function ActivityBadge({ score, level, t }) {
+  const key = activityLevelKey(level);
+  return (
+    <span className={`activity-badge activity-${key}`} title={`${score ?? 0}/100`}>
+      <Activity size={13} /> {t(`adminPremium.activity.${key}`)} <em>{score ?? 0}</em>
+    </span>
+  );
 }
 
 function AdminPremiumPage() {
@@ -7502,11 +7719,23 @@ function AdminPremiumPage() {
   const [bulkChoice, setBulkChoice] = useState('');
   const [bulkConfirm, setBulkConfirm] = useState(null); // { kind, duration, count }
   const [bulkState, setBulkState] = useState({ status: 'idle', message: '' });
+  const [bulkPrefilters, setBulkPrefilters] = useState(() => new Set());
+  // ── User Details modal ──
+  const [detailUser, setDetailUser] = useState(null);
 
   const load = async (activeToken) => {
     setLoadState({ status: 'loading', message: t('adminPremium.loading') });
     try {
-      const result = await fetchPremiumUsers(activeToken);
+      // Enriched endpoint: registered users + real activity metrics + dashboard
+      // aggregates. Falls back to the lighter premium-admin-list if the newer
+      // function is unavailable, so the page keeps working either way.
+      let result;
+      try {
+        result = await fetchUserActivity(activeToken);
+      } catch (activityError) {
+        if (activityError.status === 401) throw activityError;
+        result = await fetchPremiumUsers(activeToken);
+      }
       setData(result);
       setLoadState({ status: 'idle', message: '' });
     } catch (error) {
@@ -7566,19 +7795,44 @@ function AdminPremiumPage() {
     );
   }
 
+  const now = Date.now();
+  const today = new Date(now).toISOString().slice(0, 10);
+  const dashboard = data?.dashboard || null;
+
   const term = search.trim().toLowerCase();
   const users = (data?.users || []).filter((u) => {
-    if (!matchesPremiumFilter(u, filterPlan)) return false;
+    if (!matchesPremiumFilter(u, filterPlan, now, today)) return false;
     if (!term) return true;
     return [u.name, u.username, u.email].filter(Boolean).some((field) => field.toLowerCase().includes(term));
   });
 
+  // Bulk pre-filters (requirement 5): a user is *eligible* for a bulk action
+  // only if they pass every active pre-filter. When none are active, every
+  // visible user is eligible. This lets Premium be granted only to accounts
+  // that really used the platform.
+  const activePrefilters = BULK_PREFILTERS.filter((f) => bulkPrefilters.has(f.key));
+  const isEligible = (u) => activePrefilters.every((f) => f.test(u, now));
+
+  const toggleBulkPrefilter = (key) => {
+    setBulkPrefilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+    // Dropping a constraint could leave ineligible rows selected; prune them.
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      return next;
+    });
+  };
+
   // Selection is tracked by user id; derive counts against the *currently
-  // visible* rows so "Select all" and the selected count stay meaningful when
-  // a search/filter is applied.
-  const visibleIds = users.map((u) => u.id);
-  const selectedVisible = visibleIds.filter((id) => selectedIds.has(id));
-  const allVisibleSelected = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+  // visible AND eligible* rows so "Select all" and the selected count stay
+  // meaningful when a search / filter / pre-filter is applied.
+  const eligibleUsers = users.filter(isEligible);
+  const eligibleIds = eligibleUsers.map((u) => u.id);
+  const selectedVisible = eligibleIds.filter((id) => selectedIds.has(id));
+  const allVisibleSelected = eligibleIds.length > 0 && selectedVisible.length === eligibleIds.length;
 
   const toggleOne = (id) => {
     setSelectedIds((prev) => {
@@ -7592,9 +7846,9 @@ function AdminPremiumPage() {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (allVisibleSelected) {
-        visibleIds.forEach((id) => next.delete(id));
+        eligibleIds.forEach((id) => next.delete(id));
       } else {
-        visibleIds.forEach((id) => next.add(id));
+        eligibleIds.forEach((id) => next.add(id));
       }
       return next;
     });
@@ -7611,7 +7865,8 @@ function AdminPremiumPage() {
 
   const runBulk = async () => {
     if (!bulkConfirm) return;
-    const targetIds = visibleIds.filter((id) => selectedIds.has(id));
+    // Only ever act on users that are both selected AND currently eligible.
+    const targetIds = eligibleIds.filter((id) => selectedIds.has(id));
     setBulkState({ status: 'loading', message: '' });
     try {
       const result = await submitBulkPremiumAction(token, {
@@ -7661,6 +7916,13 @@ function AdminPremiumPage() {
         <div className="analytics-stat-grid">
           <StatCard icon={Users} label={t('adminPremium.statRegistered')} numericValue={data.totalRegistered} />
           <StatCard icon={Crown} label={t('adminPremium.statActivePremium')} numericValue={data.premiumCount} />
+          {dashboard && <StatCard icon={BadgeCheck} label={t('adminPremium.dashboard.verified')} numericValue={dashboard.verified} />}
+          {dashboard && <StatCard icon={Activity} label={t('adminPremium.dashboard.activeToday')} numericValue={dashboard.activeToday} />}
+          {dashboard && <StatCard icon={CalendarClock} label={t('adminPremium.dashboard.activeThisWeek')} numericValue={dashboard.activeThisWeek} />}
+          {dashboard && <StatCard icon={Search} label={t('adminPremium.dashboard.withScans')} numericValue={dashboard.withScans} />}
+          {dashboard && <StatCard icon={X} label={t('adminPremium.dashboard.zeroScans')} numericValue={dashboard.zeroScans} />}
+          {dashboard && <StatCard icon={Lock} label={t('adminPremium.dashboard.neverLoggedIn')} numericValue={dashboard.neverLoggedIn} />}
+          {dashboard && <StatCard icon={WalletCards} label={t('adminPremium.dashboard.walletConnected')} numericValue={dashboard.walletConnected} />}
         </div>
       )}
 
@@ -7689,6 +7951,25 @@ function AdminPremiumPage() {
         <div className="bulk-premium-panel">
           <h3 className="admin-section-heading">{t('adminPremium.bulk.title')}</h3>
           <p className="inline-note">{t('adminPremium.bulk.intro')}</p>
+
+          <div className="bulk-prefilter-row" role="group" aria-label={t('adminPremium.bulk.prefilterLabel')}>
+            <span className="bulk-prefilter-label">{t('adminPremium.bulk.prefilterLabel')}</span>
+            {BULK_PREFILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                className={bulkPrefilters.has(f.key) ? 'filter-chip active' : 'filter-chip'}
+                aria-pressed={bulkPrefilters.has(f.key)}
+                onClick={() => toggleBulkPrefilter(f.key)}
+              >
+                {t(`adminPremium.bulk.prefilters.${f.key}`)}
+              </button>
+            ))}
+            {!!activePrefilters.length && (
+              <span className="bulk-eligible-note">{t('adminPremium.bulk.eligibleNote', { count: eligibleIds.length })}</span>
+            )}
+          </div>
+
           <div className="bulk-action-bar">
             <span className="bulk-selected-count">{t('adminPremium.bulk.selectedCount', { count: selectedVisible.length })}</span>
             <label className="premium-filter-select">
@@ -7730,8 +8011,8 @@ function AdminPremiumPage() {
       {data && !users.length && <EmptyState title={t('adminPremium.emptyTitle')} text={t('adminPremium.emptyText')} />}
 
       {data && !!users.length && (
-        <div className="analytics-table-card">
-          <table className="analytics-table">
+        <div className="analytics-table-card scroll-x">
+          <table className="analytics-table activity-table">
             <thead>
               <tr>
                 <th className="bulk-check-col">
@@ -7745,45 +8026,76 @@ function AdminPremiumPage() {
                 </th>
                 <th>{t('adminPremium.columns.user')}</th>
                 <th>{t('adminPremium.columns.email')}</th>
+                <th>{t('adminPremium.columns.verified')}</th>
                 <th>{t('adminPremium.columns.registered')}</th>
+                <th>{t('adminPremium.columns.lastLogin')}</th>
+                <th>{t('adminPremium.columns.lastActivity')}</th>
+                <th className="num-col">{t('adminPremium.columns.logins')}</th>
+                <th className="num-col">{t('adminPremium.columns.scans')}</th>
+                <th className="num-col">{t('adminPremium.columns.compares')}</th>
+                <th className="num-col">{t('adminPremium.columns.watchlist')}</th>
+                <th className="num-col">{t('adminPremium.columns.projectsViewed')}</th>
+                <th>{t('adminPremium.columns.wallet')}</th>
                 <th>{t('adminPremium.columns.plan')}</th>
                 <th>{t('adminPremium.columns.status')}</th>
-                <th>{t('adminPremium.columns.source')}</th>
+                <th>{t('adminPremium.columns.accountAge')}</th>
+                <th>{t('adminPremium.columns.activity')}</th>
                 <th>{t('adminPremium.columns.actions')}</th>
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
-                <tr key={u.id} className={selectedIds.has(u.id) ? 'row-selected' : undefined}>
-                  <td className="bulk-check-col">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(u.id)}
-                      onChange={() => toggleOne(u.id)}
-                      aria-label={t('adminPremium.bulk.selectUser', { name: u.name || u.email })}
-                    />
-                  </td>
-                  <td>
-                    <strong>{u.name || t('adminPremium.unnamed')}</strong>
-                    {u.username && <div className="table-subtext">@{u.username}</div>}
-                  </td>
-                  <td>{u.email}</td>
-                  <td>{u.createdAt ? new Date(u.createdAt).toLocaleDateString() : '—'}</td>
-                  <td><span className="status-badge">{planLabel(t, u.plan)}</span></td>
-                  <td>
-                    <span className={u.status === 'active' ? 'premium-status active' : 'premium-status'}>
-                      {u.status === 'active' ? t('adminPremium.statusActive') : t('adminPremium.statusInactive')}
-                    </span>
-                    {u.expiresAt && <div className="table-subtext">{t('adminPremium.expires', { date: new Date(u.expiresAt).toLocaleDateString() })}</div>}
-                  </td>
-                  <td>{u.source ? t(`adminPremium.sources.${u.source}`) : '—'}</td>
-                  <td>
-                    <button className="secondary-button small-button" type="button" onClick={() => setEditingUser(u)}>
-                      {t('adminPremium.manage')}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {users.map((u) => {
+                const eligible = isEligible(u);
+                const disabledRow = activePrefilters.length > 0 && !eligible;
+                return (
+                  <tr key={u.id} className={`${selectedIds.has(u.id) ? 'row-selected' : ''}${disabledRow ? ' row-ineligible' : ''}`.trim() || undefined}>
+                    <td className="bulk-check-col">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(u.id)}
+                        onChange={() => toggleOne(u.id)}
+                        disabled={disabledRow}
+                        title={disabledRow ? t('adminPremium.bulk.ineligibleHint') : undefined}
+                        aria-label={t('adminPremium.bulk.selectUser', { name: u.name || u.email })}
+                      />
+                    </td>
+                    <td>
+                      <strong>{u.name || t('adminPremium.unnamed')}</strong>
+                      {u.username && <div className="table-subtext">@{u.username}</div>}
+                    </td>
+                    <td>{u.email}</td>
+                    <td><YesNo value={u.emailVerified} t={t} /></td>
+                    <td>{fmtDateTime(u.createdAt) || '—'}</td>
+                    <td>{u.lastLogin ? fmtDateTime(u.lastLogin) : <span className="muted-cell">{t('adminPremium.never')}</span>}</td>
+                    <td>{u.lastActivity ? fmtDateTime(u.lastActivity) : <span className="muted-cell">{t('adminPremium.never')}</span>}</td>
+                    <td className="num-col">{u.loginCount ?? 0}</td>
+                    <td className="num-col">{u.scanCount ?? 0}</td>
+                    <td className="num-col">{u.compareCount ?? 0}</td>
+                    <td className="num-col">{u.watchlistCount ?? 0}</td>
+                    <td className="num-col">{u.projectsViewed ?? 0}</td>
+                    <td><YesNo value={u.walletConnected} t={t} /></td>
+                    <td><span className="status-badge">{planLabel(t, u.plan)}</span></td>
+                    <td>
+                      <span className={u.status === 'active' ? 'premium-status active' : 'premium-status'}>
+                        {u.status === 'active' ? t('adminPremium.statusActive') : t('adminPremium.statusInactive')}
+                      </span>
+                      {u.expiresAt && <div className="table-subtext">{t('adminPremium.expires', { date: new Date(u.expiresAt).toLocaleDateString() })}</div>}
+                    </td>
+                    <td>{formatAccountAge(u.accountAgeDays)}</td>
+                    <td><ActivityBadge score={u.activityScore} level={u.activityLevel} t={t} /></td>
+                    <td>
+                      <div className="row-actions">
+                        <button className="secondary-button small-button" type="button" onClick={() => setDetailUser(u)}>
+                          <Eye size={14} /> {t('adminPremium.detailsButton')}
+                        </button>
+                        <button className="secondary-button small-button" type="button" onClick={() => setEditingUser(u)}>
+                          {t('adminPremium.manage')}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -7852,6 +8164,15 @@ function AdminPremiumPage() {
             load(token);
             if (showAudit) loadAudit(token);
           }}
+        />
+      )}
+
+      {detailUser && (
+        <UserDetailsModal
+          user={detailUser}
+          token={token}
+          onClose={() => setDetailUser(null)}
+          onManage={() => { setEditingUser(detailUser); setDetailUser(null); }}
         />
       )}
 

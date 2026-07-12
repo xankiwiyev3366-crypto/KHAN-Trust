@@ -24,6 +24,17 @@ export async function fetchPremiumUsers(token) {
   return callAdmin('premium-admin-list', token);
 }
 
+// Admin: registered users enriched with real activity metrics + dashboard
+// aggregates (see premium-admin-activity.mjs). Superset of fetchPremiumUsers.
+export async function fetchUserActivity(token) {
+  return callAdmin('premium-admin-activity', token);
+}
+
+// Admin: full activity history for one user (User Details modal).
+export async function fetchUserActivityDetail(token, userId) {
+  return callAdmin(`premium-admin-user-detail?userId=${encodeURIComponent(userId)}`, token);
+}
+
 export async function fetchPremiumAudit(token) {
   const data = await callAdmin('premium-admin-audit', token);
   return data.entries || [];

@@ -7421,6 +7421,201 @@ main {
 .audit-bulk-row {
   background: rgba(212, 175, 55, 0.05);
 }
+
+/* ── User activity intelligence: pre-filters, table, badges, details ─────────── */
+.bulk-prefilter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft, var(--border));
+}
+.bulk-prefilter-label {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.filter-chip {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.filter-chip:hover {
+  color: var(--text);
+  border-color: var(--gold);
+}
+.filter-chip.active {
+  background: rgba(212, 175, 55, 0.15);
+  border-color: var(--gold);
+  color: var(--gold);
+  font-weight: 600;
+}
+.bulk-eligible-note {
+  font-size: 13px;
+  color: var(--gold);
+  font-weight: 600;
+  margin-left: 4px;
+}
+.analytics-table-card.scroll-x {
+  overflow-x: auto;
+}
+.activity-table {
+  min-width: 1400px;
+  white-space: nowrap;
+}
+.activity-table .num-col {
+  text-align: center;
+}
+.activity-table tr.row-ineligible {
+  opacity: 0.45;
+}
+.row-actions {
+  display: flex;
+  gap: 6px;
+}
+.muted-cell {
+  color: var(--muted);
+  font-size: 12px;
+}
+.yesno {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.yesno.yes {
+  color: var(--success);
+  background: rgba(52, 199, 89, 0.12);
+}
+.yesno.no {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+}
+.activity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.activity-badge em {
+  font-style: normal;
+  opacity: 0.7;
+  font-size: 11px;
+}
+.activity-badge.activity-low {
+  color: #ff9f43;
+  background: rgba(255, 159, 67, 0.12);
+}
+.activity-badge.activity-medium {
+  color: var(--gold);
+  background: rgba(212, 175, 55, 0.14);
+}
+.activity-badge.activity-high {
+  color: var(--success);
+  background: rgba(52, 199, 89, 0.14);
+}
+
+/* User Details modal */
+.user-details-modal {
+  max-width: 640px;
+  width: 100%;
+  max-height: 86vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.details-disclaimer {
+  font-size: 12px;
+  font-style: italic;
+}
+.details-topline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.details-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.details-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.details-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.details-cell strong {
+  font-size: 14px;
+}
+.details-history h4 {
+  margin: 14px 0 6px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.details-count {
+  font-size: 12px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.details-hist-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.details-hist-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-soft, rgba(255,255,255,0.05));
+}
+.details-hist-list li:last-child {
+  border-bottom: none;
+}
+.details-hist-name {
+  flex: 1;
+  text-align: center;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.details-hist-score {
+  color: var(--gold);
+  font-weight: 600;
+}
 @media (max-width: 640px) {
   .bulk-action-bar {
     flex-direction: column;

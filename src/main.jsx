@@ -89,7 +89,7 @@ import {
 } from 'lucide-react';
 import './styles.css';
 import { WHITEPAPER } from './whitepaperConfig.js';
-import { runRiskAnalysis, classifyAsset, applyAssetTypeRiskModifier } from './scoringEngine.js';
+import { runRiskAnalysis, classifyAsset, applyAssetTypeRiskModifier, rankSignalsBySeverity } from './scoringEngine.js';
 import { historyKeyFor, fetchScoreHistory, computeScoreDelta, useScoreHistory } from './scoreHistory.js';
 import { useCorpusRecord } from './tokenCorpus.js';
 import { ANALYST_QUESTIONS, answerQuestion, translateSignalKeys, translatedCategory } from './khanAnalyst.js';
@@ -741,6 +741,13 @@ function normalizeProject(input) {
     categoryBreakdown: buildCategoryBreakdown(breakdown),
     scamRisk: calculateScamRisk(authoritativeProject, rawRealData || {}),
     riskFlags: deriveRiskFlags(authoritativeProject, authoritativeHolders, authoritativeCommunitySize),
+    // Evidence provenance (Phase 2): surface WHERE the scan data came from and
+    // WHEN it was fetched, so results carry source attribution + a timestamp
+    // instead of an unsourced number. Both are already captured on rawRealData;
+    // this just lifts them onto the normalized project for the UI. Null for
+    // manually-entered (non-live) profiles, which the card handles.
+    dataSources: Array.isArray(rawRealData?.source) ? rawRealData.source : (rawRealData?.source ? [rawRealData.source] : null),
+    dataFetchedAt: rawRealData?.fetchedAt || null,
     ...deepAnalysis,
   };
 }
@@ -6430,8 +6437,23 @@ function DeepRiskAnalysisCard({ project }) {
   // follows the selected language instead of the English values baked in at
   // scoring time.
   const positiveSignals = translateSignalKeys(project.positiveSignalKeys, project.positiveSignals || []);
-  const hiddenRiskSignals = translateSignalKeys(project.hiddenRiskSignalKeys, project.hiddenRiskSignals || []);
   const confidenceLabel = t(`common.${String(project.confidenceLabel || 'medium').toLowerCase()}`);
+
+  // Pair each hidden-risk signal with its severity, most-serious first, so a
+  // rug-pull pattern is visibly ranked above a cosmetic concern. When stable
+  // signal keys are present we rank + label by key; otherwise (older/manual
+  // data with only English strings) we fall back to the flat translated list
+  // at a neutral 'medium' severity so nothing is dropped.
+  const rankedRisks = project.hiddenRiskSignalKeys?.length
+    ? rankSignalsBySeverity(project.hiddenRiskSignalKeys).map(({ key, severity }) => ({
+        severity,
+        label: t(`askKhan.answers.signals.${key}`),
+      }))
+    : translateSignalKeys([], project.hiddenRiskSignals || []).map((label) => ({ severity: 'medium', label }));
+
+  const dataSources = project.dataSources?.length ? [...new Set(project.dataSources)] : [];
+  const fetched = project.dataFetchedAt ? formatDateTime(project.dataFetchedAt) : null;
+
   return (
     <section className="detail-section">
       <SectionTitle icon={Layers3} eyebrow={t('profileSections.deepAnalysisEyebrow')} title={t('profileSections.deepAnalysisTitle')} />
@@ -6450,18 +6472,29 @@ function DeepRiskAnalysisCard({ project }) {
           </ul>
         </>
       )}
-      {hiddenRiskSignals.length > 0 && (
+      {rankedRisks.length > 0 && (
         <>
           <h4>{t('profileSections.hiddenRiskSignalsTitle')}</h4>
           <ul className="scam-risk-reasons">
-            {hiddenRiskSignals.map((signal) => (
-              <li key={signal}><AlertTriangle size={14} /> {signal}</li>
+            {rankedRisks.map(({ label, severity }) => (
+              <li key={label}>
+                <AlertTriangle size={14} />
+                <span className={`severity-chip severity-${severity}`}>{t(`profileSections.severity.${severity}`)}</span>
+                {label}
+              </li>
             ))}
           </ul>
         </>
       )}
       {project.missingDataFields?.length > 0 && (
-        <p className="inline-note">{t('profileSections.missingDataNote')}: {friendlyMissingFields(project.missingDataFields).join(', ')}</p>
+        <p className="inline-note">{t('profileSections.limitationsNote')}: {friendlyMissingFields(project.missingDataFields).join(', ')}</p>
+      )}
+      {(fetched || dataSources.length > 0) && (
+        <p className="inline-note evidence-provenance">
+          {fetched && <span>{t('profileSections.dataAsOf', { date: fetched.date, time: fetched.time })}</span>}
+          {fetched && dataSources.length > 0 && ' · '}
+          {dataSources.length > 0 && <span>{t('profileSections.sourcesLabel')}: {dataSources.join(', ')}</span>}
+        </p>
       )}
     </section>
   );

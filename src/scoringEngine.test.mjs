@@ -17,6 +17,8 @@ import {
   detectHiddenRisks,
   detectPositiveSignals,
   runRiskAnalysis,
+  severityForSignalKey,
+  rankSignalsBySeverity,
 } from './scoringEngine.js';
 
 test('classifyAsset: recognizes core categories from name/ticker', () => {
@@ -110,6 +112,21 @@ test('detectHiddenRisks / detectPositiveSignals: evidence-driven, not arbitrary'
   const positives = detectPositiveSignals({}, { topHolderPercent: 5, mintAuthorityEnabled: false, freezeAuthorityEnabled: false }, {});
   assert.ok(positives.some((p) => /well distributed/i.test(p)));
   assert.ok(positives.some((p) => /mint and freeze/i.test(p)));
+});
+
+test('severity taxonomy: manipulation patterns rank high, unknown keys default to medium', () => {
+  assert.equal(severityForSignalKey('volumeLiquidityMismatch'), 'high');
+  assert.equal(severityForSignalKey('extremeVolatility'), 'high');
+  assert.equal(severityForSignalKey('shallowLiquidity'), 'medium');
+  assert.equal(severityForSignalKey('noPublicPresence'), 'medium');
+  assert.equal(severityForSignalKey('some_future_signal'), 'medium', 'unknown key is never silently low');
+});
+
+test('rankSignalsBySeverity: orders most-severe first and tags each', () => {
+  const ranked = rankSignalsBySeverity(['shallowLiquidity', 'volumeLiquidityMismatch', 'veryNewProject']);
+  assert.deepEqual(ranked.map((s) => s.key), ['volumeLiquidityMismatch', 'shallowLiquidity', 'veryNewProject']);
+  assert.equal(ranked[0].severity, 'high');
+  assert.equal(ranked.every((s) => ['high', 'medium', 'low'].includes(s.severity)), true);
 });
 
 test('runRiskAnalysis: integrates into a stable shape without touching trustScore', () => {

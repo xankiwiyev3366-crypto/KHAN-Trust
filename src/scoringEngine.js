@@ -278,6 +278,41 @@ function detectHiddenRiskKeys(project = {}, data = {}, scores = {}, manipulation
   return risks;
 }
 
+// Severity taxonomy for hidden-risk signals (Phase 2 evidence surfacing). Lets
+// the UI show HOW serious each detected risk is, instead of a flat list where a
+// cosmetic concern looks as alarming as a rug-pull pattern. Keyed by the stable
+// signal keys emitted by detectHiddenRiskKeys / detectManipulationPatternKeys,
+// so it is language-independent. Unknown keys default to 'medium' (never
+// silently 'low') so a new signal is never under-stated.
+export const SIGNAL_SEVERITY = {
+  // Active manipulation / imminent-loss patterns.
+  volumeLiquidityMismatch: 'high',
+  extremeSwingThinLiquidity: 'high',
+  newTokenPriceSpike: 'high',
+  extremeVolatility: 'high',
+  topTenCentralization: 'high',
+  // Structural weaknesses worth heeding but not acute.
+  shallowLiquidity: 'medium',
+  volumeInconsistent: 'medium',
+  largestHolderModerate: 'medium',
+  veryNewProject: 'medium',
+  noPublicPresence: 'medium',
+  contractSecurityUnknown: 'medium',
+};
+
+export function severityForSignalKey(key) {
+  return SIGNAL_SEVERITY[key] || 'medium';
+}
+
+// Ranks a set of signal keys most-severe first and tags each with its severity,
+// so the UI can both order and label them. Returns [{ key, severity }].
+export function rankSignalsBySeverity(keys = []) {
+  const order = { high: 0, medium: 1, low: 2 };
+  return keys
+    .map((key) => ({ key, severity: severityForSignalKey(key) }))
+    .sort((a, b) => order[a.severity] - order[b.severity]);
+}
+
 export function detectPositiveSignals(project = {}, data = {}, scores = {}) {
   const positives = [];
   if (typeof data.topHolderPercent === 'number' && data.topHolderPercent <= 10) {

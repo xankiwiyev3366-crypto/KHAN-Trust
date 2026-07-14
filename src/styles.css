@@ -1557,6 +1557,44 @@ main {
   border-color: rgba(255, 117, 110, 0.32);
 }
 
+/* Severity chips on hidden-risk signals (Phase 2 evidence surfacing). */
+.severity-chip {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  margin-right: 8px;
+  vertical-align: middle;
+  border: 1px solid transparent;
+}
+
+.severity-chip.severity-high {
+  color: var(--danger);
+  background: rgba(255, 117, 110, 0.13);
+  border-color: rgba(255, 117, 110, 0.32);
+}
+
+.severity-chip.severity-medium {
+  color: var(--warning);
+  background: rgba(247, 190, 82, 0.13);
+  border-color: rgba(247, 190, 82, 0.32);
+}
+
+.severity-chip.severity-low {
+  color: var(--success);
+  background: rgba(103, 211, 156, 0.13);
+  border-color: rgba(103, 211, 156, 0.32);
+}
+
+.evidence-provenance {
+  opacity: 0.72;
+  font-size: 12px;
+  margin-top: 10px;
+}
+
 .filter-row {
   display: flex;
   gap: 8px;

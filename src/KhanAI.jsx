@@ -227,13 +227,19 @@ export function KhanAiScanConsole({ active, progress, error = null }) {
  *
  * Idle breathing only - the hero must stay calm.
  */
-export function KhanAiHeroMark({ children }) {
+export function KhanAiHeroMark({ children, title }) {
   const { t } = useTranslation();
   return (
     <div className="khan-ai-hero-mark">
       <KhanAiEntity state="idle" size="lg" />
       <div className="khan-ai-hero-copy">
         {children}
+        {/* Living metal. The sweep is painted by a duplicate of the title
+            clipped to the glyphs (data-text), so the highlight follows the
+            letterforms like light across polished titanium rather than sliding
+            a bar over a box. `title` must be plain text for that duplicate to
+            match. */}
+        {title && <h1 className="khan-living-metal" data-text={title}>{title}</h1>}
         <p className="khan-ai-hero-status">
           <span className="khan-ai-online-dot" aria-hidden="true" />
           <span className="khan-ai-hero-name">{t('khanAi.name')}</span>
@@ -291,6 +297,24 @@ const NET_EDGES = (() => {
   }
   return edges;
 })();
+
+// Light packets: a handful of edges carry a faint pulse of data. Chosen from
+// the fixed edge list at module load (never re-rolled), long durations and long
+// delays so any given packet crosses roughly once every 5-10s. The travel is a
+// single translate driven by CSS custom properties, so each packet is one
+// composited transform rather than a per-frame path calculation.
+const NET_PACKETS = [2, 7, 11, 16, 21, 26].map((edgeIndex, i) => {
+  const edge = NET_EDGES[edgeIndex % NET_EDGES.length];
+  const [ax, ay, bx, by] = edge;
+  return {
+    x: ax,
+    y: ay,
+    dx: bx - ax,
+    dy: by - ay,
+    duration: 6 + i * 0.8,
+    delay: i * 1.6,
+  };
+});
 
 /**
  * Enterprise cyber environment behind the page: hex security grid, blockchain
@@ -352,6 +376,21 @@ export function KhanAiBackdrop() {
             {NET_NODES.map(([cx, cy], i) => (
               <circle key={i} className="khan-bg-node" cx={cx} cy={cy} r={i % 4 === 0 ? 2.4 : 1.5} style={{ animationDelay: `${(i % 7) * 0.9}s` }} />
             ))}
+            {NET_PACKETS.map((p, i) => (
+              <circle
+                key={`p${i}`}
+                className="khan-bg-packet"
+                cx={p.x}
+                cy={p.y}
+                r="1.8"
+                style={{
+                  '--dx': `${p.dx}px`,
+                  '--dy': `${p.dy}px`,
+                  animationDuration: `${p.duration}s`,
+                  animationDelay: `${p.delay}s`,
+                }}
+              />
+            ))}
           </g>
 
           {/* AI telemetry line: one slow horizontal sweep. */}
@@ -363,6 +402,75 @@ export function KhanAiBackdrop() {
           <span key={i} className="khan-bg-particle" style={{ left: `${8 + i * 13}%`, animationDelay: `${i * 3.5}s`, animationDuration: `${26 + i * 4}s` }} />
         ))}
       </div>
+    </div>
+  );
+}
+
+// The verification rows, mapped onto values the scoring engine genuinely
+// produces. The first four are real TRUST_CATEGORIES (see riskHistory.js);
+// founder and roadmap are not categories of their own - they are individual
+// score keys folded into `community` - so they are read straight off
+// scoreBreakdown rather than invented as categories.
+const VERIFY_ROWS = [
+  { key: 'holderHealth', from: 'category' },
+  { key: 'liquidity', from: 'category' },
+  { key: 'contractSecurity', from: 'category' },
+  { key: 'community', from: 'category' },
+  { key: 'founderActivity', from: 'breakdown' },
+  { key: 'roadmapClarity', from: 'breakdown' },
+];
+
+function readVerifyValue(project, row) {
+  if (row.from === 'category') {
+    const found = (project.categoryBreakdown || []).find((c) => c.key === row.key);
+    return found && found.available && found.score !== null ? found.score : null;
+  }
+  const value = project.scoreBreakdown?.[row.key];
+  return typeof value === 'number' ? value : null;
+}
+
+/**
+ * KHAN AI verification sequence for the project profile.
+ *
+ * Runs only after a completed real scan, and every row reports a value the
+ * scoring engine actually computed. A signal with no data reads "not assessed"
+ * rather than a green tick: this engine's policy is that unknown is not the
+ * same as bad, and a checkmark over missing data would be exactly the kind of
+ * false assurance a security product must never give.
+ *
+ * The stagger is pure CSS delay, so no JS timer runs and nothing re-renders
+ * once the sequence has played.
+ */
+export function KhanAiVerificationPanel({ project, revealed = false }) {
+  const { t } = useTranslation();
+  if (!revealed) return null;
+
+  const rows = VERIFY_ROWS.map((row) => ({ ...row, value: readVerifyValue(project, row) }));
+
+  return (
+    <div className="khan-verify">
+      <div className="khan-verify-head">
+        <KhanAiEntity state="idle" size="sm" />
+        <div>
+          <span className="khan-verify-name">{t('khanAi.name')}</span>
+          <span className="khan-verify-sub">{t('khanAi.verify.title')}</span>
+        </div>
+      </div>
+      <ul className="khan-verify-list">
+        {rows.map((row, index) => (
+          <li
+            key={row.key}
+            className={`khan-verify-row ${row.value === null ? 'is-unknown' : 'is-verified'}`}
+            style={{ animationDelay: `${index * 120}ms` }}
+          >
+            <span className="khan-verify-tick" aria-hidden="true">{row.value === null ? '—' : '✓'}</span>
+            <span className="khan-verify-label">{t(`khanAi.verify.rows.${row.key}`)}</span>
+            <span className="khan-verify-state">
+              {row.value === null ? t('khanAi.verify.notAssessed') : t('khanAi.verify.verified')}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

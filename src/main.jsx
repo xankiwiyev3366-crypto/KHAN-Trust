@@ -113,7 +113,7 @@ const EarlyStageFeature = lazy(() => import('./EarlyStage.jsx'));
 // rather than lazy: it is a few KB of inline SVG with no external assets, and
 // it renders in the hero above the fold, where a lazy chunk would show up as a
 // visible pop-in on the first paint. See KhanAI.jsx.
-import { KhanAiHeroMark, KhanAiScanConsole, KhanAiVerdictMark, KhanAiPanel, KhanAiBackdrop, createScanReporter } from './KhanAI.jsx';
+import { KhanAiHeroMark, KhanAiScanConsole, KhanAiVerdictMark, KhanAiPanel, KhanAiBackdrop, KhanAiVerificationPanel, createScanReporter } from './KhanAI.jsx';
 import { PhantomWalletName } from '@solana/wallet-adapter-phantom';
 import {
   initAnalytics,
@@ -4057,9 +4057,8 @@ function HomePage({ projects, query, setQuery, searchState, scanProgress, onSear
       <section className="hero-section">
         <div className="hero-grid">
           <div className="hero-copy">
-            <KhanAiHeroMark>
+            <KhanAiHeroMark title={t('home.title')}>
               <p className="eyebrow"><Shield size={16} /> {t('home.eyebrow')}</p>
-              <h1>{t('home.title')}</h1>
             </KhanAiHeroMark>
             <p className="hero-subtitle">{t('home.subtitle')}</p>
             <p className="hero-explainer">{t('home.explainer')}</p>
@@ -5650,7 +5649,10 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
   const peerBenchmark = computePeerBenchmark(project, projects);
 
   return (
-    <section className="profile-page">
+    // `is-revealing` drives the whole post-scan choreography (score -> risk ->
+    // project info -> charts -> buttons) as staggered CSS delays on the blocks
+    // below. Only set for a card reached by a completed scan.
+    <section className={`profile-page${revealScan ? ' is-revealing' : ''}`}>
       <div className="profile-hero">
         <div>
           <button className="back-button" onClick={() => navigate('explore')}>{t('projectProfile.backToExplore')}</button>
@@ -5742,6 +5744,7 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
           <FutureFoundationSection />
         </div>
         <aside className="side-column">
+          <KhanAiVerificationPanel project={project} revealed={revealScan} />
           <AskKhanCard project={project} history={history} peerBenchmark={peerBenchmark} />
           <PeerBenchmarkCard project={project} peerBenchmark={peerBenchmark} />
           <Disclaimer compact />
@@ -9613,6 +9616,13 @@ function AnimatedNumber({ value, duration = 900, format }) {
     if (!isAnimatable) return;
     const node = ref.current;
     if (!node || typeof IntersectionObserver === 'undefined') {
+      setDisplay(numericValue);
+      return;
+    }
+    // A count-up is motion like any other: under prefers-reduced-motion the
+    // number is simply the number. CSS cannot reach a rAF loop, so this has to
+    // be checked here.
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
       setDisplay(numericValue);
       return;
     }

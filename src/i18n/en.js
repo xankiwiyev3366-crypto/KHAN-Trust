@@ -395,6 +395,19 @@ export default {
     verdict: {
       analyzed: 'Analyzed by KHAN AI',
     },
+    verify: {
+      title: 'Verification sequence',
+      verified: 'verified',
+      notAssessed: 'not assessed',
+      rows: {
+        holderHealth: 'Holder risk',
+        liquidity: 'Liquidity',
+        contractSecurity: 'Contract',
+        community: 'Community',
+        founderActivity: 'Founder',
+        roadmapClarity: 'Roadmap',
+      },
+    },
     empty: {
       title: 'KHAN AI is standing by',
       text: 'Paste a contract address or search a token, and KHAN AI will analyze the chain, holders, and contract to produce a Trust Score.',

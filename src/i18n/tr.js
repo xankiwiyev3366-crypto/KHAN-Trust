@@ -393,6 +393,19 @@ export default {
     verdict: {
       analyzed: 'KHAN AI tarafından analiz edildi',
     },
+    verify: {
+      title: 'Doğrulama dizisi',
+      verified: 'doğrulandı',
+      notAssessed: 'değerlendirilmedi',
+      rows: {
+        holderHealth: 'Sahip riski',
+        liquidity: 'Likidite',
+        contractSecurity: 'Kontrat',
+        community: 'Topluluk',
+        founderActivity: 'Kurucu',
+        roadmapClarity: 'Yol haritası',
+      },
+    },
     empty: {
       title: 'KHAN AI beklemede',
       text: 'Bir kontrat adresi yapıştırın veya token arayın; KHAN AI zinciri, sahipleri ve kontratı analiz ederek bir Güven Puanı üretecek.',

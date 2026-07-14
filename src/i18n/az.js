@@ -393,6 +393,19 @@ export default {
     verdict: {
       analyzed: 'KHAN AI tərəfindən təhlil edildi',
     },
+    verify: {
+      title: 'Yoxlama ardıcıllığı',
+      verified: 'təsdiqləndi',
+      notAssessed: 'qiymətləndirilməyib',
+      rows: {
+        holderHealth: 'Sahib riski',
+        liquidity: 'Likvidlik',
+        contractSecurity: 'Kontrakt',
+        community: 'İcma',
+        founderActivity: 'Təsisçi',
+        roadmapClarity: 'Yol xəritəsi',
+      },
+    },
     empty: {
       title: 'KHAN AI gözləmə rejimindədir',
       text: 'Kontrakt ünvanını yapışdırın və ya token axtarın — KHAN AI blokçeyni, sahibləri və kontraktı təhlil edərək Etibar Xalı hazırlayacaq.',

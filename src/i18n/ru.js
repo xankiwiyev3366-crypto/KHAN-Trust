@@ -393,6 +393,19 @@ export default {
     verdict: {
       analyzed: 'Проанализировано KHAN AI',
     },
+    verify: {
+      title: 'Последовательность проверки',
+      verified: 'проверено',
+      notAssessed: 'не оценивалось',
+      rows: {
+        holderHealth: 'Риск держателей',
+        liquidity: 'Ликвидность',
+        contractSecurity: 'Контракт',
+        community: 'Сообщество',
+        founderActivity: 'Основатель',
+        roadmapClarity: 'Дорожная карта',
+      },
+    },
     empty: {
       title: 'KHAN AI в режиме ожидания',
       text: 'Вставьте адрес контракта или найдите токен — KHAN AI проанализирует блокчейн, держателей и контракт и рассчитает Trust Score.',

@@ -7968,25 +7968,30 @@ main {
   transform-origin: 50% 50%;
 }
 
+/* At rest the rings do NOT rotate. An endlessly spinning ring reads as a
+   loading spinner - it says "busy", not "watching" - so idle is carried by
+   breathing alone and rotation is reserved for an actual scan, where it means
+   something. */
 .khan-ai-ring--outer {
   stroke-width: 0.7;
   stroke-dasharray: 3 9;
   opacity: 0.4;
-  animation: khanAiSpin 26s linear infinite;
+  animation: khanAiRingBreathe 6.5s ease-in-out infinite;
 }
 
 .khan-ai-ring--inner {
   stroke-width: 0.5;
   stroke-dasharray: 1 7;
   opacity: 0.26;
-  animation: khanAiSpin 34s linear infinite reverse;
+  animation: khanAiRingBreathe 8.5s ease-in-out infinite reverse;
 }
 
-/* Orbiting data particles */
+/* Idle particles drift a few degrees back and forth rather than orbiting
+   endlessly - "tiny particle movement", not a carousel. */
 .khan-ai-particles {
   transform-box: view-box;
   transform-origin: 50% 50%;
-  animation: khanAiSpin 30s linear infinite;
+  animation: khanAiDrift 22s ease-in-out infinite;
 }
 
 .khan-ai-particle {
@@ -8001,6 +8006,7 @@ main {
   animation: khanAiBreathe 4.6s ease-in-out infinite;
 }
 
+/* The aperture makes very small adjustments at rest, as a lens holding focus. */
 .khan-ai-lens {
   fill: rgba(224, 183, 92, 0.06);
   stroke: var(--gold);
@@ -8008,6 +8014,7 @@ main {
   opacity: 0.75;
   transform-box: view-box;
   transform-origin: 50% 50%;
+  animation: khanAiAperture 11s ease-in-out infinite;
 }
 
 .khan-ai-iris {
@@ -8016,9 +8023,15 @@ main {
   animation: khanAiIris 4.6s ease-in-out infinite;
 }
 
+/* Tiny iris movement: the eye shifts its gaze by a fraction of a pixel of
+   viewBox, on a long irregular-feeling cycle. Enough to read as alive when you
+   look at it, never enough to notice when you are not. */
 .khan-ai-pupil {
   fill: #0a0a08;
   opacity: 0.85;
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: khanAiGaze 13s ease-in-out infinite;
 }
 
 /* Scan sweep - dormant by default, only runs while analyzing */
@@ -8029,12 +8042,18 @@ main {
   transform-origin: 50% 50%;
 }
 
-/* State: analyzing */
-.khan-ai.is-analyzing .khan-ai-core-glow { animation-duration: 1.5s; }
-.khan-ai.is-analyzing .khan-ai-iris { animation-duration: 1.5s; }
-.khan-ai.is-analyzing .khan-ai-ring--outer { animation-duration: 6s; opacity: 0.7; }
-.khan-ai.is-analyzing .khan-ai-ring--inner { animation-duration: 8s; opacity: 0.5; }
-.khan-ai.is-analyzing .khan-ai-particles { animation-duration: 9s; }
+/* State: analyzing - the eye goes to work.
+   Rotation exists ONLY here: the rings spin up because there is genuinely
+   something being processed, and stop the moment it ends. Everything gathers
+   inward - iris focuses, aperture narrows, particles pull in - so the energy
+   reads as concentrating on the target rather than radiating outward. */
+.khan-ai.is-analyzing .khan-ai-core-glow { animation: khanAiGather 1.5s ease-in-out infinite; }
+.khan-ai.is-analyzing .khan-ai-iris { animation: khanAiFocus 1.5s ease-in-out infinite; }
+.khan-ai.is-analyzing .khan-ai-lens { animation: khanAiNarrow 0.5s ease-out forwards; }
+.khan-ai.is-analyzing .khan-ai-pupil { animation: none; transform: scale(0.8); }
+.khan-ai.is-analyzing .khan-ai-ring--outer { animation: khanAiSpin 6s linear infinite; opacity: 0.7; }
+.khan-ai.is-analyzing .khan-ai-ring--inner { animation: khanAiSpin 8s linear infinite reverse; opacity: 0.5; }
+.khan-ai.is-analyzing .khan-ai-particles { animation: khanAiSpin 9s linear infinite; }
 .khan-ai.is-analyzing .khan-ai-particle { opacity: 0.9; }
 .khan-ai.is-analyzing .khan-ai-scanline { animation: khanAiScan 1.9s ease-in-out infinite; }
 
@@ -8042,17 +8061,48 @@ main {
 .khan-ai.is-complete .khan-ai-core-glow { animation: khanAiFlash 1.4s ease-out 1; }
 .khan-ai.is-complete .khan-ai-shield-flash { animation: khanAiShieldFlash 1.4s ease-out 1; }
 
-/* State: error - stilled and narrowed, never alarming */
+/* State: error - stilled and narrowed, never alarming. Every idle animation is
+   explicitly cancelled: an animation would otherwise win over the static
+   transform below and the aperture would keep breathing through the error. */
 .khan-ai.is-error .khan-ai-particles,
 .khan-ai.is-error .khan-ai-ring--inner { animation: none; opacity: 0.12; }
 .khan-ai.is-error .khan-ai-ring--outer { animation: none; opacity: 0.2; }
 .khan-ai.is-error .khan-ai-core-glow { animation: none; opacity: 0.3; }
 .khan-ai.is-error .khan-ai-iris { animation: none; }
-.khan-ai.is-error .khan-ai-lens { transform: scaleY(0.28); opacity: 0.5; }
+.khan-ai.is-error .khan-ai-pupil { animation: none; }
+.khan-ai.is-error .khan-ai-lens { animation: none; transform: scaleY(0.28); opacity: 0.5; }
 .khan-ai.is-error .khan-ai-shield { stroke-opacity: 0.45; }
 
+/* Rotation is scan-only (see .is-analyzing above). */
 @keyframes khanAiSpin {
   to { transform: rotate(360deg); }
+}
+
+/* Idle ring: a breath of opacity and a fraction of a percent of scale. No
+   rotation - the ring holds its position and simply lives. */
+@keyframes khanAiRingBreathe {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.16; transform: scale(1.012); }
+}
+
+/* Idle particles: a slow few-degree sway, reversing. Never a full orbit. */
+@keyframes khanAiDrift {
+  0%, 100% { transform: rotate(-2.5deg); }
+  50% { transform: rotate(2.5deg); }
+}
+
+/* Idle aperture: a very small adjustment, like a lens holding focus. */
+@keyframes khanAiAperture {
+  0%, 100% { transform: scaleY(1); opacity: 0.75; }
+  45% { transform: scaleY(0.94); opacity: 0.82; }
+}
+
+/* Idle gaze: a sub-pixel shift of the pupil. */
+@keyframes khanAiGaze {
+  0%, 100% { transform: translate(0, 0); }
+  28% { transform: translate(0.7px, -0.4px); }
+  55% { transform: translate(-0.5px, 0.5px); }
+  78% { transform: translate(0.3px, 0.6px); }
 }
 
 @keyframes khanAiBreathe {
@@ -8063,6 +8113,24 @@ main {
 @keyframes khanAiIris {
   0%, 100% { transform: scale(1); opacity: 0.9; }
   50% { transform: scale(1.12); opacity: 1; }
+}
+
+/* Scan: energy gathers inward rather than radiating out. */
+@keyframes khanAiGather {
+  0%, 100% { transform: scale(1.05); opacity: 0.7; }
+  50% { transform: scale(0.9); opacity: 1; }
+}
+
+/* Scan: the iris tightens onto the target. */
+@keyframes khanAiFocus {
+  0%, 100% { transform: scale(0.86); opacity: 1; }
+  50% { transform: scale(0.74); opacity: 0.92; }
+}
+
+/* Scan: aperture narrows once, and stays narrowed for the duration. */
+@keyframes khanAiNarrow {
+  from { transform: scaleY(1); }
+  to { transform: scaleY(0.6); }
 }
 
 @keyframes khanAiScan {
@@ -8480,14 +8548,38 @@ main {
 }
 
 /* ── Result reveal choreography ─────────────────────────────────────────────
-   glow -> shield pulse -> data settles -> score -> risk indicators -> calm.
-   Staggered delays on one shared settle animation; every step is transform +
-   opacity, and every step ends at its natural resting state so the card is
-   left completely calm. */
-.profile-score-card.is-revealing {
-  animation: khanAiCardSettle 0.66s cubic-bezier(0.16, 1, 0.3, 1) both;
+   Trust Score -> risk indicators -> project information -> charts -> buttons.
+   One motion for every block: fade + 8px up, 120ms apart, in reading order.
+   No scaling anywhere - scale reads as "pop", and this sequence is meant to
+   read as information settling into place. Every step ends at its natural
+   resting state, so the page is left completely calm. */
+.profile-score-card.is-revealing,
+.profile-page.is-revealing .dashboard-top-row,
+.profile-page.is-revealing > .detail-section,
+.profile-page.is-revealing .contract-security-row,
+.profile-page.is-revealing .profile-layout,
+.profile-page.is-revealing .profile-actions {
+  animation: khanAiSettleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* 1. Trust Score */
+.profile-score-card.is-revealing { animation-delay: 0ms; }
+/* 2. Risk indicators, inside the score card */
+.profile-score-card.is-revealing .risk-pill { animation: khanAiSettleIn 0.5s ease-out 120ms both; }
+.profile-score-card.is-revealing .confidence-badge { animation: khanAiSettleIn 0.5s ease-out 180ms both; }
+.profile-score-card.is-revealing > strong { animation: khanAiSettleIn 0.5s ease-out 240ms both; }
+.profile-score-card.is-revealing .status-badge { animation: khanAiSettleIn 0.5s ease-out 300ms both; }
+.profile-score-card.is-revealing .khan-ai-verdict { animation: khanAiSettleIn 0.5s ease-out 360ms both; }
+/* 3. Project information */
+.profile-page.is-revealing .dashboard-top-row { animation-delay: 240ms; }
+.profile-page.is-revealing > .detail-section { animation-delay: 360ms; }
+.profile-page.is-revealing .contract-security-row { animation-delay: 480ms; }
+/* 4. Charts and the rest of the report body */
+.profile-page.is-revealing .profile-layout { animation-delay: 600ms; }
+/* 5. Buttons last - the page settles before it invites an action */
+.profile-page.is-revealing .profile-actions { animation-delay: 720ms; }
+
+/* Confirmation glow over the score card. Opacity only. */
 .profile-score-card.is-revealing::after {
   content: '';
   position: absolute;
@@ -8499,37 +8591,18 @@ main {
   animation: khanAiRevealGlow 1.5s ease-out both;
 }
 
-.profile-score-card.is-revealing .score-circle {
-  animation: khanAiScoreIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.42s both;
-}
-
-.profile-score-card.is-revealing .score-history-strip {
-  animation: khanAiSettleIn 0.5s ease-out 0.62s both;
-}
-
-.profile-score-card.is-revealing .risk-pill {
-  animation: khanAiSettleIn 0.5s ease-out 0.78s both;
-}
-
-.profile-score-card.is-revealing .confidence-badge {
-  animation: khanAiSettleIn 0.5s ease-out 0.86s both;
-}
-
-.profile-score-card.is-revealing > strong {
-  animation: khanAiSettleIn 0.5s ease-out 0.94s both;
-}
-
-.profile-score-card.is-revealing .status-badge {
-  animation: khanAiSettleIn 0.5s ease-out 1.02s both;
-}
-
-.profile-score-card.is-revealing .khan-ai-verdict {
-  animation: khanAiSettleIn 0.5s ease-out 1.1s both;
-}
-
-@keyframes khanAiCardSettle {
-  from { opacity: 0; transform: translateY(10px) scale(0.985); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+/* Gold ring expansion, timed to land as the count-up finishes (AnimatedNumber
+   runs 900ms). Scale is right here - this is a ring expanding outward, which is
+   the shape of the gesture, not a block popping in. */
+.profile-score-card.is-revealing .score-circle::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 1px solid var(--gold-bright);
+  opacity: 0;
+  pointer-events: none;
+  animation: khanAiScoreRing 900ms cubic-bezier(0.16, 1, 0.3, 1) 780ms both;
 }
 
 @keyframes khanAiRevealGlow {
@@ -8538,13 +8611,15 @@ main {
   100% { opacity: 0; }
 }
 
-@keyframes khanAiScoreIn {
-  from { opacity: 0; transform: scale(0.9); }
-  to { opacity: 1; transform: scale(1); }
+@keyframes khanAiScoreRing {
+  0% { opacity: 0; transform: scale(0.82); }
+  35% { opacity: 0.85; }
+  100% { opacity: 0; transform: scale(1.28); }
 }
 
+/* The one shared reveal motion: fade + 8px up. */
 @keyframes khanAiSettleIn {
-  from { opacity: 0; transform: translateY(5px); }
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -8656,4 +8731,233 @@ main {
   .card-button:active {
     transform: none;
   }
+}
+
+/* ==========================================================================
+   KHAN AI - living metal, light packets, verification sequence
+   ========================================================================== */
+
+/* ── Living metal ───────────────────────────────────────────────────────────
+   A soft gold highlight travels across the wordmark roughly every 10s, for
+   ~900ms, then nothing. No looping shimmer.
+
+   Implementation note, honestly: this is the ONE animation in the codebase
+   that is not purely composited. Clipping a travelling highlight to glyph
+   shapes requires animating background-position (or mask-position) - a
+   transform cannot move a background, and there is no way to clip a separate
+   transformed element to letterforms without SVG text. The cost is bounded on
+   purpose: it paints only the title's own box (~200x48px), for 900ms out of
+   every 10s - under a 10% duty cycle on a tiny area - and the base title
+   underneath is a normal, statically painted element, so nothing else in the
+   page is touched. This was a deliberate trade, not an oversight. */
+.khan-living-metal {
+  position: relative;
+  isolation: isolate;
+}
+
+.khan-living-metal::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 42%,
+    rgba(244, 216, 137, 0.85) 50%,
+    transparent 58%
+  );
+  background-size: 280% 100%;
+  background-position: 140% 0;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: khanMetalSweep 10s ease-in-out infinite;
+}
+
+@keyframes khanMetalSweep {
+  /* 900ms of travel inside a 10s cycle: 0 -> 9% is the sweep, the remaining
+     91% is the highlight parked off the end of the word, doing nothing. */
+  0% { background-position: 140% 0; }
+  9% { background-position: -60% 0; }
+  100% { background-position: -60% 0; }
+}
+
+/* ── Background light packets ──────────────────────────────────────────────
+   A faint pulse travelling an edge of the node graph. Each packet is a single
+   composited translate: the endpoints come in as --dx/--dy custom properties,
+   so one shared keyframe serves every packet. Opacity peaks under 10%. */
+.khan-bg-packet {
+  fill: var(--gold-bright);
+  opacity: 0;
+  transform-box: view-box;
+  animation-name: khanBgPacket;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+  animation-iteration-count: infinite;
+}
+
+@keyframes khanBgPacket {
+  0% { transform: translate(0, 0); opacity: 0; }
+  /* The packet is only visible for the middle ~40% of its cycle, so each edge
+     carries traffic occasionally rather than constantly. */
+  18% { opacity: 0; }
+  30% { opacity: 0.085; }
+  62% { opacity: 0.085; }
+  78% { opacity: 0; }
+  100% { transform: translate(var(--dx), var(--dy)); opacity: 0; }
+}
+
+/* ── KHAN AI verification sequence ─────────────────────────────────────────
+   Rows appear one-by-one on pure CSS delay - no JS timer, and nothing
+   re-renders once it has played. */
+.khan-verify {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(224, 183, 92, 0.05), rgba(10, 10, 9, 0.5));
+}
+
+.khan-verify-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.khan-verify-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.khan-verify-name {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+}
+
+.khan-verify-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.khan-verify-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.khan-verify-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.015);
+  font-size: 13px;
+  color: var(--text);
+  /* fade + 8px up, matching the global reveal motion; delay is set inline. */
+  animation: khanAiSettleIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.khan-verify-tick {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.khan-verify-row.is-verified .khan-verify-tick {
+  color: var(--gold-bright);
+  background: var(--gold-soft);
+}
+
+/* A signal with no data is never given a tick. Hollow marker, muted row: this
+   engine treats unknown as unknown, not as a pass. */
+.khan-verify-row.is-unknown {
+  opacity: 0.55;
+}
+
+.khan-verify-row.is-unknown .khan-verify-tick {
+  color: var(--muted);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-soft);
+}
+
+.khan-verify-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.khan-verify-state {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.khan-verify-row.is-verified .khan-verify-state {
+  color: var(--gold);
+}
+
+/* The soft gold pulse each verified row gets as it lands. Runs once, offset to
+   fire just after the row has settled, then never again. */
+.khan-verify-row.is-verified::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: var(--gold-soft);
+  opacity: 0;
+  animation: khanVerifyPulse 600ms ease-out 260ms both;
+}
+
+.khan-verify-row {
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes khanVerifyPulse {
+  0% { opacity: 0; }
+  40% { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+
+@media (max-width: 640px) {
+  /* Packets are atmosphere; the graph they ride is already hidden on phones. */
+  .khan-bg-packet { display: none; animation: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .khan-living-metal::after,
+  .khan-bg-packet,
+  .khan-verify-row,
+  .khan-verify-row.is-verified::after,
+  .profile-score-card.is-revealing .score-circle::before,
+  /* The page-level reveal blocks. Without these the whole score -> risk ->
+     info -> charts -> buttons sequence would still play; `both` fill would
+     also leave each block stuck at opacity 0 until its delay elapsed, which
+     is precisely the reader who cannot afford to wait. */
+  .profile-page.is-revealing .dashboard-top-row,
+  .profile-page.is-revealing > .detail-section,
+  .profile-page.is-revealing .contract-security-row,
+  .profile-page.is-revealing .profile-layout,
+  .profile-page.is-revealing .profile-actions {
+    animation: none !important;
+  }
+
+  /* Without motion the sweep overlay must not sit frozen over the title. */
+  .khan-living-metal::after { opacity: 0; }
+  .khan-bg-packet { opacity: 0; }
 }

@@ -3,6 +3,28 @@
   publish = "dist"
   functions = "netlify/functions"
 
+# Security headers (P1-3). Applied to every served path. These are all
+# zero-breakage for a same-origin SPA:
+#   - HSTS forces HTTPS for a year (Netlify already serves HTTPS-only).
+#   - X-Frame-Options + CSP frame-ancestors 'self' stop clickjacking. Note the
+#     embeddable "Verified by KHAN Trust" badge is an <img>/SVG, NOT an iframe,
+#     so framing restrictions do not affect it.
+#   - nosniff blocks MIME-confusion; Referrer-Policy trims referrer leakage;
+#     Permissions-Policy disables device APIs the app never uses.
+# A full resource-restricting CSP (script-src/connect-src/img-src covering GA,
+# Stripe, CoinGecko widgets, and every data provider) is deliberately NOT set
+# here yet - a wrong value silently breaks fetches and is being introduced as a
+# separately verified step. frame-ancestors alone cannot break app resources.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+    Content-Security-Policy = "frame-ancestors 'self'"
+
 # SEO surface (Direction 2). These are ADDITIVE, path-specific rewrites only -
 # there is deliberately NO catch-all "/*" redirect, so the existing hash-routed
 # SPA (served as the static index.html at "/") is completely untouched. Status

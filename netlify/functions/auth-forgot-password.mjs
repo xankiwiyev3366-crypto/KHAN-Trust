@@ -1,5 +1,6 @@
 import { getUserByEmail, createResetToken, jsonResponse } from './_authStore.mjs';
 import { sendEmail, isEmailConfigured } from './_email.mjs';
+import { enforce, getClientIp } from './_rateLimit.mjs';
 
 const APP_URL = process.env.URL || 'https://khantrust.net';
 
@@ -11,6 +12,16 @@ export async function handler(event) {
 
   const { email } = body;
   if (!email) return jsonResponse(400, { message: 'Email is required' });
+
+  // Throttle reset-email spam per source IP and per targeted address. Keyed on
+  // the request regardless of whether the account exists, so a 429 here still
+  // leaks nothing about account existence (the enumeration guarantee holds).
+  const ipLimit = await enforce('forgot_ip', getClientIp(event));
+  const emailLimit = await enforce('forgot_email', String(email).toLowerCase().trim());
+  if (!ipLimit.allowed || !emailLimit.allowed) {
+    // Same generic body as the success path so timing/response shape is stable.
+    return jsonResponse(200, { message: 'If an account exists with that email, a reset link has been sent.' });
+  }
 
   // Always return the same response to prevent email enumeration
   const user = await getUserByEmail(email);

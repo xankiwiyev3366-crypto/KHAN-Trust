@@ -7,6 +7,8 @@
 // Every request also carries the auth JWT (when signed in) so the server can
 // honor admin-granted Premium users, who may have no wallet at all - the
 // server resolves identity from wallet OR account (see _premiumAccess.mjs).
+import { getCachedWalletToken, ensureWalletToken, walletAuthHeaders } from './walletSession.js';
+
 const FALLBACK_KEY = 'khan-trust-userdata-fallback-v1';
 const AUTH_TOKEN_KEY = 'khan-trust-auth-token-v1';
 
@@ -59,7 +61,15 @@ export async function fetchUserData(wallet) {
   const hasToken = Boolean(authHeaders().Authorization);
   if (!wallet && !hasToken) return { savedReports: [], watchlist: [] };
   try {
-    return await callFunction(`user-data-get?wallet=${encodeURIComponent(wallet || '')}`, { method: 'GET' });
+    // Passive read: use a wallet-session token only if one is already cached.
+    // Never prompt for a signature just to load the page - a wallet-only
+    // premium user's server data appears once they take an action that signs
+    // in (see performAction), which caches the token for subsequent reads.
+    const walletToken = getCachedWalletToken(wallet);
+    return await callFunction(`user-data-get?wallet=${encodeURIComponent(wallet || '')}`, {
+      method: 'GET',
+      headers: walletAuthHeaders(walletToken),
+    });
   } catch (error) {
     if (!isFunctionUnavailable(error)) throw error;
     const store = readFallbackStore();
@@ -69,9 +79,14 @@ export async function fetchUserData(wallet) {
 
 async function performAction(wallet, body) {
   try {
+    // Explicit user action: obtain (prompting a one-time signature if needed)
+    // a wallet-session token so the server accepts this wallet's identity.
+    // Account-JWT premium users need no wallet token - authHeaders() covers
+    // them - so this only prompts for wallet-keyed premium users.
+    const walletToken = wallet ? await ensureWalletToken(wallet) : null;
     return await callFunction('user-data-save', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...walletAuthHeaders(walletToken) },
       body: JSON.stringify({ wallet, ...body }),
     });
   } catch (error) {

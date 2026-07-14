@@ -2,9 +2,20 @@ import crypto from 'node:crypto';
 import { getUserByEmail, saveUser, issueToken, createVerifyToken, hashPassword, jsonResponse } from './_authStore.mjs';
 import { sendVerificationEmail } from './_email.mjs';
 import { appendEvent } from './_analyticsStore.mjs';
+import { enforce, getClientIp } from './_rateLimit.mjs';
 
 export async function handler(event) {
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
+
+  // Throttle mass account creation from a single source.
+  const ipLimit = await enforce('register_ip', getClientIp(event));
+  if (!ipLimit.allowed) {
+    return {
+      statusCode: 429,
+      headers: { 'Content-Type': 'application/json', 'Retry-After': String(Math.ceil((ipLimit.retryAfterMs || 0) / 1000)) },
+      body: JSON.stringify({ message: 'Too many sign-up attempts. Please try again later.' }),
+    };
+  }
 
   let body;
   try { body = JSON.parse(event.body || '{}'); } catch { return jsonResponse(400, { message: 'Invalid JSON' }); }

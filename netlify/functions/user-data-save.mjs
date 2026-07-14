@@ -4,7 +4,7 @@
 // an admin-granted manual grant (see _premiumAccess.mjs) - resolved here
 // directly rather than trusting the client's own claim of its plan. The same
 // resolver decides which storage key the data lives under.
-import { resolvePremiumAccess } from './_premiumAccess.mjs';
+import { resolveVerifiedPremiumAccess } from './_premiumAccess.mjs';
 import { getUserData, setUserData, jsonResponse } from './_userDataStore.mjs';
 
 const MAX_SAVED_REPORTS = 100;
@@ -27,7 +27,7 @@ export async function handler(event) {
       return jsonResponse(400, { message: 'Invalid request body' });
     }
 
-    const access = await resolvePremiumAccess(event, payload.wallet);
+    const access = await resolveVerifiedPremiumAccess(event);
     if (!access.entitled) {
       return jsonResponse(403, { message: 'This account does not have an active Premium or Early Supporter entitlement.' });
     }

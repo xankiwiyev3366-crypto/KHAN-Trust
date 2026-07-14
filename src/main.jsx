@@ -377,20 +377,23 @@ async function fetchBlockchairNativeStats(coingeckoId) {
 }
 
 // Block-explorer "contract creation timestamp" + "is proxy/upgradeable"
-// lookups. These need a free API key per chain (Etherscan/BscScan/
-// BaseScan/PolygonScan all offer one at no cost) - set the matching env var
-// to enable real EVM token age and upgradeable-contract detection. Without
-// a key the chain simply falls back to "Unknown" rather than guessing.
-const EXPLORER_CONFIG = {
-  ethereum: { base: 'https://api.etherscan.io/api', envKey: 'VITE_ETHERSCAN_API_KEY' },
-  bsc: { base: 'https://api.bscscan.com/api', envKey: 'VITE_BSCSCAN_API_KEY' },
-  base: { base: 'https://api.basescan.org/api', envKey: 'VITE_BASESCAN_API_KEY' },
-  polygon: { base: 'https://api.polygonscan.com/api', envKey: 'VITE_POLYGONSCAN_API_KEY' },
-};
+// lookups. The Etherscan-family API keys used to live here as VITE_* env vars,
+// which meant they were bundled into the browser and publicly readable. They
+// now live server-side and are reached through the evm-explorer proxy function
+// (see netlify/functions/evm-explorer.mjs); this list only records which chains
+// the proxy supports so unsupported chains short-circuit without a round trip.
+// Without a key configured server-side the chain still falls back to "Unknown"
+// rather than guessing, exactly as before.
+const EXPLORER_SUPPORTED_CHAINS = new Set(['ethereum', 'bsc', 'base', 'polygon']);
 
-function explorerApiKeyFor(chainId) {
-  const envKey = EXPLORER_CONFIG[chainId]?.envKey;
-  return envKey ? import.meta.env?.[envKey] : '';
+async function fetchExplorerProxy(chainId, action, address) {
+  if (!EXPLORER_SUPPORTED_CHAINS.has(chainId)) return null;
+  const response = await fetch(
+    `/.netlify/functions/evm-explorer?chain=${encodeURIComponent(chainId)}&action=${action}&address=${encodeURIComponent(address)}`,
+  );
+  if (!response.ok) return null;
+  const data = await response.json();
+  return data?.result ?? null;
 }
 
 function chainLabelFor(chainId) {
@@ -1649,8 +1652,8 @@ async function lookupGenericChainTokenUncached(chainId, address) {
   const github = socialLinks.github || '';
   const discord = socialLinks.discord || '';
   // Real asset age priority: CoinGecko's genesis_date, then the chain's
-  // own contract-deployment timestamp (requires a free explorer API key -
-  // see EXPLORER_CONFIG). A DEX pair's first-liquidity date is never used.
+  // own contract-deployment timestamp (via the server-side evm-explorer
+  // proxy). A DEX pair's first-liquidity date is never used.
   // If neither real source resolves, age stays unknown.
   const createdAt = coingecko?.genesisDate ? new Date(coingecko.genesisDate).getTime() : explorerCreatedAt;
   const tokenAgeSource = coingecko?.genesisDate
@@ -2172,45 +2175,21 @@ async function fetchGeckoTerminalToken(chainId, address) {
   };
 }
 
-// EVM contract creation timestamp via the chain's block explorer (Etherscan-
-// family APIs). Requires a free API key set as an env var - see
-// EXPLORER_CONFIG. Without a key this resolves to null (Unknown), never a
-// guess. Two-hop lookup: contract creation tx hash -> tx's block -> block
-// timestamp, all on the same explorer API.
+// EVM contract creation timestamp via the server-side evm-explorer proxy
+// (Etherscan-family APIs, key held server-side). Without a key configured this
+// resolves to null (Unknown), never a guess. The two-hop explorer lookup now
+// happens inside the proxy function.
 async function fetchExplorerContractCreation(chainId, address) {
-  const config = EXPLORER_CONFIG[chainId];
-  const apiKey = explorerApiKeyFor(chainId);
-  if (!config || !apiKey) return null;
-  const creationResponse = await fetch(`${config.base}?module=contract&action=getcontractcreation&contractaddresses=${address}&apikey=${apiKey}`);
-  if (!creationResponse.ok) throw new Error('Explorer contract-creation lookup failed.');
-  const creationData = await creationResponse.json();
-  const txHash = creationData?.result?.[0]?.txHash;
-  if (!txHash) return null;
-  const txResponse = await fetch(`${config.base}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}&apikey=${apiKey}`);
-  const txData = await txResponse.json();
-  const blockNumber = txData?.result?.blockNumber;
-  if (!blockNumber) return null;
-  const blockResponse = await fetch(`${config.base}?module=proxy&action=eth_getBlockByNumber&tag=${blockNumber}&boolean=false&apikey=${apiKey}`);
-  const blockData = await blockResponse.json();
-  const timestampHex = blockData?.result?.timestamp;
-  return timestampHex ? Number(timestampHex) * 1000 : null;
+  const result = await fetchExplorerProxy(chainId, 'creation', address);
+  const timestampMs = result?.timestampMs;
+  return typeof timestampMs === 'number' ? timestampMs : null;
 }
 
 // Real contract-security signal for EVM chains: is this a proxy
 // (upgradeable) contract? Same explorer API, same free key requirement.
 async function fetchExplorerContractFlags(chainId, address) {
-  const config = EXPLORER_CONFIG[chainId];
-  const apiKey = explorerApiKeyFor(chainId);
-  if (!config || !apiKey) return null;
-  const response = await fetch(`${config.base}?module=contract&action=getsourcecode&address=${address}&apikey=${apiKey}`);
-  if (!response.ok) throw new Error('Explorer source-code lookup failed.');
-  const data = await response.json();
-  const result = data?.result?.[0];
-  if (!result) return null;
-  return {
-    upgradeable: result.Proxy === '1',
-    verifiedSource: hasValue(result.SourceCode),
-  };
+  const result = await fetchExplorerProxy(chainId, 'flags', address);
+  return result?.flags ?? null;
 }
 
 // Shared parser for GoPlus's token_security response shape (same fields on

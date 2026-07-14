@@ -1,5 +1,17 @@
 import { getUserByEmail, verifyPassword, issueToken, jsonResponse } from './_authStore.mjs';
 import { appendEvent } from './_analyticsStore.mjs';
+import { enforce, getClientIp } from './_rateLimit.mjs';
+
+function tooManyRequests(retryAfterMs) {
+  return {
+    statusCode: 429,
+    headers: {
+      'Content-Type': 'application/json',
+      'Retry-After': String(Math.ceil((retryAfterMs || 0) / 1000)),
+    },
+    body: JSON.stringify({ message: 'Too many attempts. Please wait a moment and try again.' }),
+  };
+}
 
 export async function handler(event) {
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
@@ -9,6 +21,14 @@ export async function handler(event) {
 
   const { email, password } = body;
   if (!email || !password) return jsonResponse(400, { message: 'Email and password are required' });
+
+  // Brute-force / credential-stuffing throttle: cap attempts per source IP and
+  // per targeted email before doing any (deliberately slow) password hashing.
+  const ip = getClientIp(event);
+  const ipLimit = await enforce('login_ip', ip);
+  if (!ipLimit.allowed) return tooManyRequests(ipLimit.retryAfterMs);
+  const emailLimit = await enforce('login_email', String(email).toLowerCase().trim());
+  if (!emailLimit.allowed) return tooManyRequests(emailLimit.retryAfterMs);
 
   const user = await getUserByEmail(email);
   if (!user || !verifyPassword(password, user.passwordHash)) {

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { setWalletSigner } from '../walletSession.js';
 
 // Module-level (not per-hook-instance) flag for "the user just explicitly
 // picked this wallet, please connect it". Every component that calls
@@ -42,9 +43,16 @@ const NOT_READY_RETRY_DELAY_MS = 350;
 
 export function useKhanWallet() {
   const { connection } = useConnection();
-  const { publicKey, connected, connecting, disconnecting, wallet, select, connect, disconnect, wallets, sendTransaction } = useWallet();
+  const { publicKey, connected, connecting, disconnecting, wallet, select, connect, disconnect, wallets, sendTransaction, signMessage } = useWallet();
 
   const address = useMemo(() => publicKey?.toString() || '', [publicKey]);
+
+  // Register the connected wallet's signMessage so the (non-React) wallet-
+  // session helper can prove wallet ownership for premium user-data (P0-1).
+  // Cleared when no wallet can sign, so a stale signer is never used.
+  useEffect(() => {
+    setWalletSigner(connected && typeof signMessage === 'function' ? signMessage : null);
+  }, [connected, signMessage]);
 
   const [connectError, setConnectError] = useState(sharedConnectError);
   useEffect(() => {

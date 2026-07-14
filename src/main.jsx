@@ -90,6 +90,7 @@ import {
 import './styles.css';
 import { WHITEPAPER } from './whitepaperConfig.js';
 import { runRiskAnalysis, classifyAsset, applyAssetTypeRiskModifier, rankSignalsBySeverity } from './scoringEngine.js';
+import { withTimeout } from './providers.js';
 import { historyKeyFor, fetchScoreHistory, computeScoreDelta, useScoreHistory } from './scoreHistory.js';
 import { useCorpusRecord } from './tokenCorpus.js';
 import { ANALYST_QUESTIONS, answerQuestion, translateSignalKeys, translatedCategory } from './khanAnalyst.js';
@@ -1374,6 +1375,15 @@ async function withLookupCache(cacheKey, fetcher) {
   return value;
 }
 
+// Graceful-degradation wrapper for the scan fan-outs (Phase 2, Section M): like
+// Promise.allSettled, but every provider promise is time-bounded first, so one
+// hung/dead third-party API degrades to a 'rejected' (→ null) result quickly
+// instead of stalling the whole scan. A provider that merely fails was already
+// isolated by allSettled; this adds the missing timeout for one that hangs.
+function settledWithTimeout(promises) {
+  return Promise.allSettled(promises.map((promise) => withTimeout(promise)));
+}
+
 async function lookupSolanaToken(contractAddress) {
   const address = contractAddress.trim();
   if (!address) throw new Error('Enter a Solana contract address first.');
@@ -1381,7 +1391,7 @@ async function lookupSolanaToken(contractAddress) {
 }
 
 async function lookupSolanaTokenUncached(address) {
-  const [dexData, rpcData, holderAnalyticsData, jupiterData, mintInfoData, mintCreationData, coingeckoData, geckoTerminalData, goPlusData] = await Promise.allSettled([
+  const [dexData, rpcData, holderAnalyticsData, jupiterData, mintInfoData, mintCreationData, coingeckoData, geckoTerminalData, goPlusData] = await settledWithTimeout([
     fetchDexscreenerToken(address),
     fetchSolanaRpcToken(address),
     fetchSolanaHolderAnalytics(address),
@@ -1577,7 +1587,7 @@ async function fetchDexscreenerSearchMatches(term) {
 // favor of the verified entry.
 async function fetchTokenSearchMatches(term) {
   const nativeId = NATIVE_ASSET_COINGECKO_IDS[term.trim().toUpperCase()];
-  const [canonicalResult, nativeResult, dexResult] = await Promise.allSettled([
+  const [canonicalResult, nativeResult, dexResult] = await settledWithTimeout([
     fetchCoinGeckoCanonicalMatches(term),
     nativeId ? fetchCoinGeckoCoinDetail(nativeId) : Promise.resolve(null),
     fetchDexscreenerSearchMatches(term),
@@ -1627,7 +1637,7 @@ async function lookupGenericChainToken(chainId, address) {
 }
 
 async function lookupGenericChainTokenUncached(chainId, address) {
-  const [dexResult, coingeckoResult, geckoTerminalResult, explorerCreationResult, explorerFlagsResult, goPlusResult] = await Promise.allSettled([
+  const [dexResult, coingeckoResult, geckoTerminalResult, explorerCreationResult, explorerFlagsResult, goPlusResult] = await settledWithTimeout([
     fetchDexscreenerToken(address, chainId),
     fetchCoinGeckoTokenData(chainId, address),
     fetchGeckoTerminalToken(chainId, address),
@@ -1802,7 +1812,7 @@ async function lookupTokenMatch(match) {
 // that's the same asset's real DEX liquidity, not an estimate.
 async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel) {
   const liquidityProxy = NATIVE_LIQUIDITY_PROXY[coingeckoId];
-  const [detailResult, proxyDexResult, blockchairResult] = await Promise.allSettled([
+  const [detailResult, proxyDexResult, blockchairResult] = await settledWithTimeout([
     fetchCoinGeckoCoinDetail(coingeckoId),
     liquidityProxy ? fetchDexscreenerToken(liquidityProxy.address, liquidityProxy.chainId) : Promise.resolve(null),
     fetchBlockchairNativeStats(coingeckoId),

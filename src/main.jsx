@@ -7399,6 +7399,61 @@ function planLabel(t, plan) {
   return t(`adminPremium.plans.${plan}`) || PREMIUM_PLAN_LABELS[plan] || plan;
 }
 
+// Shared shell for the admin user-management modals (grant, details, bulk).
+//
+// Portal to <body> so the fixed-position backdrop is not trapped by an
+// ancestor's containing block. AdminPremiumPage renders these modals inside its
+// `.page-section`, which keeps a non-`none` transform from the khanFadeUp
+// entrance animation (animation-fill-mode: both retains the final keyframe
+// forever) - that makes the section the containing block for `position: fixed`,
+// so `inset: 0` resolves against the whole tall section instead of the viewport.
+// The backdrop then dims the section while the panel lands at the section's top,
+// far above the visible area once you have scrolled down the user table to reach
+// "Manage" - which is why this only showed up on mobile, where the table is tall
+// enough to need that scroll. ReportModal already uses this same fix.
+function AdminModalShell({ onClose, className, dismissable = true, children }) {
+  // Lock the background while the modal is open. iOS Safari ignores
+  // `overflow: hidden` on <body>, so pin the body and restore the offset on
+  // close - otherwise the page behind scrolls under the modal on touch.
+  useEffect(() => {
+    const { body } = document;
+    const scrollY = window.scrollY;
+    const prev = { position: body.style.position, top: body.style.top, width: body.style.width };
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.width = '100%';
+    return () => {
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.width = prev.width;
+      // `behavior: instant` overrides the global `html { scroll-behavior: smooth }`,
+      // which would otherwise animate the page back to where it already was.
+      window.scrollTo({ top: scrollY, left: 0, behavior: 'instant' });
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!dismissable) return undefined;
+    const onKey = (event) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [dismissable, onClose]);
+
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    <div
+      className={`modal-backdrop admin-modal-backdrop${className ? ` ${className}` : ''}`}
+      role="dialog"
+      aria-modal="true"
+      onClick={(event) => { if (dismissable && event.target === event.currentTarget) onClose(); }}
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 function PremiumGrantModal({ user, token, onClose, onDone }) {
   const { t } = useTranslation();
   const [plan, setPlan] = useState(user.plan && user.plan !== 'free' ? user.plan : 'premium');
@@ -7429,7 +7484,7 @@ function PremiumGrantModal({ user, token, onClose, onDone }) {
   const busy = state.status === 'loading';
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <AdminModalShell onClose={onClose}>
       <div className="modal-panel premium-grant-modal">
         <button className="modal-close-btn" type="button" onClick={onClose} aria-label={t('common.close')}><X size={18} /></button>
         <SectionTitle icon={Crown} eyebrow={t('adminPremium.eyebrow')} title={t('adminPremium.manageFor', { name: user.name || user.email })} />
@@ -7488,7 +7543,7 @@ function PremiumGrantModal({ user, token, onClose, onDone }) {
           </button>
         </div>
       </div>
-    </div>
+    </AdminModalShell>
   );
 }
 
@@ -7531,7 +7586,7 @@ function UserDetailsModal({ user, token, onClose, onManage }) {
   ];
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <AdminModalShell onClose={onClose}>
       <div className="modal-panel user-details-modal">
         <button className="modal-close-btn" type="button" onClick={onClose} aria-label={t('common.close')}><X size={18} /></button>
         <SectionTitle icon={Activity} eyebrow={t('adminPremium.eyebrow')} title={t('adminPremium.details.title', { name: user.name || user.email })} />
@@ -7615,7 +7670,7 @@ function UserDetailsModal({ user, token, onClose, onManage }) {
           </>
         )}
       </div>
-    </div>
+    </AdminModalShell>
   );
 }
 
@@ -8199,11 +8254,9 @@ function AdminPremiumPage() {
       )}
 
       {bulkConfirm && (
-        <div
-          className="modal-backdrop"
-          role="dialog"
-          aria-modal="true"
-          onClick={(event) => { if (event.target === event.currentTarget && bulkState.status !== 'loading') setBulkConfirm(null); }}
+        <AdminModalShell
+          onClose={() => setBulkConfirm(null)}
+          dismissable={bulkState.status !== 'loading'}
         >
           <div className="modal-panel bulk-confirm-modal">
             <SectionTitle
@@ -8236,7 +8289,7 @@ function AdminPremiumPage() {
               </button>
             </div>
           </div>
-        </div>
+        </AdminModalShell>
       )}
     </section>
   );

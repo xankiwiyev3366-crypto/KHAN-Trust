@@ -7830,3 +7830,82 @@ main {
   background: var(--gold-soft);
   color: var(--gold-bright);
 }
+
+/* ── Admin user-management modals: mobile / iOS Safari hardening ─────────────
+   Scoped to the admin grant / details / bulk-confirm modals only (they carry
+   .admin-modal-backdrop via AdminModalShell). The shared .modal-backdrop and
+   .modal-panel rules that every other modal on the site relies on are left
+   untouched; these rules sit at the end of the file so they win on source
+   order over the responsive .modal-backdrop overrides above. */
+.admin-modal-backdrop {
+  /* Above .site-header (50), the sticky admin table chrome (60) and the
+     fullscreen market chart (110), all of which the page can render behind. */
+  z-index: 200;
+  align-items: center;
+  /* The panel scrolls, not the backdrop - nested scroll containers make the
+     panel rubber-band away from under the finger on iOS. */
+  overflow: hidden;
+  overscroll-behavior: contain;
+  -webkit-backdrop-filter: blur(10px);
+  padding: 14px;
+}
+
+.admin-modal-backdrop .modal-panel {
+  position: relative;
+  z-index: 1;
+  /* Fall back to vh, then prefer dvh: on iOS Safari 100vh is the *large*
+     viewport, so a 100vh panel runs under the URL bar and its bottom actions
+     (Grant / Revoke) sit off-screen. dvh tracks the visible area. */
+  max-height: calc(100vh - 28px);
+  max-height: calc(100dvh - 28px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* iOS Safari resolves a backdrop-filter element nested inside another
+     backdrop-filter element against the wrong backdrop, painting this
+     translucent panel as a near-black block against the dimmed overlay. The
+     backdrop already blurs the page behind it, so the panel just needs an
+     opaque surface of its own. */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: linear-gradient(180deg, #191711 0%, #0c0c0a 100%);
+}
+
+/* Keep the close affordance reachable without scrolling back up. */
+.admin-modal-backdrop .modal-close-btn {
+  position: sticky;
+  top: 0;
+  align-self: flex-end;
+  z-index: 2;
+}
+
+@media (max-width: 640px) {
+  .admin-modal-backdrop {
+    align-items: start;
+    padding:
+      max(10px, env(safe-area-inset-top, 0px))
+      max(10px, env(safe-area-inset-right, 0px))
+      max(10px, env(safe-area-inset-bottom, 0px))
+      max(10px, env(safe-area-inset-left, 0px));
+  }
+
+  .admin-modal-backdrop .modal-panel {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100vh - 20px);
+    max-height: calc(100dvh - 20px);
+  }
+
+  /* Stack the grant / apply / revoke actions so each is a full-width tap
+     target instead of three cramped buttons wrapping mid-row. */
+  .admin-modal-backdrop .premium-grant-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-modal-backdrop .premium-grant-actions button {
+    width: 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+}

@@ -128,50 +128,65 @@ function KhanAiEntity({ state = 'idle', size = 'md', className = '' }) {
   );
 }
 
-// The four pipeline stages. These map onto work lookupSolanaTokenUncached
-// genuinely performs (Dexscreener/RPC/GeckoTerminal, holder analytics, mint +
-// GoPlus contract security, then the scoring engine) - the console is a
-// checklist of that pipeline, not decorative filler. The underlying fetches
-// run in parallel, so this reflects the stages, not a strict ordering.
-const SCAN_STAGES = ['blockchain', 'holders', 'contract', 'score'];
-const STAGE_MS = 620;
+// The scan pipeline, in the order it is presented. Every stage is backed by
+// real network or scoring work in main.jsx's lookup layer (see the taps in
+// lookupSolanaTokenUncached / lookupGenericChainTokenUncached /
+// lookupNativeCoinGeckoAsset and runTrustEngine). Nothing here is on a timer:
+// a stage only ever completes because the promises behind it settled.
+const SCAN_STAGES = ['connect', 'liquidity', 'contract', 'holders', 'engine', 'score', 'finalize'];
 
 /**
- * Advances through the pipeline stages while a scan is in flight, holding on
- * the final stage until the real request settles - so the console can never
- * claim "done" before the work actually is.
+ * Telemetry sink the lookup layer writes real completions into.
+ *
+ * `complete(stage)` - that stage's real work finished.
+ * `skip(stage)`     - this lookup path genuinely does not perform that work
+ *                     (a native coin has no contract to verify), so it is shown
+ *                     as skipped rather than as a passing check.
+ * `completeAll()`   - a cache hit did no network work at all; replaying the
+ *                     animation would be theatre.
  */
-function useScanStages(active) {
-  const [stage, setStage] = useState(0);
-
-  useEffect(() => {
-    if (!active) {
-      setStage(0);
-      return undefined;
-    }
-    setStage(0);
-    const timers = SCAN_STAGES.slice(1).map((_, index) =>
-      setTimeout(() => setStage(index + 1), (index + 1) * STAGE_MS)
-    );
-    return () => timers.forEach(clearTimeout);
-  }, [active]);
-
-  return stage;
+export function createScanReporter(onChange) {
+  const done = new Set();
+  const skipped = new Set();
+  const emit = () => onChange({ done: new Set(done), skipped: new Set(skipped) });
+  return {
+    complete(stage) { if (!done.has(stage)) { done.add(stage); emit(); } },
+    skip(stage) { if (!skipped.has(stage)) { skipped.add(stage); emit(); } },
+    completeAll() { SCAN_STAGES.forEach((stage) => done.add(stage)); emit(); },
+  };
 }
 
 /**
- * Inline scan console shown in the hero while a lookup runs.
+ * Inline scan console shown while a lookup runs.
  *
  * Deliberately inline rather than an overlay: it must never cover buttons,
  * block scrolling, or interrupt what the user is doing.
+ *
+ * Ordering: the underlying providers resolve in parallel and in nondeterministic
+ * order, so a later stage's fetch can genuinely settle before an earlier one's.
+ * Rather than reorder the list (which would read as chaos) or fake a sequence
+ * (which would lie), a stage is only shown as finished once its own work AND
+ * every stage above it has settled. The list therefore reads top-to-bottom and
+ * still never runs a single millisecond ahead of the backend.
  */
-export function KhanAiScanConsole({ active, error = null }) {
+export function KhanAiScanConsole({ active, progress, error = null }) {
   const { t } = useTranslation();
-  const stage = useScanStages(active && !error);
 
   if (!active && !error) return null;
 
   const state = error ? 'error' : 'analyzing';
+  const done = progress?.done || new Set();
+  const skipped = progress?.skipped || new Set();
+  const settled = (key) => done.has(key) || skipped.has(key);
+
+  let cursor = SCAN_STAGES.findIndex((key) => !settled(key));
+  if (cursor === -1) cursor = SCAN_STAGES.length;
+
+  const stageClass = (key, index) => {
+    if (index > cursor) return 'is-pending';
+    if (index === cursor) return 'is-active';
+    return skipped.has(key) ? 'is-skipped' : 'is-done';
+  };
 
   return (
     <div className={`khan-ai-console is-${state}`}>
@@ -180,7 +195,7 @@ export function KhanAiScanConsole({ active, error = null }) {
         <p className="khan-ai-console-label">
           <span className="khan-ai-console-name">{t('khanAi.name')}</span>
           <span className="khan-ai-console-status">
-            {error ? t('khanAi.console.halted') : t('khanAi.console.running')}
+            {error ? t('khanAi.console.halted') : t('khanAi.console.initializing')}
           </span>
         </p>
 
@@ -189,12 +204,12 @@ export function KhanAiScanConsole({ active, error = null }) {
         ) : (
           <ul className="khan-ai-stages" role="status" aria-live="polite">
             {SCAN_STAGES.map((key, index) => (
-              <li
-                key={key}
-                className={`khan-ai-stage ${index < stage ? 'is-done' : index === stage ? 'is-active' : 'is-pending'}`}
-              >
+              <li key={key} className={`khan-ai-stage ${stageClass(key, index)}`}>
                 <span className="khan-ai-stage-dot" aria-hidden="true" />
                 <span className="khan-ai-stage-text">{t(`khanAi.stages.${key}`)}</span>
+                {skipped.has(key) && index < cursor && (
+                  <span className="khan-ai-stage-note">{t('khanAi.stages.notApplicable')}</span>
+                )}
               </li>
             ))}
           </ul>
@@ -230,24 +245,124 @@ export function KhanAiHeroMark({ children }) {
 }
 
 /**
- * One-shot confirmation glow for the Trust Score reveal. Starts in 'complete',
- * settles to 'idle' once the flash has played, so the score card is never
- * left with a permanently "celebrating" mark.
+ * One elegant confirmation pulse for the Trust Score reveal, then calm. Only
+ * pulses when the card was actually reached by a completed scan; otherwise it
+ * mounts idle. Enterprise software confirms, it does not celebrate - so this
+ * fires once and settles to 'idle' rather than looping.
  */
-export function KhanAiVerdictMark() {
+export function KhanAiVerdictMark({ revealed = false }) {
   const { t } = useTranslation();
-  const [state, setState] = useState('complete');
+  const [state, setState] = useState(revealed ? 'complete' : 'idle');
   const timer = useRef(null);
 
   useEffect(() => {
+    if (!revealed) return undefined;
     timer.current = setTimeout(() => setState('idle'), 1600);
     return () => clearTimeout(timer.current);
-  }, []);
+  }, [revealed]);
 
   return (
     <div className="khan-ai-verdict">
       <KhanAiEntity state={state} size="sm" />
       <span className="khan-ai-verdict-text">{t('khanAi.verdict.analyzed')}</span>
+    </div>
+  );
+}
+
+// Blockchain node network: a fixed, hand-placed graph. Deliberately not random
+// per render - a stable topology reads as infrastructure, whereas re-rolled
+// noise reads as decoration. Coordinates are in a 1200x800 viewBox.
+const NET_NODES = [
+  [90, 120], [260, 68], [430, 150], [610, 90], [780, 170], [950, 110], [1120, 190],
+  [150, 330], [340, 280], [520, 360], [700, 300], [880, 380], [1060, 320],
+  [70, 560], [250, 620], [440, 540], [620, 640], [800, 560], [980, 650], [1140, 540],
+];
+
+// Only short-span edges are drawn, so the graph reads as a mesh rather than a
+// starburst. Precomputed at module load, never per frame.
+const NET_EDGES = (() => {
+  const edges = [];
+  for (let i = 0; i < NET_NODES.length; i++) {
+    for (let j = i + 1; j < NET_NODES.length; j++) {
+      const [ax, ay] = NET_NODES[i];
+      const [bx, by] = NET_NODES[j];
+      if (Math.hypot(bx - ax, by - ay) < 240) edges.push([ax, ay, bx, by]);
+    }
+  }
+  return edges;
+})();
+
+/**
+ * Enterprise cyber environment behind the page: hex security grid, blockchain
+ * node network, telemetry sweep and drifting particles, over layered gradients
+ * for depth.
+ *
+ * Fixed, pointer-events:none, aria-hidden and z-index 0, so it sits strictly
+ * behind content and can never intercept a click or be read by a screen reader.
+ * The hex grid is an SVG <pattern> (one tile, GPU-tiled) rather than thousands
+ * of elements, and the whole layer is static except three slow transform/opacity
+ * animations - it must never compete with the content.
+ */
+export function KhanAiBackdrop() {
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
+  const hex = `khanBgHex-${uid}`;
+  const fade = `khanBgFade-${uid}`;
+  const sweep = `khanBgSweep-${uid}`;
+
+  return (
+    <div className="khan-bg" aria-hidden="true">
+      <div className="khan-bg-depth" />
+      <svg className="khan-bg-svg" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          {/* One hexagon tile, repeated by the renderer. */}
+          <pattern id={hex} width="56" height="48.5" patternUnits="userSpaceOnUse">
+            <path
+              d="M14 0.5 L42 0.5 L56 24.25 L42 48 L14 48 L0 24.25 Z"
+              fill="none"
+              stroke="var(--gold)"
+              strokeOpacity="0.055"
+              strokeWidth="1"
+            />
+          </pattern>
+
+          {/* Vignette: keeps the grid off the centre, where the copy sits. */}
+          <radialGradient id={fade} cx="50%" cy="42%" r="72%">
+            <stop offset="0%" stopColor="#fff" stopOpacity="0.85" />
+            <stop offset="60%" stopColor="#fff" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+          </radialGradient>
+          <mask id={`${fade}-mask`}>
+            <rect width="1200" height="800" fill={`url(#${fade})`} />
+          </mask>
+
+          <linearGradient id={sweep} x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="var(--gold)" stopOpacity="0" />
+            <stop offset="50%" stopColor="var(--gold-bright)" stopOpacity="0.5" />
+            <stop offset="100%" stopColor="var(--gold)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        <g mask={`url(#${fade}-mask)`}>
+          <rect className="khan-bg-grid" width="1200" height="800" fill={`url(#${hex})`} />
+
+          <g className="khan-bg-net">
+            {NET_EDGES.map(([ax, ay, bx, by], i) => (
+              <line key={i} x1={ax} y1={ay} x2={bx} y2={by} stroke="var(--gold)" strokeOpacity="0.09" strokeWidth="0.75" />
+            ))}
+            {NET_NODES.map(([cx, cy], i) => (
+              <circle key={i} className="khan-bg-node" cx={cx} cy={cy} r={i % 4 === 0 ? 2.4 : 1.5} style={{ animationDelay: `${(i % 7) * 0.9}s` }} />
+            ))}
+          </g>
+
+          {/* AI telemetry line: one slow horizontal sweep. */}
+          <rect className="khan-bg-telemetry" x="-1200" y="0" width="1200" height="800" fill={`url(#${sweep})`} />
+        </g>
+      </svg>
+      <div className="khan-bg-particles">
+        {Array.from({ length: 7 }, (_, i) => (
+          <span key={i} className="khan-bg-particle" style={{ left: `${8 + i * 13}%`, animationDelay: `${i * 3.5}s`, animationDuration: `${26 + i * 4}s` }} />
+        ))}
+      </div>
     </div>
   );
 }

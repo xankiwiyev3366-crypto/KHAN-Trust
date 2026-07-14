@@ -113,7 +113,7 @@ const EarlyStageFeature = lazy(() => import('./EarlyStage.jsx'));
 // rather than lazy: it is a few KB of inline SVG with no external assets, and
 // it renders in the hero above the fold, where a lazy chunk would show up as a
 // visible pop-in on the first paint. See KhanAI.jsx.
-import { KhanAiHeroMark, KhanAiScanConsole, KhanAiVerdictMark, KhanAiPanel } from './KhanAI.jsx';
+import { KhanAiHeroMark, KhanAiScanConsole, KhanAiVerdictMark, KhanAiPanel, KhanAiBackdrop, createScanReporter } from './KhanAI.jsx';
 import { PhantomWalletName } from '@solana/wallet-adapter-phantom';
 import {
   initAnalytics,
@@ -1389,23 +1389,58 @@ function settledWithTimeout(promises) {
   return Promise.allSettled(promises.map((promise) => withTimeout(promise)));
 }
 
-async function lookupSolanaToken(contractAddress) {
+// Scan telemetry: the console reports real work, never a timer. Each stage is
+// backed by specific network calls below, and is only marked complete once the
+// promises behind it have actually settled - so the console leads the user by
+// exactly zero milliseconds. SCAN_STAGES / createScanReporter live in KhanAI.jsx
+// so the pipeline definition and the UI that renders it cannot drift apart.
+async function lookupSolanaToken(contractAddress, report) {
   const address = contractAddress.trim();
   if (!address) throw new Error('Enter a Solana contract address first.');
-  return withLookupCache(`solana:${address.toLowerCase()}`, () => lookupSolanaTokenUncached(address));
+  const cacheKey = `solana:${address.toLowerCase()}`;
+  // A cache hit performs no network work at all. Replaying the stage animation
+  // would be theatre, so the console jumps straight to complete.
+  const cached = lookupCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < LOOKUP_CACHE_TTL_MS) {
+    report?.completeAll();
+    return cached.value;
+  }
+  return withLookupCache(cacheKey, () => lookupSolanaTokenUncached(address, report));
 }
 
-async function lookupSolanaTokenUncached(address) {
-  const [dexData, rpcData, holderAnalyticsData, jupiterData, mintInfoData, mintCreationData, coingeckoData, geckoTerminalData, goPlusData] = await settledWithTimeout([
-    fetchDexscreenerToken(address),
-    fetchSolanaRpcToken(address),
-    fetchSolanaHolderAnalytics(address),
-    fetchJupiterTokenData(address),
-    fetchMintAccountInfo(address),
-    fetchMintCreationTimestamp(address),
-    fetchCoinGeckoTokenData('solana', address),
-    fetchGeckoTerminalToken('solana', address),
-    fetchGoPlusSolanaTokenSecurity(address),
+async function lookupSolanaTokenUncached(address, report) {
+  // Kick every provider off in parallel exactly as before, but keep a handle on
+  // each promise so stage completion can be driven by the real settlement
+  // rather than by elapsed time.
+  const dexP = withTimeout(fetchDexscreenerToken(address));
+  const rpcP = withTimeout(fetchSolanaRpcToken(address));
+  const holderAnalyticsP = withTimeout(fetchSolanaHolderAnalytics(address));
+  const jupiterP = withTimeout(fetchJupiterTokenData(address));
+  const mintInfoP = withTimeout(fetchMintAccountInfo(address));
+  const mintCreationP = withTimeout(fetchMintCreationTimestamp(address));
+  const coingeckoP = withTimeout(fetchCoinGeckoTokenData('solana', address));
+  const geckoTerminalP = withTimeout(fetchGeckoTerminalToken('solana', address));
+  const goPlusP = withTimeout(fetchGoPlusSolanaTokenSecurity(address));
+
+  if (report) {
+    // allSettled never rejects, so these taps also keep every provider promise
+    // handled - no unhandled rejections even though each is awaited again below.
+    Promise.allSettled([rpcP, jupiterP]).then(() => report.complete('connect'));
+    Promise.allSettled([dexP, geckoTerminalP, coingeckoP]).then(() => report.complete('liquidity'));
+    Promise.allSettled([mintInfoP, mintCreationP, goPlusP]).then(() => report.complete('contract'));
+    Promise.allSettled([holderAnalyticsP]).then(() => report.complete('holders'));
+  }
+
+  const [dexData, rpcData, holderAnalyticsData, jupiterData, mintInfoData, mintCreationData, coingeckoData, geckoTerminalData, goPlusData] = await Promise.allSettled([
+    dexP,
+    rpcP,
+    holderAnalyticsP,
+    jupiterP,
+    mintInfoP,
+    mintCreationP,
+    coingeckoP,
+    geckoTerminalP,
+    goPlusP,
   ]);
 
   const dex = dexData.status === 'fulfilled' ? dexData.value : null;
@@ -1637,18 +1672,40 @@ async function fetchTokenSearchMatches(term) {
     .slice(0, 8);
 }
 
-async function lookupGenericChainToken(chainId, address) {
-  return withLookupCache(`${chainId}:${address.toLowerCase()}`, () => lookupGenericChainTokenUncached(chainId, address));
+async function lookupGenericChainToken(chainId, address, report) {
+  const cacheKey = `${chainId}:${address.toLowerCase()}`;
+  const cached = lookupCache.get(cacheKey);
+  if (cached && Date.now() - cached.fetchedAt < LOOKUP_CACHE_TTL_MS) {
+    report?.completeAll();
+    return cached.value;
+  }
+  return withLookupCache(cacheKey, () => lookupGenericChainTokenUncached(chainId, address, report));
 }
 
-async function lookupGenericChainTokenUncached(chainId, address) {
-  const [dexResult, coingeckoResult, geckoTerminalResult, explorerCreationResult, explorerFlagsResult, goPlusResult] = await settledWithTimeout([
-    fetchDexscreenerToken(address, chainId),
-    fetchCoinGeckoTokenData(chainId, address),
-    fetchGeckoTerminalToken(chainId, address),
-    fetchExplorerContractCreation(chainId, address),
-    fetchExplorerContractFlags(chainId, address),
-    fetchGoPlusEvmTokenSecurity(chainId, address),
+async function lookupGenericChainTokenUncached(chainId, address, report) {
+  const dexP = withTimeout(fetchDexscreenerToken(address, chainId));
+  const coingeckoP = withTimeout(fetchCoinGeckoTokenData(chainId, address));
+  const geckoTerminalP = withTimeout(fetchGeckoTerminalToken(chainId, address));
+  const explorerCreationP = withTimeout(fetchExplorerContractCreation(chainId, address));
+  const explorerFlagsP = withTimeout(fetchExplorerContractFlags(chainId, address));
+  const goPlusP = withTimeout(fetchGoPlusEvmTokenSecurity(chainId, address));
+
+  if (report) {
+    Promise.allSettled([explorerCreationP]).then(() => report.complete('connect'));
+    Promise.allSettled([dexP, coingeckoP, geckoTerminalP]).then(() => report.complete('liquidity'));
+    Promise.allSettled([explorerFlagsP, goPlusP]).then(() => report.complete('contract'));
+    // No public EVM equivalent of the Solana holder-analytics fan-out is wired
+    // up on this path, so the stage is skipped rather than claimed.
+    report.skip('holders');
+  }
+
+  const [dexResult, coingeckoResult, geckoTerminalResult, explorerCreationResult, explorerFlagsResult, goPlusResult] = await Promise.allSettled([
+    dexP,
+    coingeckoP,
+    geckoTerminalP,
+    explorerCreationP,
+    explorerFlagsP,
+    goPlusP,
   ]);
   const dex = dexResult.status === 'fulfilled' ? dexResult.value : null;
   const coingecko = coingeckoResult.status === 'fulfilled' ? coingeckoResult.value : null;
@@ -1787,14 +1844,14 @@ async function lookupGenericChainTokenUncached(chainId, address) {
   };
 }
 
-async function lookupTokenMatch(match) {
+async function lookupTokenMatch(match, report) {
   let project;
   if (match.chainId === 'native') {
-    project = await lookupNativeCoinGeckoAsset(match.coingeckoId, match.chain);
+    project = await lookupNativeCoinGeckoAsset(match.coingeckoId, match.chain, report);
   } else if (match.chainId === 'solana') {
-    project = await lookupSolanaToken(match.address);
+    project = await lookupSolanaToken(match.address, report);
   } else {
-    project = await lookupGenericChainToken(match.chainId, match.address);
+    project = await lookupGenericChainToken(match.chainId, match.address, report);
   }
   // The match the user actually picked from the selection list (logo, name,
   // chain) takes priority for display - it's what they saw and chose, and
@@ -1815,13 +1872,23 @@ async function lookupTokenMatch(match) {
 // IS real and obtainable for assets that trade on their own chain via a
 // canonical 1:1 wrapped/native representation (see NATIVE_LIQUIDITY_PROXY) -
 // that's the same asset's real DEX liquidity, not an estimate.
-async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel) {
+async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel, report) {
   const liquidityProxy = NATIVE_LIQUIDITY_PROXY[coingeckoId];
-  const [detailResult, proxyDexResult, blockchairResult] = await settledWithTimeout([
-    fetchCoinGeckoCoinDetail(coingeckoId),
-    liquidityProxy ? fetchDexscreenerToken(liquidityProxy.address, liquidityProxy.chainId) : Promise.resolve(null),
-    fetchBlockchairNativeStats(coingeckoId),
-  ]);
+  const detailP = withTimeout(fetchCoinGeckoCoinDetail(coingeckoId));
+  const proxyDexP = withTimeout(liquidityProxy ? fetchDexscreenerToken(liquidityProxy.address, liquidityProxy.chainId) : Promise.resolve(null));
+  const blockchairP = withTimeout(fetchBlockchairNativeStats(coingeckoId));
+
+  if (report) {
+    Promise.allSettled([detailP, blockchairP]).then(() => report.complete('connect'));
+    Promise.allSettled([proxyDexP]).then(() => report.complete('liquidity'));
+    // A native chain asset has no contract to verify, and no reliable public
+    // source measures native holder distribution (see the note above). Both
+    // stages are honestly skipped rather than shown as passing checks.
+    report.skip('contract');
+    report.skip('holders');
+  }
+
+  const [detailResult, proxyDexResult, blockchairResult] = await Promise.allSettled([detailP, proxyDexP, blockchairP]);
   const detail = detailResult.status === 'fulfilled' ? detailResult.value : null;
   const proxyDex = proxyDexResult.status === 'fulfilled' ? proxyDexResult.value : null;
   const blockchair = blockchairResult.status === 'fulfilled' ? blockchairResult.value : null;
@@ -3372,6 +3439,12 @@ function App() {
   const [authModalMode, setAuthModalMode] = useState(null); // null = closed
   const [query, setQuery] = useState('');
   const [searchState, setSearchState] = useState({ status: 'idle', message: '' });
+  // Live scan telemetry, written by the lookup layer as real operations settle
+  // and read by the KHAN AI console. `revealScan` marks the one navigation that
+  // came from a completed scan, so the Trust Score card plays its reveal there
+  // and nowhere else.
+  const [scanProgress, setScanProgress] = useState({ done: new Set(), skipped: new Set() });
+  const [revealScan, setRevealScan] = useState(false);
   const [activeFilter, setActiveFilter] = useState('All');
   const [userProjects, setUserProjects] = useState(() => readProjectStorage());
   const [watchlist, setWatchlist] = useState(() => readStorage(WATCHLIST_KEY, []));
@@ -3457,10 +3530,35 @@ function App() {
     if (selectedProject) trackProjectViewEvent(selectedProject);
   }, [selectedProject?.id]);
 
-  const navigate = (target) => {
+  const navigate = (target, options = {}) => {
+    setRevealScan(Boolean(options.revealScan));
     window.location.hash = `/${target}`;
     setPage(target);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Single gate for everything KHAN AI renders. Any page id starting `admin-`
+  // is Admin Panel, so a future admin route is excluded by default rather than
+  // needing to be remembered here.
+  const isAdminPage = page.startsWith('admin-');
+
+  // Opens a scan: clears the previous telemetry and hands the lookup layer a
+  // reporter to write real completions into. Every stage the console shows
+  // originates here - there is no timer anywhere in this path.
+  const beginScan = () => {
+    setScanProgress({ done: new Set(), skipped: new Set() });
+    return createScanReporter(setScanProgress);
+  };
+
+  // The AI Trust Engine stages. These wrap the genuine scoring work
+  // (normalizeProject runs the scoring engine in scoringEngine.js), so 'engine'
+  // completes once scoring has actually run and 'score' once a real trustScore
+  // exists on the project.
+  const runTrustEngine = (liveLookup, report) => {
+    report?.complete('engine');
+    const project = normalizeProject(mergeStoredMetadata(liveLookup, findStoredProject(userProjects, liveLookup)));
+    if (typeof project.trustScore === 'number') report?.complete('score');
+    return project;
   };
 
   // Auth-gated navigation: intercepts clicks to protected pages and shows
@@ -3530,17 +3628,19 @@ function App() {
   };
 
   const resolveSearchMatch = async (match) => {
+    const report = beginScan();
     setSearchState({ status: 'loading', message: t('search.fetching') });
     trackTokenScanStarted(match.address);
     trackSearchEvent(match.address);
     try {
-      const liveLookup = await lookupTokenMatch(match);
-      const liveProject = normalizeProject(mergeStoredMetadata(liveLookup, findStoredProject(userProjects, liveLookup)));
+      const liveLookup = await lookupTokenMatch(match, report);
+      const liveProject = runTrustEngine(liveLookup, report);
       setUserProjects((items) => upsertProject(items, liveProject));
       setSearchState({ status: 'success', message: t('search.successOpened', { name: liveProject.name || liveProject.ticker }) });
       trackTokenScanCompleted(match.address, 'success');
       trackTokenScanEvent(liveProject);
-      navigate(`project/${liveProject.id}`);
+      report.complete('finalize');
+      navigate(`project/${liveProject.id}`, { revealScan: true });
     } catch (error) {
       setSearchState({ status: 'error', message: error.message || t('search.errorNone') });
       trackTokenScanCompleted(match.address, 'error');
@@ -3556,17 +3656,19 @@ function App() {
     }
 
     if (looksLikeSolanaAddress(term)) {
+      const report = beginScan();
       setSearchState({ status: 'loading', message: t('search.fetching') });
       trackTokenScanStarted(term);
       trackSearchEvent(term);
       try {
-        const liveLookup = await lookupSolanaToken(term);
-        const liveProject = normalizeProject(mergeStoredMetadata(liveLookup, findStoredProject(userProjects, liveLookup)));
+        const liveLookup = await lookupSolanaToken(term, report);
+        const liveProject = runTrustEngine(liveLookup, report);
         setUserProjects((items) => upsertProject(items, liveProject));
         setSearchState({ status: 'success', message: t('search.successOpened', { name: liveProject.name || liveProject.ticker }) });
         trackTokenScanCompleted(term, 'success');
         trackTokenScanEvent(liveProject);
-        navigate(`project/${liveProject.id}`);
+        report.complete('finalize');
+        navigate(`project/${liveProject.id}`, { revealScan: true });
       } catch (error) {
         setSearchState({ status: 'error', message: error.message || t('search.errorNone') });
         trackTokenScanCompleted(term, 'error');
@@ -3681,7 +3783,10 @@ function App() {
   }, []);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${isAdminPage ? ' is-admin' : ''}`}>
+      {/* The cyber environment is part of the user-facing product identity and
+          is never shown behind the Admin Panel, which stays plain tooling. */}
+      {!isAdminPage && <KhanAiBackdrop />}
       <Sidebar page={page} navigate={navigate} navTo={navTo} alertCount={alertCount} />
       <div className="app-content">
       <Header page={page} navigate={navigate} navTo={navTo} setAuthModalMode={setAuthModalMode} />
@@ -3692,6 +3797,7 @@ function App() {
             query={query}
             setQuery={setQuery}
             searchState={searchState}
+            scanProgress={scanProgress}
             onSearch={handleSearch}
             onSelectMatch={resolveSearchMatch}
             onTokenCheck={handleTokenCheck}
@@ -3705,6 +3811,7 @@ function App() {
             query={query}
             setQuery={setQuery}
             searchState={searchState}
+            scanProgress={scanProgress}
             onSearch={handleSearch}
             onSelectMatch={resolveSearchMatch}
             activeFilter={activeFilter}
@@ -3746,6 +3853,7 @@ function App() {
           <ProjectProfile
             project={selectedProject}
             projects={projects}
+            revealScan={revealScan}
             navigate={navigate}
             watched={watchlist.includes(selectedProject.id)}
             toggleWatch={() => toggleWatch(selectedProject.id)}
@@ -3940,7 +4048,7 @@ function Sidebar({ page, navigate, navTo, alertCount }) {
   );
 }
 
-function HomePage({ projects, query, setQuery, searchState, onSearch, onSelectMatch, onTokenCheck, navigate, openMethodology }) {
+function HomePage({ projects, query, setQuery, searchState, scanProgress, onSearch, onSelectMatch, onTokenCheck, navigate, openMethodology }) {
   const { t } = useTranslation();
   const featured = projects.slice(0, 4);
   const heroProject = featured[0];
@@ -3961,6 +4069,7 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, onSelectMa
                 multiple matches) so nothing is said twice. */}
             <KhanAiScanConsole
               active={searchState.status === 'loading'}
+              progress={scanProgress}
               error={searchState.status === 'error' ? searchState.message : null}
             />
             {searchState.status !== 'loading' && searchState.status !== 'error' && <SearchStatus state={searchState} />}
@@ -4080,7 +4189,7 @@ function CheckAnyTokenSection({ onTokenCheck, navigate }) {
   );
 }
 
-function ExplorePage({ projects, query, setQuery, searchState, onSearch, onSelectMatch, activeFilter, setActiveFilter, navigate }) {
+function ExplorePage({ projects, query, setQuery, searchState, scanProgress, onSearch, onSelectMatch, activeFilter, setActiveFilter, navigate }) {
   const { t } = useTranslation();
   const filtered = projects.filter((project) => {
     const text = `${project.name} ${project.ticker} ${project.chain} ${project.contract}`.toLowerCase();
@@ -4102,6 +4211,7 @@ function ExplorePage({ projects, query, setQuery, searchState, onSearch, onSelec
           error is actually read - KHAN AI reports it in both places. */}
       <KhanAiScanConsole
         active={searchState.status === 'loading'}
+        progress={scanProgress}
         error={searchState.status === 'error' ? searchState.message : null}
       />
       {searchState.status !== 'loading' && searchState.status !== 'error' && <SearchStatus state={searchState} />}
@@ -5515,7 +5625,7 @@ function VerifiedBadgeEmbed({ project }) {
   );
 }
 
-function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch, onEdit, openMethodology, onRequestVerification }) {
+function ProjectProfile({ project, projects = [], revealScan = false, navigate, watched, toggleWatch, onEdit, openMethodology, onRequestVerification }) {
   const { gate } = useAuth();
   const { t } = useTranslation();
   const confidence = confidenceScore(project);
@@ -5590,14 +5700,18 @@ function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch
             </button>
           </div>
         </div>
-        <div className="profile-score-card">
+        {/* Result reveal. Only a card reached by a completed scan choreographs
+            (glow -> shield pulse -> data settles -> score -> risk indicators ->
+            calm); arriving from a link or a refresh shows the card plainly,
+            because there was no analysis to reveal. */}
+        <div className={`profile-score-card${revealScan ? ' is-revealing' : ''}`}>
           <ScoreCircle score={project.trustScore} size="large" />
           <ScoreHistoryStrip project={project} history={history} />
           <RiskPill level={project.riskLevel} />
           <span className="confidence-badge">{confidence.label}</span>
           <strong>{riskBadge(project.trustScore)}</strong>
           <span className="status-badge">{project.status}</span>
-          <KhanAiVerdictMark />
+          <KhanAiVerdictMark revealed={revealScan} />
         </div>
       </div>
 

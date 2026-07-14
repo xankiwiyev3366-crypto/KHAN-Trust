@@ -377,13 +377,18 @@ export default {
     },
     console: {
       running: 'Анализ',
+      initializing: 'Запуск защищённого анализа',
       halted: 'Анализ остановлен',
     },
     stages: {
-      blockchain: 'Анализ блокчейна...',
-      holders: 'Проверка держателей...',
+      connect: 'Подключение к блокчейну...',
+      liquidity: 'Получение ликвидности...',
       contract: 'Проверка контракта...',
+      holders: 'Определение концентрации держателей...',
+      engine: 'Запуск AI Trust Engine...',
       score: 'Расчёт Trust Score...',
+      finalize: 'Финализация оценки безопасности...',
+      notApplicable: 'неприменимо',
     },
     verdict: {
       analyzed: 'Проанализировано KHAN AI',

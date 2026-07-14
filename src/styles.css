@@ -8278,14 +8278,12 @@ main {
   color: var(--muted);
 }
 
-/* Trust Score reveal */
+/* Anchors the reveal glow overlay (.is-revealing::after) to the card itself -
+   without this it would resolve against .profile-page, which carries a
+   transform from its khanFadeUp entrance. The reveal choreography itself lives
+   in the cyber-environment block at the end of this file. */
 .profile-score-card {
-  animation: khanAiScoreReveal 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes khanAiScoreReveal {
-  from { opacity: 0; transform: translateY(10px) scale(0.985); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  position: relative;
 }
 
 /* Responsive */
@@ -8329,4 +8327,333 @@ main {
 
   .khan-ai .khan-ai-scanline { opacity: 0; }
   .khan-ai .khan-ai-core-glow { opacity: 0.9; }
+}
+
+/* ==========================================================================
+   KHAN AI - enterprise cyber environment, scan accent, reveal choreography
+   and interaction micro-response.
+   --------------------------------------------------------------------------
+   Same motion budget as the entity block above: transform + opacity only.
+   The cyan accent is scoped strictly to active scan states and is never used
+   as a brand colour - black + gold remain the identity.
+   ========================================================================== */
+
+:root {
+  /* Reserved exclusively for live scan telemetry. Desaturated on purpose:
+     an enterprise console signals, it does not glow neon. */
+  --scan-cyan: #7fd6d6;
+  --scan-cyan-soft: rgba(127, 214, 214, 0.18);
+  --graphite: #14140f;
+}
+
+/* ── Cyber environment ──────────────────────────────────────────────────────
+   Fixed behind everything, non-interactive, and excluded from the Admin Panel
+   at the React level (see isAdminPage in main.jsx). */
+.khan-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* Layered gradients supply depth; the SVG supplies structure. */
+.khan-bg-depth {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 55% at 50% -10%, rgba(224, 183, 92, 0.09), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 12% 20%, rgba(224, 183, 92, 0.05), transparent 65%),
+    radial-gradient(ellipse 70% 60% at 88% 75%, rgba(224, 183, 92, 0.035), transparent 70%),
+    linear-gradient(180deg, transparent 0%, rgba(5, 5, 5, 0.5) 60%, var(--bg) 100%);
+}
+
+.khan-bg-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* One very slow drift keeps the grid from reading as a static screenshot,
+   without ever pulling the eye. */
+.khan-bg-grid {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: khanBgDrift 90s ease-in-out infinite;
+}
+
+.khan-bg-node {
+  fill: var(--gold-bright);
+  opacity: 0.22;
+  animation: khanBgNode 7s ease-in-out infinite;
+}
+
+.khan-bg-telemetry {
+  transform-box: view-box;
+  opacity: 0.5;
+  animation: khanBgSweep 19s linear infinite;
+}
+
+.khan-bg-particles {
+  position: absolute;
+  inset: 0;
+}
+
+.khan-bg-particle {
+  position: absolute;
+  bottom: -10px;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  background: var(--gold-bright);
+  opacity: 0;
+  animation-name: khanBgRise;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes khanBgDrift {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(-22px, -14px, 0); }
+}
+
+@keyframes khanBgNode {
+  0%, 100% { opacity: 0.14; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.25); }
+}
+
+@keyframes khanBgSweep {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(2400px); }
+}
+
+@keyframes khanBgRise {
+  0% { transform: translate3d(0, 0, 0); opacity: 0; }
+  12% { opacity: 0.5; }
+  88% { opacity: 0.5; }
+  100% { transform: translate3d(18px, -100vh, 0); opacity: 0; }
+}
+
+/* Content must sit above the environment. The shell is transparent so the
+   layer shows through; the sidebar keeps its own solid background. */
+.app-shell {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Scan accent: cyan, active scan only ───────────────────────────────────── */
+.khan-ai.is-analyzing .khan-ai-ring--outer { stroke: var(--scan-cyan); }
+.khan-ai.is-analyzing .khan-ai-scanline { fill: var(--scan-cyan); }
+.khan-ai.is-analyzing .khan-ai-particle { fill: var(--scan-cyan); }
+
+.khan-ai-console.is-analyzing {
+  border-color: rgba(127, 214, 214, 0.22);
+}
+
+.khan-ai-console.is-analyzing .khan-ai-console-status {
+  color: var(--scan-cyan);
+}
+
+.khan-ai-stage.is-active .khan-ai-stage-dot {
+  background: var(--scan-cyan);
+  box-shadow: 0 0 0 3px var(--scan-cyan-soft);
+}
+
+/* Skipped: this path genuinely does not perform the step. Shown as a hollow
+   marker so it can never be mistaken for a passing check. */
+.khan-ai-stage.is-skipped {
+  opacity: 0.45;
+}
+
+.khan-ai-stage.is-skipped .khan-ai-stage-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--muted);
+}
+
+.khan-ai-stage-note {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+/* ── Result reveal choreography ─────────────────────────────────────────────
+   glow -> shield pulse -> data settles -> score -> risk indicators -> calm.
+   Staggered delays on one shared settle animation; every step is transform +
+   opacity, and every step ends at its natural resting state so the card is
+   left completely calm. */
+.profile-score-card.is-revealing {
+  animation: khanAiCardSettle 0.66s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.profile-score-card.is-revealing::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 40%, rgba(224, 183, 92, 0.28), transparent 70%);
+  opacity: 0;
+  animation: khanAiRevealGlow 1.5s ease-out both;
+}
+
+.profile-score-card.is-revealing .score-circle {
+  animation: khanAiScoreIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.42s both;
+}
+
+.profile-score-card.is-revealing .score-history-strip {
+  animation: khanAiSettleIn 0.5s ease-out 0.62s both;
+}
+
+.profile-score-card.is-revealing .risk-pill {
+  animation: khanAiSettleIn 0.5s ease-out 0.78s both;
+}
+
+.profile-score-card.is-revealing .confidence-badge {
+  animation: khanAiSettleIn 0.5s ease-out 0.86s both;
+}
+
+.profile-score-card.is-revealing > strong {
+  animation: khanAiSettleIn 0.5s ease-out 0.94s both;
+}
+
+.profile-score-card.is-revealing .status-badge {
+  animation: khanAiSettleIn 0.5s ease-out 1.02s both;
+}
+
+.profile-score-card.is-revealing .khan-ai-verdict {
+  animation: khanAiSettleIn 0.5s ease-out 1.1s both;
+}
+
+@keyframes khanAiCardSettle {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes khanAiRevealGlow {
+  0% { opacity: 0; }
+  22% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes khanAiScoreIn {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes khanAiSettleIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Interaction micro-response ────────────────────────────────────────────
+   Restrained on purpose: a soft gold response and a small elevation, nothing
+   that reads as a game. All transform/opacity/box-shadow on discrete states,
+   never looping. */
+.project-card,
+.pricing-card,
+.token-check-card,
+.payment-method-card {
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.24s ease, border-color 0.24s ease;
+}
+
+@media (hover: hover) {
+  .project-card:hover,
+  .pricing-card:hover,
+  .token-check-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(224, 183, 92, 0.4);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(224, 183, 92, 0.16);
+  }
+}
+
+/* Premium press feedback: a real, immediate acknowledgement of the press. */
+.primary-button,
+.secondary-button,
+.ghost-button,
+.card-button {
+  transition: transform 0.12s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.primary-button:active,
+.secondary-button:active,
+.ghost-button:active,
+.card-button:active {
+  transform: translateY(1px) scale(0.985);
+}
+
+.primary-button:focus-visible,
+.secondary-button:focus-visible,
+.ghost-button:focus-visible,
+.search-box input:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+/* Intelligent search focus: the field lifts and takes a gold ring as KHAN AI's
+   input surface. */
+.search-box {
+  transition: border-color 0.26s ease, box-shadow 0.26s ease, transform 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.search-box:focus-within {
+  border-color: rgba(224, 183, 92, 0.5);
+  box-shadow: 0 0 0 3px rgba(224, 183, 92, 0.1), 0 14px 34px rgba(0, 0, 0, 0.4);
+  transform: translateY(-1px);
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* Fewer moving parts on phones: the node network and particles are the first
+     thing to go, since they are pure atmosphere and the most costly per frame. */
+  .khan-bg-net,
+  .khan-bg-particles,
+  .khan-bg-telemetry {
+    display: none;
+  }
+
+  /* display:none already stops these being rendered, but cancelling the
+     animations explicitly keeps them off the animation timeline entirely
+     rather than relying on that as a side effect. */
+  .khan-bg-grid,
+  .khan-bg-node,
+  .khan-bg-particle { animation: none; }
+
+  .khan-ai-stage-note { display: none; }
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .khan-bg-grid,
+  .khan-bg-node,
+  .khan-bg-telemetry,
+  .khan-bg-particle,
+  .profile-score-card.is-revealing,
+  .profile-score-card.is-revealing::after,
+  .profile-score-card.is-revealing .score-circle,
+  .profile-score-card.is-revealing .score-history-strip,
+  .profile-score-card.is-revealing .risk-pill,
+  .profile-score-card.is-revealing .confidence-badge,
+  .profile-score-card.is-revealing > strong,
+  .profile-score-card.is-revealing .status-badge,
+  .profile-score-card.is-revealing .khan-ai-verdict {
+    animation: none !important;
+  }
+
+  /* The environment stays as a still backdrop rather than disappearing. */
+  .khan-bg-telemetry,
+  .khan-bg-particle { opacity: 0; }
+
+  .project-card:hover,
+  .pricing-card:hover,
+  .token-check-card:hover,
+  .search-box:focus-within,
+  .primary-button:active,
+  .secondary-button:active,
+  .ghost-button:active,
+  .card-button:active {
+    transform: none;
+  }
 }

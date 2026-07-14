@@ -377,13 +377,18 @@ export default {
     },
     console: {
       running: 'Təhlil edilir',
+      initializing: 'Təhlükəsiz təhlil başladılır',
       halted: 'Təhlil dayandırıldı',
     },
     stages: {
-      blockchain: 'Blokçeyn təhlil edilir...',
-      holders: 'Sahiblər yoxlanılır...',
+      connect: 'Blokçeynə qoşulur...',
+      liquidity: 'Likvidlik alınır...',
       contract: 'Kontrakt yoxlanılır...',
+      holders: 'Sahib konsentrasiyası müəyyən edilir...',
+      engine: 'AI Etibar Mühərriki işə salınır...',
       score: 'Etibar Xalı hesablanır...',
+      finalize: 'Təhlükəsizlik qiymətləndirməsi tamamlanır...',
+      notApplicable: 'aid deyil',
     },
     verdict: {
       analyzed: 'KHAN AI tərəfindən təhlil edildi',

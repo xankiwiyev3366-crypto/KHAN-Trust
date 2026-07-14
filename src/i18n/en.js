@@ -379,13 +379,18 @@ export default {
     },
     console: {
       running: 'Analyzing',
+      initializing: 'Initializing secure analysis',
       halted: 'Analysis halted',
     },
     stages: {
-      blockchain: 'Analyzing blockchain...',
-      holders: 'Checking holders...',
-      contract: 'Inspecting contract...',
+      connect: 'Connecting to blockchain...',
+      liquidity: 'Fetching liquidity...',
+      contract: 'Verifying contract...',
+      holders: 'Detecting holder concentration...',
+      engine: 'Running AI Trust Engine...',
       score: 'Calculating Trust Score...',
+      finalize: 'Finalizing security assessment...',
+      notApplicable: 'not applicable',
     },
     verdict: {
       analyzed: 'Analyzed by KHAN AI',

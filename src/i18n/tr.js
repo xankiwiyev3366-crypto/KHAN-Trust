@@ -377,13 +377,18 @@ export default {
     },
     console: {
       running: 'Analiz ediliyor',
+      initializing: 'Güvenli analiz başlatılıyor',
       halted: 'Analiz durduruldu',
     },
     stages: {
-      blockchain: 'Blok zinciri analiz ediliyor...',
-      holders: 'Sahipler kontrol ediliyor...',
-      contract: 'Kontrat inceleniyor...',
+      connect: 'Blok zincirine bağlanılıyor...',
+      liquidity: 'Likidite getiriliyor...',
+      contract: 'Kontrat doğrulanıyor...',
+      holders: 'Sahip yoğunlaşması tespit ediliyor...',
+      engine: 'AI Güven Motoru çalıştırılıyor...',
       score: 'Güven Puanı hesaplanıyor...',
+      finalize: 'Güvenlik değerlendirmesi tamamlanıyor...',
+      notApplicable: 'geçerli değil',
     },
     verdict: {
       analyzed: 'KHAN AI tarafından analiz edildi',

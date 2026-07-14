@@ -385,12 +385,20 @@ function isEstablishedMemecoin(data = {}) {
   return age >= 365 && liquidity >= 1_000_000 && marketCap >= 100_000_000 && holders >= 10_000;
 }
 
-const MAJOR_BLUE_CHIP_KEYWORDS = ['bitcoin', 'btc', 'ethereum', 'eth', 'solana', 'sol', 'bnb', 'binance coin'];
+// Exact identifiers for the top blue-chip Layer 1s. Matching used to be a loose
+// substring test (text.includes('eth') etc.), which let a name-squatting token
+// — "Ethereum Max", "Solend", "Wrapped X" — inherit the 95 trust ceiling just
+// by containing 'eth'/'sol' in its name. Now the token must present the ACTUAL
+// blue-chip ticker or full name, so the top ceiling is resistant to that
+// impersonation. This only ever makes look-alikes score MORE conservatively.
+const BLUE_CHIP_TICKERS = new Set(['btc', 'eth', 'sol', 'bnb']);
+const BLUE_CHIP_NAMES = new Set(['bitcoin', 'ethereum', 'solana', 'binance coin', 'bnb']);
 
 function isMajorBlueChip(project = {}, data = {}) {
-  const text = `${(project.name || '').toLowerCase()} ${(project.ticker || '').toLowerCase()}`;
-  return MAJOR_BLUE_CHIP_KEYWORDS.some((k) => text === k || text.includes(` ${k}`) || text.startsWith(`${k} `) || text.includes(k)) &&
-    Number(data.marketCapUsd || 0) >= 5_000_000_000;
+  const ticker = String(project.ticker || '').trim().toLowerCase();
+  const name = String(project.name || '').trim().toLowerCase();
+  const isBlueChip = BLUE_CHIP_TICKERS.has(ticker) || BLUE_CHIP_NAMES.has(name);
+  return isBlueChip && Number(data.marketCapUsd || 0) >= 5_000_000_000;
 }
 
 // The "Asset Type Risk Modifier" — caps the final Trust Score by asset

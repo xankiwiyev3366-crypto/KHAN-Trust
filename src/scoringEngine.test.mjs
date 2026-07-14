@@ -53,6 +53,18 @@ test('asset-type modifier: major blue-chip L1 capped at 95, generic caps below 1
   assert.equal(getAssetTypeRiskModifier('Other', {}, {}).cap, 90);
 });
 
+test('blue-chip cap resists name-squatting (exact ticker/name only)', () => {
+  // Real blue chips still earn the 95 ceiling.
+  assert.equal(getAssetTypeRiskModifier('Layer 1', { name: 'Ethereum', ticker: 'ETH' }, { marketCapUsd: 400_000_000_000 }).cap, 95);
+  assert.equal(getAssetTypeRiskModifier('Layer 1', { name: 'Solana', ticker: 'SOL' }, { marketCapUsd: 80_000_000_000 }).cap, 95);
+  // A look-alike with a huge (possibly inflated) market cap does NOT — it drops
+  // to the generic infrastructure ceiling (92) instead of impersonating ETH.
+  assert.equal(getAssetTypeRiskModifier('Layer 1', { name: 'Ethereum Max', ticker: 'EMAX' }, { marketCapUsd: 10_000_000_000 }).cap, 92);
+  assert.equal(getAssetTypeRiskModifier('Layer 1', { name: 'Solend', ticker: 'SLND' }, { marketCapUsd: 6_000_000_000 }).cap, 92);
+  // Below the 5B market-cap floor, even an exact ticker is not treated as blue chip.
+  assert.equal(getAssetTypeRiskModifier('Layer 1', { name: 'Ethereum', ticker: 'ETH' }, { marketCapUsd: 100_000_000 }).cap, 92);
+});
+
 test('applyAssetTypeRiskModifier: caps down but NEVER raises a score', () => {
   const capped = applyAssetTypeRiskModifier('Meme Token', { name: 'Pepe' }, {}, 90);
   assert.equal(capped.adjustedScore, 35);

@@ -7968,30 +7968,29 @@ main {
   transform-origin: 50% 50%;
 }
 
-/* At rest the rings do NOT rotate. An endlessly spinning ring reads as a
-   loading spinner - it says "busy", not "watching" - so idle is carried by
-   breathing alone and rotation is reserved for an actual scan, where it means
-   something. */
+/* Continuous idle orbit: the rings and particles turn slowly and never stop
+   while the page is open. Deliberately far slower than the scan speeds below,
+   so idle reads as a steady watch and a scan still reads as a change of state.
+   The scan overrides in .is-analyzing speed the same rotation up rather than
+   starting a different one. */
 .khan-ai-ring--outer {
   stroke-width: 0.7;
   stroke-dasharray: 3 9;
   opacity: 0.4;
-  animation: khanAiRingBreathe 6.5s ease-in-out infinite;
+  animation: khanAiSpin 26s linear infinite;
 }
 
 .khan-ai-ring--inner {
   stroke-width: 0.5;
   stroke-dasharray: 1 7;
   opacity: 0.26;
-  animation: khanAiRingBreathe 8.5s ease-in-out infinite reverse;
+  animation: khanAiSpin 34s linear infinite reverse;
 }
 
-/* Idle particles drift a few degrees back and forth rather than orbiting
-   endlessly - "tiny particle movement", not a carousel. */
 .khan-ai-particles {
   transform-box: view-box;
   transform-origin: 50% 50%;
-  animation: khanAiDrift 22s ease-in-out infinite;
+  animation: khanAiSpin 30s linear infinite;
 }
 
 .khan-ai-particle {
@@ -8073,22 +8072,9 @@ main {
 .khan-ai.is-error .khan-ai-lens { animation: none; transform: scaleY(0.28); opacity: 0.5; }
 .khan-ai.is-error .khan-ai-shield { stroke-opacity: 0.45; }
 
-/* Rotation is scan-only (see .is-analyzing above). */
+/* Drives the continuous idle orbit and, faster, the scan. */
 @keyframes khanAiSpin {
   to { transform: rotate(360deg); }
-}
-
-/* Idle ring: a breath of opacity and a fraction of a percent of scale. No
-   rotation - the ring holds its position and simply lives. */
-@keyframes khanAiRingBreathe {
-  0%, 100% { opacity: 0.4; transform: scale(1); }
-  50% { opacity: 0.16; transform: scale(1.012); }
-}
-
-/* Idle particles: a slow few-degree sway, reversing. Never a full orbit. */
-@keyframes khanAiDrift {
-  0%, 100% { transform: rotate(-2.5deg); }
-  50% { transform: rotate(2.5deg); }
 }
 
 /* Idle aperture: a very small adjustment, like a lens holding focus. */

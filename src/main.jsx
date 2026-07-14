@@ -109,6 +109,11 @@ import { AuthModal } from './auth/AuthModal.jsx';
 // entire module (and its earlyStage.js client) out of the initial bundle; it
 // only downloads when a user opens an /early-stage* route. See EarlyStage.jsx.
 const EarlyStageFeature = lazy(() => import('./EarlyStage.jsx'));
+// KHAN AI - the platform's security-intelligence entity. Statically imported
+// rather than lazy: it is a few KB of inline SVG with no external assets, and
+// it renders in the hero above the fold, where a lazy chunk would show up as a
+// visible pop-in on the first paint. See KhanAI.jsx.
+import { KhanAiHeroMark, KhanAiScanConsole, KhanAiVerdictMark, KhanAiPanel } from './KhanAI.jsx';
 import { PhantomWalletName } from '@solana/wallet-adapter-phantom';
 import {
   initAnalytics,
@@ -3734,7 +3739,7 @@ function App() {
         )}
         {page.startsWith('report/') && !reportProject && (
           <section className="page-section">
-            <EmptyState title={t('explore.emptyNoReportTitle')} text={t('explore.emptyNoReportText')} />
+            <KhanAiEmptyState title={t('explore.emptyNoReportTitle')} text={t('explore.emptyNoReportText')} />
           </section>
         )}
         {(page.startsWith('project/') || page === 'khan') && selectedProject && (
@@ -3751,7 +3756,7 @@ function App() {
         )}
         {page.startsWith('project/') && !selectedProject && (
           <section className="page-section">
-            <EmptyState title={t('explore.emptyNoProfileTitle')} text={t('explore.emptyNoProfileText')} />
+            <KhanAiEmptyState title={t('explore.emptyNoProfileTitle')} text={t('explore.emptyNoProfileText')} />
           </section>
         )}
         {page === 'khan' && !selectedProject && <KhanEcosystemPage navigate={navigate} />}
@@ -3944,12 +3949,21 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, onSelectMa
       <section className="hero-section">
         <div className="hero-grid">
           <div className="hero-copy">
-            <p className="eyebrow"><Shield size={16} /> {t('home.eyebrow')}</p>
-            <h1>{t('home.title')}</h1>
+            <KhanAiHeroMark>
+              <p className="eyebrow"><Shield size={16} /> {t('home.eyebrow')}</p>
+              <h1>{t('home.title')}</h1>
+            </KhanAiHeroMark>
             <p className="hero-subtitle">{t('home.subtitle')}</p>
             <p className="hero-explainer">{t('home.explainer')}</p>
             <SearchBox value={query} onChange={setQuery} onSubmit={onSearch} loading={searchState.status === 'loading'} />
-            <SearchStatus state={searchState} />
+            {/* KHAN AI takes over the scan's loading and error reporting; the
+                plain one-line status stays for the quieter states (success,
+                multiple matches) so nothing is said twice. */}
+            <KhanAiScanConsole
+              active={searchState.status === 'loading'}
+              error={searchState.status === 'error' ? searchState.message : null}
+            />
+            {searchState.status !== 'loading' && searchState.status !== 'error' && <SearchStatus state={searchState} />}
             <SearchMatches state={searchState} onSelect={onSelectMatch} />
             <div className="flow-steps" aria-label={t('home.flowAriaLabel')}>
               {t('home.flowSteps').map((step, index) => (
@@ -4013,7 +4027,7 @@ function HomePage({ projects, query, setQuery, searchState, onSearch, onSelectMa
             <ProjectCard key={project.id} project={project} navigate={navigate} />
           ))}
         </div>
-        {!featured.length && <EmptyState title={t('home.emptyNoSavedTitle')} text={t('home.emptyNoSavedText')} />}
+        {!featured.length && <KhanAiEmptyState title={t('home.emptyNoSavedTitle')} text={t('home.emptyNoSavedText')} />}
       </section>
       <KhanTokenRole navigate={navigate} />
       <FutureFoundationSection />
@@ -4084,7 +4098,13 @@ function ExplorePage({ projects, query, setQuery, searchState, onSearch, onSelec
     <section className="page-section">
       <SectionTitle icon={ListFilter} eyebrow={t('explore.eyebrow')} title={t('explore.title')} />
       <SearchBox value={query} onChange={setQuery} onSubmit={onSearch} loading={searchState.status === 'loading'} />
-      <SearchStatus state={searchState} />
+      {/* A failed scan on the home page redirects here, so this is where the
+          error is actually read - KHAN AI reports it in both places. */}
+      <KhanAiScanConsole
+        active={searchState.status === 'loading'}
+        error={searchState.status === 'error' ? searchState.message : null}
+      />
+      {searchState.status !== 'loading' && searchState.status !== 'error' && <SearchStatus state={searchState} />}
       <SearchMatches state={searchState} onSelect={onSelectMatch} />
       <div className="filter-row">
         {filters.map((filter) => (
@@ -4105,7 +4125,7 @@ function ExplorePage({ projects, query, setQuery, searchState, onSearch, onSelec
           <ProjectCard key={project.id} project={project} navigate={navigate} />
         ))}
       </div>
-      {!filtered.length && <EmptyState title={t('explore.emptyNoMatchTitle')} text={t('explore.emptyNoMatchText')} />}
+      {!filtered.length && <KhanAiEmptyState title={t('explore.emptyNoMatchTitle')} text={t('explore.emptyNoMatchText')} />}
     </section>
   );
 }
@@ -4127,7 +4147,7 @@ function TopProjectsPage({ projects, navigate }) {
           </div>
         ))}
       </div>
-      {!ranked.length && <EmptyState title={t('explore.emptyNoMatchTitle')} text={t('explore.emptyNoMatchText')} />}
+      {!ranked.length && <KhanAiEmptyState title={t('explore.emptyNoMatchTitle')} text={t('explore.emptyNoMatchText')} />}
     </section>
   );
 }
@@ -4160,7 +4180,7 @@ function CategoriesPage({ projects, navigate }) {
           </button>
         ))}
       </div>
-      {!categories.length && <EmptyState title={t('explore.emptyNoMatchTitle')} text={t('explore.emptyNoMatchText')} />}
+      {!categories.length && <KhanAiEmptyState title={t('explore.emptyNoMatchTitle')} text={t('explore.emptyNoMatchText')} />}
     </section>
   );
 }
@@ -4200,7 +4220,7 @@ function WatchlistPage({ projects, watchlist, toggleWatch, navigate }) {
   return (
     <section className="page-section">
       <SectionTitle icon={Bell} eyebrow={t('watchlist.eyebrow')} title={t('watchlist.title')} />
-      {!watchedProjects.length && <EmptyState title={t('watchlist.emptyTitle')} text={t('watchlist.emptyText')} />}
+      {!watchedProjects.length && <KhanAiEmptyState title={t('watchlist.emptyTitle')} text={t('watchlist.emptyText')} />}
       <div className="project-grid">
         {watchedProjects.map((project) => (
           <div className="watchlist-item" key={project.id}>
@@ -4234,7 +4254,7 @@ function ComparePage({ projects, navigate }) {
   return (
     <section className="page-section compare-page">
       <SectionTitle icon={Scale} eyebrow={t('compare.eyebrow')} title={t('compare.title')} />
-      {!projects.length && <EmptyState title={t('compare.emptyTitle')} text={t('compare.emptyText')} />}
+      {!projects.length && <KhanAiEmptyState title={t('compare.emptyTitle')} text={t('compare.emptyText')} />}
       <div className="compare-selectors">
         <ProjectSelect label={t('compare.projectA')} value={first?.id || ''} projects={projects} onChange={setFirstId} />
         <ProjectSelect label={t('compare.projectB')} value={second?.id || ''} projects={projects} onChange={setSecondId} />
@@ -5577,6 +5597,7 @@ function ProjectProfile({ project, projects = [], navigate, watched, toggleWatch
           <span className="confidence-badge">{confidence.label}</span>
           <strong>{riskBadge(project.trustScore)}</strong>
           <span className="status-badge">{project.status}</span>
+          <KhanAiVerdictMark />
         </div>
       </div>
 
@@ -9668,6 +9689,9 @@ function SectionTitle({ icon: Icon, eyebrow, title }) {
   );
 }
 
+// Plain empty state. Deliberately assistant-free: this is what the Admin Panel
+// and other internal surfaces use, and KHAN AI must never appear there. The
+// user-facing pages use KhanAiEmptyState below instead.
 function EmptyState({ title, text }) {
   return (
     <div className="empty-state">
@@ -9676,6 +9700,15 @@ function EmptyState({ title, text }) {
       <p>{text}</p>
     </div>
   );
+}
+
+// KHAN AI's resting posture, for user-facing pages only: the entity is present
+// and watching, with copy that invites the first scan rather than apologising
+// for an absence. Kept as a separate component from EmptyState so that adding
+// an empty state to the Admin Panel can never accidentally summon the
+// assistant into it.
+function KhanAiEmptyState({ title, text }) {
+  return <KhanAiPanel tone="idle" title={title} text={text} />;
 }
 
 function Disclaimer({ compact = false, text }) {
@@ -10043,7 +10076,7 @@ function SupportPage({ navigate }) {
         </form>
         {wallet && <p className="inline-note">{t('support.history.walletHint', { wallet })}</p>}
         {lookupState.message && <p className="lookup-message error">{lookupState.message}</p>}
-        {myTickets && !myTickets.length && <EmptyState title={t('support.history.emptyTitle')} text={t('support.history.emptyText')} />}
+        {myTickets && !myTickets.length && <KhanAiEmptyState title={t('support.history.emptyTitle')} text={t('support.history.emptyText')} />}
         {myTickets && myTickets.length > 0 && (
           <div className="my-tickets-list">
             {myTickets.map((ticket) => (

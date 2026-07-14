@@ -372,6 +372,29 @@ export default {
     errorNone: 'No live Solana token data was found.',
     verified: 'Verified',
   },
+  khanAi: {
+    name: 'KHAN AI',
+    hero: {
+      status: 'Security intelligence online',
+    },
+    console: {
+      running: 'Analyzing',
+      halted: 'Analysis halted',
+    },
+    stages: {
+      blockchain: 'Analyzing blockchain...',
+      holders: 'Checking holders...',
+      contract: 'Inspecting contract...',
+      score: 'Calculating Trust Score...',
+    },
+    verdict: {
+      analyzed: 'Analyzed by KHAN AI',
+    },
+    empty: {
+      title: 'KHAN AI is standing by',
+      text: 'Paste a contract address or search a token, and KHAN AI will analyze the chain, holders, and contract to produce a Trust Score.',
+    },
+  },
   explore: {
     eyebrow: 'Explore',
     title: 'Crypto project trust profiles',

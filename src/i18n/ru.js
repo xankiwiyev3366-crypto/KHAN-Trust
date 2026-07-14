@@ -370,6 +370,29 @@ export default {
     errorNone: 'Живые данные токена Solana не найдены.',
     verified: 'Проверено',
   },
+  khanAi: {
+    name: 'KHAN AI',
+    hero: {
+      status: 'Аналитика безопасности активна',
+    },
+    console: {
+      running: 'Анализ',
+      halted: 'Анализ остановлен',
+    },
+    stages: {
+      blockchain: 'Анализ блокчейна...',
+      holders: 'Проверка держателей...',
+      contract: 'Проверка контракта...',
+      score: 'Расчёт Trust Score...',
+    },
+    verdict: {
+      analyzed: 'Проанализировано KHAN AI',
+    },
+    empty: {
+      title: 'KHAN AI в режиме ожидания',
+      text: 'Вставьте адрес контракта или найдите токен — KHAN AI проанализирует блокчейн, держателей и контракт и рассчитает Trust Score.',
+    },
+  },
   explore: {
     eyebrow: 'Обзор',
     title: 'Профили доверия криптопроектов',

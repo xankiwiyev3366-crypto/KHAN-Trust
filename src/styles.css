@@ -7909,3 +7909,424 @@ main {
     min-height: 44px;
   }
 }
+
+/* ==========================================================================
+   KHAN AI - security-intelligence entity
+   --------------------------------------------------------------------------
+   Black & gold only; every colour comes from the :root custom properties at
+   the top of this file. Motion budget: transform + opacity exclusively, so
+   every animation is composited on the GPU and holds 60fps on mobile Safari.
+   No SVG blur filters anywhere - glow is painted with radial gradients (see
+   KhanAI.jsx). All motion is disabled under prefers-reduced-motion at the end
+   of this block. Never rendered inside the Admin Panel.
+   ========================================================================== */
+
+.khan-ai {
+  position: relative;
+  flex: none;
+  line-height: 0;
+}
+
+.khan-ai svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.khan-ai--sm { width: 44px; height: 44px; }
+.khan-ai--md { width: 76px; height: 76px; }
+.khan-ai--lg { width: 108px; height: 108px; }
+
+/* Shield */
+.khan-ai-shield {
+  fill: rgba(224, 183, 92, 0.03);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+/* Confirmation fill layer - opacity-animated so the flash stays composited. */
+.khan-ai-shield-flash {
+  fill: var(--gold);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.khan-ai-shield-inner {
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 0.6;
+  stroke-linejoin: round;
+  opacity: 0.28;
+}
+
+/* Telemetry rings */
+.khan-ai-ring {
+  fill: none;
+  stroke: var(--gold);
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+}
+
+.khan-ai-ring--outer {
+  stroke-width: 0.7;
+  stroke-dasharray: 3 9;
+  opacity: 0.4;
+  animation: khanAiSpin 26s linear infinite;
+}
+
+.khan-ai-ring--inner {
+  stroke-width: 0.5;
+  stroke-dasharray: 1 7;
+  opacity: 0.26;
+  animation: khanAiSpin 34s linear infinite reverse;
+}
+
+/* Orbiting data particles */
+.khan-ai-particles {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: khanAiSpin 30s linear infinite;
+}
+
+.khan-ai-particle {
+  fill: var(--gold-bright);
+  opacity: 0.55;
+}
+
+/* Aperture core */
+.khan-ai-core-glow {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: khanAiBreathe 4.6s ease-in-out infinite;
+}
+
+.khan-ai-lens {
+  fill: rgba(224, 183, 92, 0.06);
+  stroke: var(--gold);
+  stroke-width: 0.9;
+  opacity: 0.75;
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+}
+
+.khan-ai-iris {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: khanAiIris 4.6s ease-in-out infinite;
+}
+
+.khan-ai-pupil {
+  fill: #0a0a08;
+  opacity: 0.85;
+}
+
+/* Scan sweep - dormant by default, only runs while analyzing */
+.khan-ai-scanline {
+  fill: var(--gold-bright);
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+}
+
+/* State: analyzing */
+.khan-ai.is-analyzing .khan-ai-core-glow { animation-duration: 1.5s; }
+.khan-ai.is-analyzing .khan-ai-iris { animation-duration: 1.5s; }
+.khan-ai.is-analyzing .khan-ai-ring--outer { animation-duration: 6s; opacity: 0.7; }
+.khan-ai.is-analyzing .khan-ai-ring--inner { animation-duration: 8s; opacity: 0.5; }
+.khan-ai.is-analyzing .khan-ai-particles { animation-duration: 9s; }
+.khan-ai.is-analyzing .khan-ai-particle { opacity: 0.9; }
+.khan-ai.is-analyzing .khan-ai-scanline { animation: khanAiScan 1.9s ease-in-out infinite; }
+
+/* State: complete - one-shot confirmation glow */
+.khan-ai.is-complete .khan-ai-core-glow { animation: khanAiFlash 1.4s ease-out 1; }
+.khan-ai.is-complete .khan-ai-shield-flash { animation: khanAiShieldFlash 1.4s ease-out 1; }
+
+/* State: error - stilled and narrowed, never alarming */
+.khan-ai.is-error .khan-ai-particles,
+.khan-ai.is-error .khan-ai-ring--inner { animation: none; opacity: 0.12; }
+.khan-ai.is-error .khan-ai-ring--outer { animation: none; opacity: 0.2; }
+.khan-ai.is-error .khan-ai-core-glow { animation: none; opacity: 0.3; }
+.khan-ai.is-error .khan-ai-iris { animation: none; }
+.khan-ai.is-error .khan-ai-lens { transform: scaleY(0.28); opacity: 0.5; }
+.khan-ai.is-error .khan-ai-shield { stroke-opacity: 0.45; }
+
+@keyframes khanAiSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes khanAiBreathe {
+  0%, 100% { transform: scale(1); opacity: 0.75; }
+  50% { transform: scale(1.07); opacity: 1; }
+}
+
+@keyframes khanAiIris {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+
+@keyframes khanAiScan {
+  0% { transform: translateY(28px); opacity: 0; }
+  15% { opacity: 0.75; }
+  85% { opacity: 0.75; }
+  100% { transform: translateY(-28px); opacity: 0; }
+}
+
+@keyframes khanAiFlash {
+  0% { transform: scale(1); opacity: 0.75; }
+  30% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.85; }
+}
+
+@keyframes khanAiShieldFlash {
+  0% { opacity: 0; }
+  30% { opacity: 0.16; }
+  100% { opacity: 0; }
+}
+
+/* Hero lockup: entity beside the wordmark. The entity is the visual anchor,
+   so it must not push the headline around - hence `align-items: center` and a
+   non-shrinking mark. */
+.khan-ai-hero-mark {
+  display: flex;
+  align-items: center;
+  gap: clamp(14px, 2.2vw, 22px);
+}
+
+.khan-ai-hero-copy {
+  min-width: 0;
+}
+
+/* The lockup owns the spacing below the headline; the h1's own margin would
+   otherwise double up with the status line. */
+.khan-ai-hero-copy h1 {
+  margin-bottom: 10px;
+}
+
+.khan-ai-hero-name {
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+}
+
+.khan-ai-hero-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.khan-ai-hero-state {
+  min-width: 0;
+}
+
+.khan-ai-online-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgba(103, 211, 156, 0.14);
+  animation: khanAiBreathe 3.4s ease-in-out infinite;
+}
+
+/* Scan console - inline, never an overlay */
+.khan-ai-console {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 16px 0 0;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(224, 183, 92, 0.06), rgba(10, 10, 9, 0.6));
+  animation: khanAiConsoleIn 0.4s ease-out both;
+}
+
+.khan-ai-console.is-error {
+  border-color: rgba(255, 117, 110, 0.32);
+  background: linear-gradient(135deg, rgba(255, 117, 110, 0.06), rgba(10, 10, 9, 0.6));
+}
+
+@keyframes khanAiConsoleIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.khan-ai-console-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.khan-ai-console-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+
+.khan-ai-console-name {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+}
+
+.khan-ai-console-status {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.khan-ai-console-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.khan-ai-stages {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.khan-ai-stage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+  transition: color 0.3s ease, opacity 0.3s ease;
+}
+
+.khan-ai-stage-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(224, 183, 92, 0.22);
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.khan-ai-stage.is-pending { opacity: 0.4; }
+
+.khan-ai-stage.is-active { color: var(--text); }
+
+.khan-ai-stage.is-active .khan-ai-stage-dot {
+  background: var(--gold-bright);
+  box-shadow: 0 0 0 3px rgba(224, 183, 92, 0.16);
+  animation: khanAiBreathe 1.5s ease-in-out infinite;
+}
+
+.khan-ai-stage.is-done {
+  color: var(--text);
+  opacity: 0.75;
+}
+
+.khan-ai-stage.is-done .khan-ai-stage-dot {
+  background: var(--success);
+}
+
+/* Verdict mark on the Trust Score card */
+.khan-ai-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 4px;
+}
+
+.khan-ai-verdict-text {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Calm empty / error panel */
+.khan-ai-panel {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, rgba(224, 183, 92, 0.05), rgba(10, 10, 9, 0.5));
+}
+
+.khan-ai-panel.is-error {
+  border-color: rgba(255, 117, 110, 0.26);
+}
+
+.khan-ai-panel-body { min-width: 0; }
+
+.khan-ai-panel-body h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.khan-ai-panel-body p {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+/* Trust Score reveal */
+.profile-score-card {
+  animation: khanAiScoreReveal 0.62s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes khanAiScoreReveal {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Responsive */
+@media (max-width: 640px) {
+  .khan-ai--md { width: 60px; height: 60px; }
+  .khan-ai--lg { width: 84px; height: 84px; }
+
+  .khan-ai-hero-mark {
+    gap: 11px;
+    padding: 8px 15px 8px 8px;
+    margin-bottom: 14px;
+  }
+
+  .khan-ai-console {
+    gap: 13px;
+    padding: 14px;
+  }
+
+  .khan-ai-panel {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 20px;
+  }
+
+  .khan-ai-stage { font-size: 12px; }
+}
+
+/* Motion is an enhancement, never the message: freeze everything and hold the
+   entity at its most legible frame. The scan console still advances its stages
+   - that is information, not decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .khan-ai *,
+  .khan-ai-online-dot,
+  .khan-ai-console,
+  .khan-ai-stage.is-active .khan-ai-stage-dot,
+  .profile-score-card {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .khan-ai .khan-ai-scanline { opacity: 0; }
+  .khan-ai .khan-ai-core-glow { opacity: 0.9; }
+}

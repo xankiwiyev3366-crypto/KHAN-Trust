@@ -370,6 +370,29 @@ export default {
     errorNone: 'Canlı Solana token verisi bulunamadı.',
     verified: 'Doğrulanmış',
   },
+  khanAi: {
+    name: 'KHAN AI',
+    hero: {
+      status: 'Güvenlik istihbaratı aktif',
+    },
+    console: {
+      running: 'Analiz ediliyor',
+      halted: 'Analiz durduruldu',
+    },
+    stages: {
+      blockchain: 'Blok zinciri analiz ediliyor...',
+      holders: 'Sahipler kontrol ediliyor...',
+      contract: 'Kontrat inceleniyor...',
+      score: 'Güven Puanı hesaplanıyor...',
+    },
+    verdict: {
+      analyzed: 'KHAN AI tarafından analiz edildi',
+    },
+    empty: {
+      title: 'KHAN AI beklemede',
+      text: 'Bir kontrat adresi yapıştırın veya token arayın; KHAN AI zinciri, sahipleri ve kontratı analiz ederek bir Güven Puanı üretecek.',
+    },
+  },
   explore: {
     eyebrow: 'Keşfet',
     title: 'Kripto proje güven profilleri',

@@ -370,6 +370,29 @@ export default {
     errorNone: 'Heç bir canlı Solana token məlumatı tapılmadı.',
     verified: 'Təsdiqlənmiş',
   },
+  khanAi: {
+    name: 'KHAN AI',
+    hero: {
+      status: 'Təhlükəsizlik kəşfiyyatı aktivdir',
+    },
+    console: {
+      running: 'Təhlil edilir',
+      halted: 'Təhlil dayandırıldı',
+    },
+    stages: {
+      blockchain: 'Blokçeyn təhlil edilir...',
+      holders: 'Sahiblər yoxlanılır...',
+      contract: 'Kontrakt yoxlanılır...',
+      score: 'Etibar Xalı hesablanır...',
+    },
+    verdict: {
+      analyzed: 'KHAN AI tərəfindən təhlil edildi',
+    },
+    empty: {
+      title: 'KHAN AI gözləmə rejimindədir',
+      text: 'Kontrakt ünvanını yapışdırın və ya token axtarın — KHAN AI blokçeyni, sahibləri və kontraktı təhlil edərək Etibar Xalı hazırlayacaq.',
+    },
+  },
   explore: {
     eyebrow: 'Kəşf et',
     title: 'Kripto layihə etibar profilləri',

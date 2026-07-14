@@ -7,6 +7,14 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
     <meta name="theme-color" content="#050505" />
+    <!-- Warm up connections to the token-scan data providers (Phase 3 perf) so
+         the first scan's API calls skip DNS + TLS setup. preconnect (with the
+         handshake) for the two hit on every scan; dns-prefetch for the rest. -->
+    <link rel="preconnect" href="https://api.dexscreener.com" crossorigin />
+    <link rel="preconnect" href="https://api.coingecko.com" crossorigin />
+    <link rel="dns-prefetch" href="https://lite-api.jup.ag" />
+    <link rel="dns-prefetch" href="https://api.geckoterminal.com" />
+    <link rel="dns-prefetch" href="https://api.gopluslabs.io" />
     <title>KHAN Trust</title>
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-H57W8PB6M5"></script>
     <script>

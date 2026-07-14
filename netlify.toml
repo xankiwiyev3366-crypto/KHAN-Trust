@@ -25,6 +25,18 @@
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
     Content-Security-Policy = "frame-ancestors 'self'"
 
+# Immutable caching for build output (Phase 3 perf). Everything under /assets/
+# is content-hashed by Vite (e.g. react-vendor-Cw1fZvOf.js) - a changed file
+# always gets a new name - so it is safe to cache forever. Without this the
+# hashed chunks were served max-age=0,must-revalidate, forcing a revalidation
+# request for every chunk on every visit and defeating the vendor-split caching.
+# index.html itself is NOT matched here, so it keeps revalidating and always
+# points at the current hashed assets after a deploy.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
 # SEO surface (Direction 2). These are ADDITIVE, path-specific rewrites only -
 # there is deliberately NO catch-all "/*" redirect, so the existing hash-routed
 # SPA (served as the static index.html at "/") is completely untouched. Status

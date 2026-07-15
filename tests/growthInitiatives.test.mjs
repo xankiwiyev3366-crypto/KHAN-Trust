@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { canTransition, summarise, snapshotBaseline, STATUS, OUTCOME } from './_growthInitiatives.mjs';
+import { canTransition, summarise, snapshotBaseline, STATUS, OUTCOME } from '../netlify/functions/_growthInitiatives.mjs';
 
 test('an initiative cannot skip straight to measured', () => {
   // The transition that matters: proposed -> measured has no baseline, so its

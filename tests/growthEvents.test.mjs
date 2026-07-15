@@ -40,7 +40,7 @@ class FakeStore {
 
 const fake = new FakeStore();
 
-mock.module('./_blobsClient.mjs', {
+mock.module('../netlify/functions/_blobsClient.mjs', {
   namedExports: {
     getNamedStore: () => fake,
     jsonResponse: (statusCode, body) => ({ statusCode, body: JSON.stringify(body) }),
@@ -48,7 +48,7 @@ mock.module('./_blobsClient.mjs', {
 });
 
 const { putEvent, readDay, readWindow, compactDay, listRawDays, dayRange } =
-  await import('./_growthEvents.mjs');
+  await import('../netlify/functions/_growthEvents.mjs');
 
 function evt(id, day, type = 'page_view') {
   return { id, type, timestamp: `${day}T12:00:00.000Z`, visitorId: `v-${id}` };

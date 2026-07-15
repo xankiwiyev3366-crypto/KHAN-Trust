@@ -7,9 +7,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildFactPack } from './_growthAnalyst.mjs';
-import { buildWarehouse } from './_growthWarehouse.mjs';
-import { CONFIDENCE } from './_growthConfidence.mjs';
+import { buildFactPack } from '../netlify/functions/_growthAnalyst.mjs';
+import { buildWarehouse } from '../netlify/functions/_growthWarehouse.mjs';
+import { CONFIDENCE } from '../netlify/functions/_growthConfidence.mjs';
 
 // Minimal warehouse-shaped fixture. Built by hand rather than through
 // buildWarehouse so each test can pin one exact confidence state.

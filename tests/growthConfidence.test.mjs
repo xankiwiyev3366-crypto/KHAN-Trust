@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 import {
   wilsonInterval, assessRate, assessCount, assessChange, CONFIDENCE, isTrustworthy,
-} from './_growthConfidence.mjs';
+} from '../netlify/functions/_growthConfidence.mjs';
 
 test('Wilson: interval stays inside [0,1] at the extremes', () => {
   // The normal approximation famously produces impossible bounds here. Wilson

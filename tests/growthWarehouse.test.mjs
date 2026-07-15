@@ -11,8 +11,8 @@ import assert from 'node:assert/strict';
 import {
   buildFunnel, findBottleneck, findInstrumentationGaps, buildRetention, buildChannels,
   buildContentDemand, buildConversionBlockers,
-} from './_growthWarehouse.mjs';
-import { CONFIDENCE } from './_growthConfidence.mjs';
+} from '../netlify/functions/_growthWarehouse.mjs';
+import { CONFIDENCE } from '../netlify/functions/_growthConfidence.mjs';
 
 const DAY = 86400000;
 const NOW = Date.parse('2026-07-15T12:00:00.000Z');

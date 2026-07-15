@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 
 import {
   collectSourceNumbers, findUnverifiedNumbers, rejectFabricatedFindings,
-} from './_aiValidator.mjs';
+} from '../netlify/functions/_aiValidator.mjs';
 
 test('a fabricated industry benchmark is caught', () => {
   // THE case this module exists for. Both numbers are inventions; the sentence

@@ -80,8 +80,49 @@
   color: var(--gold, #d4af37);
 }
 
-.console-signout {
+/* ── Language switcher ───────────────────────────────────────────────────── */
+
+.console-lang {
   margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px 4px;
+  color: var(--muted, rgba(255, 255, 255, 0.4));
+}
+
+/* On the login screen there is no sidebar to push it to the bottom of. */
+.console-login .console-lang {
+  margin-top: 14px;
+  justify-content: center;
+}
+
+.console-lang-button {
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted, rgba(255, 255, 255, 0.5));
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.console-lang-button:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.console-lang-button.is-active {
+  background: rgba(212, 175, 55, 0.14);
+  border-color: rgba(212, 175, 55, 0.3);
+  color: var(--gold, #d4af37);
+}
+
+/* The switcher now owns `margin-top: auto`, so sign-out sits directly under it
+   rather than fighting it for the bottom of the sidebar. */
+.console-signout {
   display: flex;
   align-items: center;
   gap: 8px;

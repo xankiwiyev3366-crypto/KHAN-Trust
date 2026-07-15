@@ -3,17 +3,19 @@ import { Youtube } from 'lucide-react';
 
 import { SectionTitle, EmptyState, DataTable, ConfidenceChip } from '../ui/primitives.jsx';
 import { RecommendationCard, DataVerdict, FabricationNotice } from '../ui/RecommendationCard.jsx';
+import { useT } from '../i18n/ConsoleI18nProvider.jsx';
 import { useWarehouse, useAdminResource, formatDate } from '../lib/useGrowthData.js';
 import { adminFetch } from '../lib/adminSession.js';
 
 export default function ContentEnginePage({ token }) {
+  const { t, lang } = useT();
   const { data: warehouse, state } = useWarehouse(token, 30);
   const { data: reports } = useAdminResource('growth-reports', token);
   const [accepting, setAccepting] = useState(null);
   const [accepted, setAccepted] = useState([]);
 
-  if (state.status === 'loading') return <SectionTitle icon={Youtube} eyebrow="Growth OS" title="Loading content engine…" />;
-  if (state.status === 'error') return <EmptyState title="Could not load" text={state.message} />;
+  if (state.status === 'loading') return <SectionTitle icon={Youtube} eyebrow={t('common.eyebrow')} title={t('common.loading')} />;
+  if (state.status === 'error') return <EmptyState title={t('common.couldNotLoad')} text={state.message} />;
   if (!warehouse) return null;
 
   const demand = warehouse.contentDemand;
@@ -42,48 +44,40 @@ export default function ContentEnginePage({ token }) {
 
   return (
     <>
-      <SectionTitle icon={Youtube} eyebrow="Growth OS" title="Content engine" />
-      <p className="console-page-intro">
-        Your scan log is a content-demand signal nobody else has. Every scan is a real person
-        telling you, unprompted, which token they are worried enough to check — a direct readout of
-        what crypto users are anxious about this week. The tokens people already search for are the
-        videos that already have an audience.
-      </p>
+      <SectionTitle icon={Youtube} eyebrow={t('common.eyebrow')} title={t('content.title')} />
+      <p className="console-page-intro">{t('content.intro')}</p>
 
       <div className="console-callout">
-        <strong>Demand is recency-weighted (7-day half-life).</strong>
-        <p>
-          Crypto attention decays in days, so a token scanned 30 times last month ranks below one
-          scanned 8 times this week. A heavily-scanned token that scored <em>low</em> on trust is the
-          strongest hook you have: real demand, a real warning, and a natural demonstration of what
-          the product does.
-        </p>
+        <strong>{t('content.calloutTitle')}</strong>
+        <p>{t('content.calloutBody')}</p>
       </div>
 
-      <h4 className="console-h4">What people are scanning</h4>
+      <h4 className="console-h4">{t('content.whatScanning')}</h4>
       <DataTable
-        columns={['Token', 'Ticker', 'Demand', 'Scans', 'People', 'Trust score you gave it', 'Last scanned', 'Signal strength']}
-        rows={demand.map((token) => ([
-          token.name,
-          token.ticker || '—',
-          token.demandScore,
-          token.scans,
-          token.uniqueVisitors,
-          token.avgTrustScore ?? '—',
-          formatDate(token.lastScannedAt),
-          <ConfidenceChip confidence={token.confidence} />,
+        columns={[
+          t('content.colToken'), t('content.colTicker'), t('content.colDemand'),
+          t('content.colScans'), t('content.colPeople'), t('content.colTrustScore'),
+          t('content.colLastScanned'), t('content.colSignal'),
+        ]}
+        rows={demand.map((token_) => ([
+          token_.name,
+          token_.ticker || '—',
+          token_.demandScore,
+          token_.scans,
+          token_.uniqueVisitors,
+          token_.avgTrustScore ?? '—',
+          formatDate(token_.lastScannedAt, lang),
+          <ConfidenceChip confidence={token_.confidence} />,
         ]))}
-        emptyText="No scans recorded in this window yet. This table fills as real users scan tokens — it cannot be backfilled from before the data plane shipped."
+        emptyText={t('content.noScans')}
       />
 
-      <h4 className="console-h4">Content strategist</h4>
+      <h4 className="console-h4">{t('content.strategist')}</h4>
       {!strategist ? (
-        <EmptyState
-          title="No content plan yet"
-          text="The analyst team runs every Monday, or on demand from the Executive Brief page. It needs scan data to be specific — with an empty scan log it will correctly tell you it has nothing to work from."
-        />
+        <EmptyState title={t('content.noPlanTitle')} text={t('content.noPlanBody')} />
       ) : (
         <>
+          {/* The analyst's own words — data, not copy. Rendered as written. */}
           <p className="console-page-intro"><strong>{strategist.headline}</strong></p>
           <DataVerdict verdict={strategist.dataVerdict} />
           <FabricationNotice rejected={strategist.rejectedForFabrication} />
@@ -101,7 +95,7 @@ export default function ContentEnginePage({ token }) {
 
           {strategist.openQuestions?.length > 0 && (
             <>
-              <h4 className="console-h4">What would make the next plan better</h4>
+              <h4 className="console-h4">{t('content.openQuestions')}</h4>
               <ul className="console-list">
                 {strategist.openQuestions.map((question, index) => <li key={index}>{question}</li>)}
               </ul>

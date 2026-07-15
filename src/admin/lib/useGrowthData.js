@@ -51,7 +51,10 @@ export function formatUsd(value) {
   return `$${value.toFixed(2)}`;
 }
 
-export function formatDate(iso) {
+// `lang` is passed in rather than read from the i18n context so this stays a
+// plain function usable outside a component. Falls back to the browser's own
+// locale if a caller forgets, which is wrong-but-readable rather than a crash.
+export function formatDate(iso, lang) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+  return new Date(iso).toLocaleString(lang || undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }

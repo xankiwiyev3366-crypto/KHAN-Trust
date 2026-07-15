@@ -41,13 +41,17 @@ export class ErrorBoundary extends React.Component {
   render() {
     if (!this.state.error) return this.props.children;
 
+    // A class component cannot use hooks, so the shell threads `t` in as a
+    // prop. The fallbacks matter: if the boundary itself caught a crash in the
+    // i18n provider, `t` may be missing, and an error screen that crashes is
+    // the one screen that absolutely must not.
+    const t = this.props.t || ((_key, fallback) => fallback);
+
     return (
       <div className="empty-state">
         <AlertTriangle size={28} />
-        <h3>This page hit an error</h3>
-        <p>
-          The rest of the console still works — use the sidebar to move to another module.
-        </p>
+        <h3>{t('errors.pageCrashed')}</h3>
+        <p>{t('errors.restWorks')}</p>
         <pre className="console-error-detail">{String(this.state.error?.message || this.state.error)}</pre>
       </div>
     );

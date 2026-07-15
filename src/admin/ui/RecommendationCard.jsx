@@ -12,27 +12,22 @@
 import React from 'react';
 import { ArrowRight } from 'lucide-react';
 
-const CONFIDENCE_LABELS = {
-  grounded_in_data: 'Grounded in data',
-  informed_judgement: 'Informed judgement',
-  speculative: 'Speculative',
-};
+import { useT } from '../i18n/ConsoleI18nProvider.jsx';
 
-const OBJECTIVE_LABELS = {
-  registrations: 'Registrations',
-  active_users: 'Active users',
-  retention: 'Retention',
-  user_experience: 'UX',
-  conversion: 'Conversion',
-  trust: 'Trust',
-  brand_awareness: 'Brand awareness',
-  positioning: 'Positioning',
-  new_opportunity: 'New opportunity',
-  investor_readiness: 'Investor readiness',
-  data_quality: 'Data quality',
-};
-
+// NOTE ON WHAT IS AND IS NOT TRANSLATED HERE.
+//
+// The LABELS and headings below are console copy and are translated. The
+// recommendation's own prose - title, reasoning, expectedImpact, roiEstimate,
+// risks - is data: it was written by Claude in English and stored in the report
+// blob. It is rendered as-is.
+//
+// That is deliberate. A stored report is a historical record of what the team
+// said at a point in time; re-rendering it in another language would mean
+// either re-running the analysts (paying again, and getting different advice)
+// or machine-translating an evidence-gated document, which would put text
+// through a second model that the fabrication validator never checked.
 export function RecommendationCard({ recommendation, onAccept, accepting }) {
+  const { t } = useT();
   const rec = recommendation;
   return (
     <article className="rec-card">
@@ -43,22 +38,22 @@ export function RecommendationCard({ recommendation, onAccept, accepting }) {
 
       <div className="rec-chips">
         <span className={`rec-confidence rec-conf-${rec.confidence}`}>
-          {CONFIDENCE_LABELS[rec.confidence] || rec.confidence}
+          {t(`recConfidence.${rec.confidence}`)}
         </span>
-        <span className="rec-chip">{OBJECTIVE_LABELS[rec.objective] || rec.objective}</span>
-        <span className="rec-chip">{rec.complexity} complexity</span>
+        <span className="rec-chip">{t(`objectives.${rec.objective}`)}</span>
+        <span className="rec-chip">{t('rec.complexity', { level: t(`complexity.${rec.complexity}`) })}</span>
       </div>
 
       <dl className="rec-detail">
-        <dt>Why</dt><dd>{rec.reasoning}</dd>
-        <dt>Expected impact</dt><dd>{rec.expectedImpact}</dd>
-        <dt>ROI</dt><dd>{rec.roiEstimate}</dd>
-        <dt>Risks</dt><dd>{rec.risks}</dd>
+        <dt>{t('rec.why')}</dt><dd>{rec.reasoning}</dd>
+        <dt>{t('rec.expectedImpact')}</dt><dd>{rec.expectedImpact}</dd>
+        <dt>{t('rec.roi')}</dt><dd>{rec.roiEstimate}</dd>
+        <dt>{t('rec.risks')}</dt><dd>{rec.risks}</dd>
       </dl>
 
       {onAccept && (
         <button type="button" className="primary-button" onClick={() => onAccept(rec)} disabled={accepting}>
-          {accepting ? 'Adding…' : 'Track as initiative'} <ArrowRight size={15} />
+          {accepting ? t('rec.adding') : t('rec.trackAsInitiative')} <ArrowRight size={15} />
         </button>
       )}
     </article>
@@ -69,10 +64,12 @@ export function RecommendationCard({ recommendation, onAccept, accepting }) {
 // ABOVE the recommendations, deliberately: it frames how much weight everything
 // below it deserves, and that framing is worthless after the fact.
 export function DataVerdict({ verdict }) {
+  const { t } = useT();
   if (!verdict) return null;
   return (
     <div className="console-callout">
-      <strong>What the data can actually support</strong>
+      <strong>{t('rec.dataVerdictTitle')}</strong>
+      {/* The verdict itself is the model's own words — data, not copy. */}
       <p>{verdict}</p>
     </div>
   );
@@ -82,15 +79,12 @@ export function DataVerdict({ verdict }) {
 // regression in the prompt or the model, and the operator needs to see it
 // happening rather than silently receive a shorter list.
 export function FabricationNotice({ rejected }) {
+  const { t } = useT();
   if (!rejected?.length) return null;
   return (
     <div className="console-callout console-callout-warn">
-      <strong>{rejected.length} recommendation(s) were dropped for citing invented numbers.</strong>
-      <p>
-        These cited figures that do not appear anywhere in the source metrics, so they were removed
-        automatically before reaching this page. Shown here because a model that fabricates is worth
-        knowing about.
-      </p>
+      <strong>{t('rec.fabricationTitle', { count: rejected.length })}</strong>
+      <p>{t('rec.fabricationBody')}</p>
       <ul>
         {rejected.map((entry, index) => (
           <li key={index}>

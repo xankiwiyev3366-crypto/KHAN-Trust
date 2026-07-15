@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ListChecks } from 'lucide-react';
 
 import { SectionTitle, EmptyState, StatCard } from '../ui/primitives.jsx';
+import { useT } from '../i18n/ConsoleI18nProvider.jsx';
 import { useAdminResource, formatDate } from '../lib/useGrowthData.js';
 import { adminFetch } from '../lib/adminSession.js';
 
@@ -9,21 +10,17 @@ import { adminFetch } from '../lib/adminSession.js';
 // authoritative and rejects illegal moves; this only decides which buttons to
 // draw, so an out-of-date copy is a cosmetic bug, never a data-integrity one.
 const NEXT_STATUS = {
-  proposed: [['accepted', 'Accept'], ['rejected', 'Reject']],
-  accepted: [['shipped', 'Mark shipped'], ['rejected', 'Drop']],
-  shipped: [['measured', 'Record outcome']],
+  proposed: [['accepted', 'accept'], ['rejected', 'reject']],
+  accepted: [['shipped', 'markShipped'], ['rejected', 'drop']],
+  shipped: [['measured', 'recordOutcome']],
   measured: [],
   rejected: [],
 };
 
-const OUTCOMES = [
-  ['worked', 'It worked'],
-  ['no_effect', 'No effect'],
-  ['inconclusive', 'Inconclusive'],
-  ['backfired', 'It backfired'],
-];
+const OUTCOMES = ['worked', 'no_effect', 'inconclusive', 'backfired'];
 
 export default function InitiativesPage({ token }) {
+  const { t, lang } = useT();
   const { data, state, reload } = useAdminResource('growth-initiatives', token);
   const [busy, setBusy] = useState(null);
   const [measuring, setMeasuring] = useState(null);
@@ -47,76 +44,78 @@ export default function InitiativesPage({ token }) {
     }
   };
 
-  if (state.status === 'loading') return <SectionTitle icon={ListChecks} eyebrow="Growth OS" title="Loading initiatives…" />;
-  if (state.status === 'error') return <EmptyState title="Could not load" text={state.message} />;
+  if (state.status === 'loading') return <SectionTitle icon={ListChecks} eyebrow={t('common.eyebrow')} title={t('common.loading')} />;
+  if (state.status === 'error') return <EmptyState title={t('common.couldNotLoad')} text={state.message} />;
 
   const { initiatives = [], summary } = data || {};
 
   return (
     <>
-      <SectionTitle icon={ListChecks} eyebrow="Growth OS" title="Initiatives" />
-      <p className="console-page-intro">
-        This is what makes the system an executive team rather than an idea generator: every
-        recommendation you accept is tracked through to a measured outcome, so the team learns
-        whether its own advice was any good.
-      </p>
+      <SectionTitle icon={ListChecks} eyebrow={t('common.eyebrow')} title={t('initiatives.title')} />
+      <p className="console-page-intro">{t('initiatives.intro')}</p>
 
       <div className="console-callout">
-        <strong>Accepting an initiative snapshots your current metrics.</strong>
-        <p>
-          That baseline is captured at accept time and can never be reconstructed afterwards — it is
-          the only thing that makes “did this work?” answerable later, once the metric has moved for
-          a dozen unrelated reasons.
-        </p>
+        <strong>{t('initiatives.calloutTitle')}</strong>
+        <p>{t('initiatives.calloutBody')}</p>
       </div>
 
       {summary && (
         <div className="analytics-stat-grid">
-          <StatCard label="Tracked" value={summary.total} />
-          <StatCard label="In flight" value={summary.byStatus.accepted + summary.byStatus.shipped} />
-          <StatCard label="Measured" value={summary.measuredCount} />
+          <StatCard label={t('initiatives.tracked')} value={summary.total} />
+          <StatCard label={t('initiatives.inFlight')} value={summary.byStatus.accepted + summary.byStatus.shipped} />
+          <StatCard label={t('initiatives.measured')} value={summary.measuredCount} />
           <StatCard
-            label="Hit rate"
-            value={summary.hitRate === null ? '—' : `${Math.round(summary.hitRate * 100)}%`}
-            sublabel={summary.hitRate === null ? 'nothing measured yet' : 'of measured initiatives'}
+            label={t('initiatives.hitRate')}
+            value={summary.hitRate === null ? t('common.notMeasured') : `${Math.round(summary.hitRate * 100)}%`}
+            sublabel={summary.hitRate === null ? t('initiatives.nothingMeasured') : t('initiatives.ofMeasured')}
           />
         </div>
       )}
 
+      {/* Server-generated caveat; stays in English like other warehouse prose. */}
       {summary?.hitRateNote && (
         <div className="console-callout"><p>{summary.hitRateNote}</p></div>
       )}
 
       {!initiatives.length ? (
-        <EmptyState
-          title="Nothing tracked yet"
-          text="Accept a recommendation from the Executive Brief or Content Engine to start tracking it here."
-        />
+        <EmptyState title={t('initiatives.nothingTrackedTitle')} text={t('initiatives.nothingTrackedBody')} />
       ) : (
         <div className="rec-list">
           {initiatives.map((initiative) => (
             <article key={initiative.id} className="rec-card">
               <header>
-                <span className={`rec-status rec-status-${initiative.status}`}>{initiative.status}</span>
+                <span className={`rec-status rec-status-${initiative.status}`}>
+                  {t(`status.${initiative.status}`)}
+                </span>
+                {/* The recommendation's own text — written by the analysts. */}
                 <h4>{initiative.recommendation.title}</h4>
               </header>
 
               <dl className="rec-detail">
-                <dt>Why</dt><dd>{initiative.recommendation.reasoning}</dd>
-                <dt>Proposed</dt><dd>{formatDate(initiative.createdAt)} by {initiative.sourceRole || 'you'}</dd>
+                <dt>{t('rec.why')}</dt><dd>{initiative.recommendation.reasoning}</dd>
+                <dt>{t('initiatives.proposedBy')}</dt>
+                <dd>
+                  {t('initiatives.proposedByLine', {
+                    at: formatDate(initiative.createdAt, lang),
+                    who: initiative.sourceRole ? t(`roles.${initiative.sourceRole}`) : t('initiatives.you'),
+                  })}
+                </dd>
                 {initiative.baseline && (
                   <>
-                    <dt>Baseline at accept</dt>
+                    <dt>{t('initiatives.baselineAtAccept')}</dt>
                     <dd>
-                      {initiative.baseline.totalVisitors} visitors · captured {formatDate(initiative.baseline.at)}
+                      {t('initiatives.baselineLine', {
+                        visitors: initiative.baseline.totalVisitors,
+                        at: formatDate(initiative.baseline.at, lang),
+                      })}
                     </dd>
                   </>
                 )}
                 {initiative.outcome && (
                   <>
-                    <dt>Outcome</dt>
+                    <dt>{t('initiatives.outcome')}</dt>
                     <dd>
-                      <strong>{initiative.outcome.replace('_', ' ')}</strong>
+                      <strong>{t(`outcomes.${initiative.outcome}`)}</strong>
                       {initiative.outcomeNote ? ` — ${initiative.outcomeNote}` : ''}
                     </dd>
                   </>
@@ -128,11 +127,11 @@ export default function InitiativesPage({ token }) {
                   <textarea
                     value={note}
                     onChange={(event) => setNote(event.target.value)}
-                    placeholder="What actually happened? Be honest — 'inconclusive' is usually the correct answer at this scale, and recording it as a win teaches the system the wrong lesson."
+                    placeholder={t('initiatives.measurePlaceholder')}
                     rows={3}
                   />
                   <div className="rec-actions">
-                    {OUTCOMES.map(([value, label]) => (
+                    {OUTCOMES.map((value) => (
                       <button
                         key={value}
                         type="button"
@@ -140,14 +139,14 @@ export default function InitiativesPage({ token }) {
                         disabled={busy === initiative.id}
                         onClick={() => move(initiative.id, 'measured', value)}
                       >
-                        {label}
+                        {t(`outcomes.${value}`)}
                       </button>
                     ))}
                   </div>
                 </div>
               ) : (
                 <div className="rec-actions">
-                  {NEXT_STATUS[initiative.status].map(([status, label]) => (
+                  {NEXT_STATUS[initiative.status].map(([status, actionKey]) => (
                     <button
                       key={status}
                       type="button"
@@ -157,7 +156,7 @@ export default function InitiativesPage({ token }) {
                         ? setMeasuring(initiative.id)
                         : move(initiative.id, status))}
                     >
-                      {label}
+                      {t(`actions.${actionKey}`)}
                     </button>
                   ))}
                 </div>

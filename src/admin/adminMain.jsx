@@ -20,6 +20,8 @@ import './console.css';
 import { adminLogin, clearAdminToken, getAdminToken } from './lib/adminSession.js';
 import { FormField, SectionTitle } from './ui/primitives.jsx';
 import { ErrorBoundary } from './ui/ErrorBoundary.jsx';
+import { ConsoleI18nProvider, useT } from './i18n/ConsoleI18nProvider.jsx';
+import { LanguageSwitcher } from './ui/LanguageSwitcher.jsx';
 import OverviewPage from './pages/OverviewPage.jsx';
 import FunnelPage from './pages/FunnelPage.jsx';
 import RetentionPage from './pages/RetentionPage.jsx';
@@ -27,17 +29,21 @@ import AcquisitionPage from './pages/AcquisitionPage.jsx';
 import ContentEnginePage from './pages/ContentEnginePage.jsx';
 import InitiativesPage from './pages/InitiativesPage.jsx';
 
-// One nav entry per module. `id` doubles as the hash route (#/funnel).
+// One nav entry per module. `id` doubles as the hash route (#/funnel) and as
+// the translation key (nav.funnel). Labels are resolved at render time, not
+// here, so switching language re-translates the sidebar immediately instead of
+// baking English in at module load.
 const NAV = [
-  { id: 'overview', label: 'Executive Brief', icon: BrainCircuit, Component: OverviewPage },
-  { id: 'funnel', label: 'Funnel', icon: Filter, Component: FunnelPage },
-  { id: 'retention', label: 'Retention', icon: Users, Component: RetentionPage },
-  { id: 'acquisition', label: 'Acquisition', icon: Target, Component: AcquisitionPage },
-  { id: 'content', label: 'Content Engine', icon: Youtube, Component: ContentEnginePage },
-  { id: 'initiatives', label: 'Initiatives', icon: ListChecks, Component: InitiativesPage },
+  { id: 'overview', icon: BrainCircuit, Component: OverviewPage },
+  { id: 'funnel', icon: Filter, Component: FunnelPage },
+  { id: 'retention', icon: Users, Component: RetentionPage },
+  { id: 'acquisition', icon: Target, Component: AcquisitionPage },
+  { id: 'content', icon: Youtube, Component: ContentEnginePage },
+  { id: 'initiatives', icon: ListChecks, Component: InitiativesPage },
 ];
 
 function LoginScreen({ onAuthenticated }) {
+  const { t } = useT();
   const [passcode, setPasscode] = useState('');
   const [state, setState] = useState({ status: 'idle', message: '' });
 
@@ -50,18 +56,21 @@ function LoginScreen({ onAuthenticated }) {
       // Deliberately generic: this screen is reachable by anyone who guesses
       // the URL, so it must never distinguish "wrong passcode" from
       // "passcode not configured" or confirm that the console exists here.
-      setState({ status: 'error', message: error.message || 'Sign-in failed.' });
+      setState({ status: 'error', message: error.message || t('login.failed') });
     }
   };
 
   return (
     <div className="console-login">
       <form className="add-form admin-login-form" onSubmit={submit}>
-        <SectionTitle icon={Lock} eyebrow="Restricted" title="Console" />
-        <FormField label="Passcode" type="password" value={passcode} onChange={setPasscode} required />
+        <SectionTitle icon={Lock} eyebrow={t('login.eyebrow')} title={t('login.title')} />
+        <FormField label={t('login.passcode')} type="password" value={passcode} onChange={setPasscode} required />
         <button className="primary-button wide-button" type="submit" disabled={state.status === 'loading'}>
-          {state.status === 'loading' ? 'Checking…' : 'Sign in'} <ArrowRight size={18} />
+          {state.status === 'loading' ? t('login.checking') : t('login.signIn')} <ArrowRight size={18} />
         </button>
+        {/* The switcher is on the login screen too: an operator who prefers
+            Azerbaijani should not have to sign in through English first. */}
+        <LanguageSwitcher />
         {state.message && <p className="lookup-message error">{state.message}</p>}
       </form>
     </div>
@@ -69,6 +78,7 @@ function LoginScreen({ onAuthenticated }) {
 }
 
 function Console({ token, onSignOut }) {
+  const { t } = useT();
   const [route, setRoute] = useState(() => window.location.hash.replace('#/', '') || 'overview');
 
   useEffect(() => {
@@ -86,8 +96,9 @@ function Console({ token, onSignOut }) {
         <div className="console-brand">
           <span className="brand-mark">K</span>
           <div>
-            <strong>Growth OS</strong>
-            <small>KHAN Trust</small>
+            {/* Brand names, not copy — identical in both dictionaries. */}
+            <strong>{t('brand.name')}</strong>
+            <small>{t('brand.site')}</small>
           </div>
         </div>
         <nav>
@@ -97,12 +108,13 @@ function Console({ token, onSignOut }) {
               href={`#/${item.id}`}
               className={`console-nav-link${item.id === active.id ? ' is-active' : ''}`}
             >
-              <item.icon size={17} /> {item.label}
+              <item.icon size={17} /> {t(`nav.${item.id}`)}
             </a>
           ))}
         </nav>
+        <LanguageSwitcher />
         <button className="console-signout" onClick={onSignOut} type="button">
-          <LogOut size={15} /> Sign out
+          <LogOut size={15} /> {t('nav.signOut')}
         </button>
       </aside>
       <main className="console-main">
@@ -112,7 +124,7 @@ function Console({ token, onSignOut }) {
 
             Both keyed on route so each page's data loading starts clean rather
             than briefly rendering the previous page's state. */}
-        <ErrorBoundary resetKey={active.id}>
+        <ErrorBoundary resetKey={active.id} t={t}>
           <ActivePage key={active.id} token={token} />
         </ErrorBoundary>
       </main>
@@ -145,6 +157,10 @@ function AdminApp() {
 
 createRoot(document.getElementById('admin-root')).render(
   <React.StrictMode>
-    <AdminApp />
+    {/* Wraps AdminApp rather than sitting inside it, so the login screen is
+        translated too — and so the stored language survives sign-out. */}
+    <ConsoleI18nProvider>
+      <AdminApp />
+    </ConsoleI18nProvider>
   </React.StrictMode>
 );

@@ -11,6 +11,8 @@
 // inherits the platform's look with no new stylesheet.
 import React from 'react';
 
+import { useT } from '../i18n/ConsoleI18nProvider.jsx';
+
 export function SectionTitle({ icon: Icon, eyebrow, title }) {
   return (
     <div className="section-title">
@@ -46,10 +48,14 @@ export function FormField({ label, value, onChange, type = 'text', required = fa
 }
 
 export function StatCard({ icon: Icon, label, value, sublabel, tone }) {
+  const { lang } = useT();
   return (
     <div className={`analytics-stat-card${tone ? ` tone-${tone}` : ''}`}>
       {Icon ? <Icon size={20} /> : null}
-      <strong>{typeof value === 'number' ? value.toLocaleString('en-US') : value}</strong>
+      {/* Grouped in the active locale: Azerbaijani writes 1.234, not 1,234.
+          A number formatted in the wrong convention is a small thing that makes
+          the whole panel read as untranslated. */}
+      <strong>{typeof value === 'number' ? value.toLocaleString(lang) : value}</strong>
       <span>{label}</span>
       {sublabel && <small>{sublabel}</small>}
     </div>
@@ -92,8 +98,9 @@ export function MiniBarChart({ data, color = 'var(--gold)' }) {
   );
 }
 
-export function DataTable({ columns, rows, emptyText = 'No data yet.' }) {
-  if (!rows.length) return <EmptyState title="No data" text={emptyText} />;
+export function DataTable({ columns, rows, emptyText }) {
+  const { t } = useT();
+  if (!rows.length) return <EmptyState title={t('common.noData')} text={emptyText} />;
   return (
     <div className="analytics-table-card">
       <table className="analytics-table">
@@ -126,13 +133,14 @@ export function DataTable({ columns, rows, emptyText = 'No data yet.' }) {
 // carries a confidence verdict, and this chip is how that verdict stays
 // attached to the number on screen instead of being quietly dropped.
 export function ConfidenceChip({ confidence }) {
+  const { t } = useT();
   if (!confidence) return null;
   const { level, sampleSize, reason } = confidence;
-  const label = {
-    sufficient: 'Reliable',
-    directional: 'Directional',
-    insufficient: 'Not enough data',
-  }[level] || level;
+  // `reason` stays in English: it is generated server-side by the Confidence
+  // Engine (which has no notion of locale) and is diagnostic detail on hover,
+  // not primary UI copy. Translating it would mean duplicating the statistical
+  // prose in two places and letting them drift.
+  const label = t(`confidence.${level}`);
   return (
     <span className={`confidence-chip confidence-${level}`} title={reason || ''}>
       {label}

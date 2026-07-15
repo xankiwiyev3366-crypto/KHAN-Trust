@@ -1,6 +1,7 @@
 import { getUserByEmail, verifyPassword, issueToken, jsonResponse } from './_authStore.mjs';
 import { appendEvent } from './_analyticsStore.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
+import { recordLogin } from './_growthRecord.mjs';
 
 function tooManyRequests(retryAfterMs) {
   return {
@@ -40,6 +41,14 @@ export async function handler(event) {
     userId: user.id,
     timestamp: new Date().toISOString(),
   }).catch(() => {});
+
+  // Growth Data Plane. Server-side so logins cannot be forged - the return-visit
+  // record that D1/D7/D30 retention is computed from.
+  await recordLogin({
+    userId: user.id,
+    attribution: body.attribution,
+    device: body.device,
+  });
 
   const { passwordHash, ...publicUser } = user;
   const token = issueToken(user);

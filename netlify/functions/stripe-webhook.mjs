@@ -5,6 +5,7 @@
 // checkout (see create-stripe-checkout-session.mjs).
 import Stripe from 'stripe';
 import { grantEntitlement, revokeEntitlement, findWalletByStripeSubscription, jsonResponse } from './_entitlementsStore.mjs';
+import { recordCheckoutCompleted } from './_growthRecord.mjs';
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
@@ -23,6 +24,23 @@ async function handleCheckoutCompleted(stripe, session) {
     stripeSubscriptionId: session.subscription || null,
     transactionHash: session.id,
     verifiedAt: new Date().toISOString(),
+  });
+
+  // Growth Data Plane: the ONLY trustworthy record that money actually moved.
+  // Stripe has verified the signature by the time this runs, so this is the
+  // one conversion event in the system that cannot be faked by a client.
+  //
+  // Recorded AFTER grantEntitlement so a failure here can never cost a paying
+  // customer their access - _growthRecord is fail-soft by contract, but the
+  // ordering makes that guarantee independent of it.
+  //
+  // Note the identity here is a WALLET, not an auth user id: card checkout is
+  // keyed by wallet (see _entitlementsStore.mjs) and the two identity systems
+  // are deliberately independent. The warehouse therefore counts conversions,
+  // not converted user ids - honest about what this event can actually prove.
+  await recordCheckoutCompleted({
+    userId: null,
+    plan,
   });
 }
 

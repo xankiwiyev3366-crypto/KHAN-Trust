@@ -3,6 +3,29 @@
   publish = "dist"
   functions = "netlify/functions"
 
+# Growth OS scheduled jobs.
+#
+# NOTE: a function declaring a `schedule` is NOT invocable over HTTP - Netlify
+# returns 404. That is why each job has a dedicated *-cron function and the
+# console's manual equivalents (growth-compact, growth-analyze) are separate,
+# admin-gated, and deliberately unscheduled. Adding a schedule to those would
+# silently 404 the console buttons. See _growthRunAnalysis.mjs.
+
+# Rolls finished days of one-key-per-event blobs into one blob per day, so reads
+# stay cheap as history accumulates. 03:15 UTC - after any plausible day
+# boundary, and off-peak. Only ever touches days before today, so it cannot race
+# a live write.
+[functions."growth-compact-cron"]
+  schedule = "15 3 * * *"
+
+# The AI executive team. WEEKLY (Monday 06:00 UTC), deliberately not daily: at
+# this platform's scale a daily brief would be narrating noise - day-over-day
+# movement of 0-3 signups carries no information - and a system that cries wolf
+# daily gets ignored within a fortnight. Weekly also keeps the whole AI layer to
+# ~4 runs/month, well inside the cap enforced in _aiBudget.mjs.
+[functions."growth-analyze-cron"]
+  schedule = "0 6 * * 1"
+
 # Security headers (P1-3). Applied to every served path. These are all
 # zero-breakage for a same-origin SPA:
 #   - HSTS forces HTTPS for a year (Netlify already serves HTTPS-only).
@@ -24,6 +47,39 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
     Content-Security-Policy = "frame-ancestors 'self'"
+
+# The private Growth OS console. Served from its own Vite entry (admin.html),
+# so none of its code ships in the user bundle.
+#
+# Path-specific rewrite, consistent with every other redirect here - there is
+# still no catch-all - so the public hash-routed SPA at "/" is untouched.
+[[redirects]]
+  from = "/console"
+  to = "/admin.html"
+  status = 200
+
+[[redirects]]
+  from = "/console/*"
+  to = "/admin.html"
+  status = 200
+
+# Defence in depth for the console surface. The passcode gate is the actual
+# access control - these headers stop the console from being INDEXED or
+# CACHED, which is a different problem: without them a crawler that ever sees
+# /console can list it in search results, advertising that the system exists.
+# That is the requirement these enforce ("users must never know this exists"),
+# not authorisation.
+[[headers]]
+  for = "/console"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet"
+    Cache-Control = "no-store"
+
+[[headers]]
+  for = "/admin.html"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet"
+    Cache-Control = "no-store"
 
 # Immutable caching for build output (Phase 3 perf). Everything under /assets/
 # is content-hashed by Vite (e.g. react-vendor-Cw1fZvOf.js) - a changed file

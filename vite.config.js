@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { resolve } from 'node:path';
 
 // @solana/web3.js and @solana/spl-token reference the Node "Buffer" global at
 // module scope. Vite's dev-mode dependency pre-bundling does not polyfill
@@ -55,7 +56,32 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 900,
+    // Emitted so scripts/verify-boundary.mjs can walk the real chunk graph
+    // (entry -> imports -> dynamicImports) instead of guessing which files the
+    // user bundle actually pulls in.
+    manifest: true,
     rollupOptions: {
+      // TWO SEPARATE APPLICATIONS, one build.
+      //
+      //   index.html -> src/main.jsx       the public KHAN Trust app
+      //   admin.html -> src/admin/...      the private operator console
+      //
+      // This split is the load-bearing privacy boundary for the Growth OS: a
+      // module reachable only from the admin entry is emitted only into admin
+      // chunks, so no admin route name, label, metric, or strategy string ever
+      // lands in the JS a visitor downloads. Rollup only hoists a module into a
+      // shared chunk when BOTH entries import it - which, by design, is limited
+      // to React/vendor code and the stylesheet.
+      //
+      // The invariant this depends on: src/main.jsx (and anything it imports)
+      // must NEVER import from src/admin/. `npm run verify:boundary` asserts
+      // exactly that against the built output, so an accidental import that
+      // would leak the console into the user bundle fails the build instead of
+      // shipping silently.
+      input: {
+        main: resolve(process.cwd(), 'index.html'),
+        admin: resolve(process.cwd(), 'admin.html'),
+      },
       output: {
         manualChunks,
       },

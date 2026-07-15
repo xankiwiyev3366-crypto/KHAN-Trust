@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- The admin console is a SEPARATE application from the user-facing app.
+         It has its own Vite entry, so none of its code, labels, or module names
+         are ever emitted into the bundle a visitor downloads (see
+         vite.config.js `rollupOptions.input`).
+
+         Deliberately NOT present here, unlike index.html:
+           - no Google Analytics tag (never track the operator as a user, and
+             never leak admin page paths into the GA property),
+           - no provider preconnects (no token scanning happens here),
+           - no marketing <meta description>.
+         `noindex, nofollow` plus the X-Robots-Tag header in netlify.toml keep
+         this surface out of every search index. -->
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="theme-color" content="#050505" />
+    <title>Console</title>
+  </head>
+  <body>
+    <div id="admin-root"></div>
+    <script type="module" src="/src/admin/adminMain.jsx"></script>
+  </body>
+</html>

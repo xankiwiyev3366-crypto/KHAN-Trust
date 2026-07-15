@@ -3,6 +3,7 @@ import { getUserByEmail, saveUser, issueToken, createVerifyToken, hashPassword, 
 import { sendVerificationEmail } from './_email.mjs';
 import { appendEvent } from './_analyticsStore.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
+import { recordRegistration } from './_growthRecord.mjs';
 
 export async function handler(event) {
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
@@ -63,6 +64,20 @@ export async function handler(event) {
     userId: id,
     timestamp: new Date().toISOString(),
   }).catch(() => {});
+
+  // Growth Data Plane. Recorded server-side (never via the public ingestion
+  // endpoint) so a registration cannot be forged with a curl.
+  //
+  // `attribution` is forwarded by the client from its stored first-touch: this
+  // is the exact moment an anonymous visitor becomes an account, so it is the
+  // only point where the channel that ORIGINALLY brought them here can be
+  // welded to a real user id. Miss it and the question "which video acquires
+  // users" becomes permanently unanswerable for this signup.
+  await recordRegistration({
+    userId: id,
+    attribution: body.attribution,
+    device: body.device,
+  });
 
   const { passwordHash, ...publicUser } = user;
   const token = issueToken(user);

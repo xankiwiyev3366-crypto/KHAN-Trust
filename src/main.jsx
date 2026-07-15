@@ -200,6 +200,13 @@ import {
   summaryToCsv,
   setAnalyticsUserId,
 } from './platformAnalytics.js';
+// Growth Data Plane. Runs ALONGSIDE the two existing tracking modules rather
+// than replacing them: platformAnalytics feeds the legacy admin dashboard and
+// analytics.js feeds Google Analytics, and cutting either over in the same
+// change would put a migration and a rebuild of every metric in one commit.
+// This one is additive and independently verifiable; the legacy paths retire
+// once the console fully replaces the old dashboard.
+import { initGrowth, setGrowthUserId, growth } from './growth.js';
 import {
   fetchHolders,
   fetchTransactions,
@@ -3331,6 +3338,7 @@ async function handleDownloadPdf(project) {
     const { generatePdfReport } = await import('./pdfReport.js');
     generatePdfReport(buildPdfReportData(project));
     trackPdfDownload(project);
+    growth.pdfDownload(project);
   } catch {
     alert('PDF generation failed to load. Check your connection and try again.');
   }
@@ -3338,6 +3346,7 @@ async function handleDownloadPdf(project) {
 
 function handleUnlockPremiumClick(project, wallet) {
   trackPremiumClick();
+  growth.premiumClick();
   return handleCheckout('premium', wallet);
 }
 
@@ -3347,25 +3356,35 @@ function handleEarlySupporterClick(wallet) {
 }
 
 async function handleCheckout(plan, wallet) {
+  // Every abandoned path below is recorded with its REASON, not just its
+  // existence. A checkout that dies on 'wallet_required' is a product
+  // bottleneck the operator can fix; one that dies on 'missing_config' is an
+  // outage losing revenue silently. Both look like "no conversion" in Google
+  // Analytics, which is why they are recorded first-party here.
   if (!isStripeConfigured(plan)) {
     trackCheckoutUnavailable(plan, 'missing_config');
+    growth.checkoutFailed(plan, 'missing_config');
     return { ok: false, message: stripeUnavailableMessage() };
   }
 
   if (!wallet) {
     trackCheckoutUnavailable(plan, 'wallet_required');
+    growth.checkoutFailed(plan, 'wallet_required');
     return { ok: false, message: 'Connect a wallet first so we know where to grant access.' };
   }
 
   trackCheckoutStarted(plan);
+  growth.checkoutStarted(plan);
   try {
     const result = await startStripeCheckout(plan, wallet);
     if (!result.ok) {
       trackCheckoutUnavailable(plan, result.reason);
+      growth.checkoutFailed(plan, result.reason);
     }
     return result;
   } catch {
     trackCheckoutUnavailable(plan, 'checkout_error');
+    growth.checkoutFailed(plan, 'checkout_error');
     return { ok: false, message: stripeUnavailableMessage() };
   }
 }
@@ -3490,19 +3509,31 @@ function App() {
   useEffect(() => {
     initAnalytics();
     initAnalyticsContext();
+    // Must run before any growth event is emitted: it resolves and freezes the
+    // first-touch channel from the landing URL's UTM/referrer, which are gone
+    // after the first client-side navigation.
+    initGrowth();
   }, []);
 
   useEffect(() => {
     setAnalyticsUserId(user?.id || null);
+    // Stitches the account onto the same visitor that carries the first-touch
+    // channel - the join that lets a signup be credited to the video that
+    // caused it.
+    setGrowthUserId(user?.id || null);
   }, [user?.id]);
 
   useEffect(() => {
     trackPageView(`/${page}`);
     trackPageViewEvent(`/${page}`);
+    growth.pageView(`/${page}`);
   }, [page]);
 
   useEffect(() => {
-    if (page === 'pricing') trackPricingView();
+    if (page === 'pricing') {
+      trackPricingView();
+      growth.pricingView();
+    }
   }, [page]);
 
   const projects = useMemo(
@@ -3528,6 +3559,7 @@ function App() {
 
   useEffect(() => {
     if (selectedProject) trackProjectViewEvent(selectedProject);
+    if (selectedProject) growth.projectView(selectedProject);
   }, [selectedProject?.id]);
 
   const navigate = (target, options = {}) => {
@@ -3608,6 +3640,7 @@ function App() {
   const addProject = (project) => {
     const normalized = saveProjectProfile(project);
     trackProjectAddedEvent(normalized);
+    growth.projectAdded(normalized);
     navigate(`project/${normalized.id}`);
   };
 
@@ -3632,6 +3665,7 @@ function App() {
     setSearchState({ status: 'loading', message: t('search.fetching') });
     trackTokenScanStarted(match.address);
     trackSearchEvent(match.address);
+    growth.search(match.address);
     try {
       const liveLookup = await lookupTokenMatch(match, report);
       const liveProject = runTrustEngine(liveLookup, report);
@@ -3639,6 +3673,7 @@ function App() {
       setSearchState({ status: 'success', message: t('search.successOpened', { name: liveProject.name || liveProject.ticker }) });
       trackTokenScanCompleted(match.address, 'success');
       trackTokenScanEvent(liveProject);
+      growth.scanCompleted(liveProject);
       report.complete('finalize');
       navigate(`project/${liveProject.id}`, { revealScan: true });
     } catch (error) {
@@ -3660,6 +3695,7 @@ function App() {
       setSearchState({ status: 'loading', message: t('search.fetching') });
       trackTokenScanStarted(term);
       trackSearchEvent(term);
+      growth.search(term);
       try {
         const liveLookup = await lookupSolanaToken(term, report);
         const liveProject = runTrustEngine(liveLookup, report);
@@ -3667,6 +3703,7 @@ function App() {
         setSearchState({ status: 'success', message: t('search.successOpened', { name: liveProject.name || liveProject.ticker }) });
         trackTokenScanCompleted(term, 'success');
         trackTokenScanEvent(liveProject);
+        growth.scanCompleted(liveProject);
         report.complete('finalize');
         navigate(`project/${liveProject.id}`, { revealScan: true });
       } catch (error) {
@@ -3722,11 +3759,13 @@ function App() {
     try {
       trackTokenScanStarted(term);
       trackSearchEvent(term);
+      growth.search(term);
       const liveLookup = await lookupSolanaToken(term);
       const liveProject = normalizeProject(mergeStoredMetadata(liveLookup, findStoredProject(userProjects, liveLookup)));
       setUserProjects((items) => upsertProject(items, liveProject));
       trackTokenScanCompleted(term, 'success');
       trackTokenScanEvent(liveProject);
+      growth.scanCompleted(liveProject);
       navigate(`report/${liveProject.id}`);
       return { status: 'success', message: t('checkToken.successOpened', { name: liveProject.name || liveProject.ticker }) };
     } catch (error) {
@@ -3735,6 +3774,7 @@ function App() {
         const existingProject = normalizeProject(existing);
         trackTokenScanCompleted(term, 'cached-live');
         trackTokenScanEvent(existingProject);
+        growth.scanCompleted(existingProject);
         navigate(`report/${existingProject.id}`);
         return { status: 'success', message: t('checkToken.successCachedLive', { name: existingProject.name || existingProject.ticker }) };
       }
@@ -4358,6 +4398,7 @@ function ComparePage({ projects, navigate }) {
 
   useEffect(() => {
     if (first && second) trackCompareUsedEvent(first, second);
+    if (first && second) growth.compareUsed(first, second);
   }, [first?.id, second?.id]);
 
   return (

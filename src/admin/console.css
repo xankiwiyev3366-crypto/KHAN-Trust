@@ -1,0 +1,432 @@
+/* Console-only styles. Layered on top of the shared styles.css (which supplies
+   the design tokens and the analytics-* / form-* classes the primitives reuse),
+   so this file only has to describe what is unique to the console: the fixed
+   sidebar shell and the confidence chips. */
+
+.console-shell {
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  min-height: 100vh;
+}
+
+.console-login {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.console-login .admin-login-form {
+  width: min(380px, 100%);
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+
+.console-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px 14px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.console-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 18px;
+}
+
+.console-brand strong {
+  display: block;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+
+.console-brand small {
+  color: var(--muted, rgba(255, 255, 255, 0.5));
+  font-size: 0.72rem;
+}
+
+.console-nav nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.console-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: var(--muted, rgba(255, 255, 255, 0.62));
+  text-decoration: none;
+  font-size: 0.86rem;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.console-nav-link:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.console-nav-link.is-active {
+  background: rgba(212, 175, 55, 0.12);
+  color: var(--gold, #d4af37);
+}
+
+.console-signout {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted, rgba(255, 255, 255, 0.5));
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.console-signout:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.console-main {
+  padding: 28px 32px 64px;
+  min-width: 0; /* let wide tables scroll instead of stretching the grid column */
+}
+
+.console-page-intro {
+  color: var(--muted, rgba(255, 255, 255, 0.55));
+  font-size: 0.87rem;
+  line-height: 1.6;
+  max-width: 72ch;
+  margin: -6px 0 22px;
+}
+
+/* ── Confidence chips ────────────────────────────────────────────────────── */
+
+.confidence-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.confidence-sufficient {
+  background: rgba(46, 160, 88, 0.16);
+  color: #4ade80;
+}
+
+.confidence-directional {
+  background: rgba(212, 175, 55, 0.16);
+  color: var(--gold, #d4af37);
+}
+
+.confidence-insufficient {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* A metric the warehouse could not stand behind is dimmed rather than hidden:
+   the operator still needs to see that the metric EXISTS and why it is empty,
+   but it must never read with the same visual weight as a trustworthy number. */
+.metric-insufficient {
+  opacity: 0.55;
+}
+
+.console-callout {
+  border: 1px solid rgba(212, 175, 55, 0.28);
+  background: rgba(212, 175, 55, 0.06);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 0 0 20px;
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+
+.console-callout strong {
+  color: var(--gold, #d4af37);
+}
+
+.console-callout ul,
+.console-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.console-callout li,
+.console-list li {
+  margin: 4px 0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.console-callout-warn {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.06);
+}
+
+.console-callout-warn strong {
+  color: #f87171;
+}
+
+.console-h3 {
+  font-size: 1.15rem;
+  margin: 22px 0 10px;
+  line-height: 1.45;
+}
+
+.console-h4 {
+  font-size: 0.95rem;
+  margin: 28px 0 10px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.console-hint {
+  color: var(--muted, rgba(255, 255, 255, 0.45));
+  font-size: 0.78rem;
+}
+
+.console-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 18px 0;
+}
+
+.console-range {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.range-button {
+  padding: 5px 12px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: var(--muted, rgba(255, 255, 255, 0.6));
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.range-button.is-active {
+  border-color: var(--gold, #d4af37);
+  color: var(--gold, #d4af37);
+}
+
+.console-confidence-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 10px 0 4px;
+  font-size: 0.78rem;
+  align-items: center;
+}
+
+.console-details {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+
+.console-details summary {
+  cursor: pointer;
+  font-size: 0.87rem;
+  line-height: 1.5;
+}
+
+/* ── Recommendation cards ────────────────────────────────────────────────── */
+
+.rec-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.rec-card {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  padding: 16px 18px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.rec-card header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.rec-card h4 {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.45;
+}
+
+.rec-priority,
+.rec-status {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.rec-P0 { background: rgba(239, 68, 68, 0.18); color: #f87171; }
+.rec-P1 { background: rgba(212, 175, 55, 0.18); color: var(--gold, #d4af37); }
+.rec-P2 { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.7); }
+.rec-P3 { background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.45); }
+
+.rec-status-proposed  { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.7); }
+.rec-status-accepted  { background: rgba(212, 175, 55, 0.18); color: var(--gold, #d4af37); }
+.rec-status-shipped   { background: rgba(59, 130, 246, 0.18); color: #60a5fa; }
+.rec-status-measured  { background: rgba(46, 160, 88, 0.18); color: #4ade80; }
+.rec-status-rejected  { background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.4); }
+
+.rec-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.rec-chip,
+.rec-confidence {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Confidence is colour-coded as strongly as priority: an AI idea labelled
+   "speculative" and one grounded in real data deserve very different trust, and
+   burying that distinction is how an assistant quietly starts running things. */
+.rec-conf-grounded_in_data   { background: rgba(46, 160, 88, 0.16); color: #4ade80; }
+.rec-conf-informed_judgement { background: rgba(212, 175, 55, 0.14); color: var(--gold, #d4af37); }
+.rec-conf-speculative        { background: rgba(239, 68, 68, 0.14); color: #f87171; }
+
+.rec-detail {
+  display: grid;
+  grid-template-columns: 128px 1fr;
+  gap: 6px 14px;
+  margin: 0 0 12px;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.rec-detail dt {
+  color: var(--muted, rgba(255, 255, 255, 0.45));
+  font-weight: 600;
+}
+
+.rec-detail dd {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.rec-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rec-measure textarea {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.84rem;
+  margin-bottom: 8px;
+  resize: vertical;
+}
+
+.ghost-button {
+  padding: 6px 12px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.ghost-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ghost-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.channel-owned {
+  color: var(--gold, #d4af37);
+}
+
+.console-error-detail {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.75rem;
+  text-align: left;
+  max-width: 70ch;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 860px) {
+  .rec-detail {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .rec-detail dt {
+    margin-top: 8px;
+  }
+
+  .console-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .console-nav {
+    position: static;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .console-nav nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .console-main {
+    padding: 20px 16px 48px;
+  }
+}

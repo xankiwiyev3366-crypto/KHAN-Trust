@@ -5,11 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/verify-boundary.mjs",
+    "verify:boundary": "node scripts/verify-boundary.mjs",
     "preview": "vite preview",
-    "test": "node --test"
+    "test": "node --experimental-test-module-mocks --test"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
     "@netlify/blobs": "^8.2.0",
     "@solana/spl-token": "^0.4.14",
     "@solana/wallet-adapter-base": "^0.9.27",

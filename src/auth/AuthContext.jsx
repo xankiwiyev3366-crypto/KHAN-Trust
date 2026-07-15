@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { AuthGateModal } from './AuthGateModal.jsx';
+import { getGrowthContext } from '../growth.js';
 
 const TOKEN_KEY = 'khan-trust-auth-token-v1';
 
@@ -50,11 +51,25 @@ export function AuthProvider({ children }) {
     try { localStorage.setItem(TOKEN_KEY, tok); } catch {}
   }, []);
 
+  // `attribution`/`device` ride along on registration so the server can weld
+  // the channel that originally brought this visitor here onto the new account
+  // (see _growthRecord.mjs). growthFields() is defensive because auth must
+  // never fail on account of analytics: if the growth context is unavailable
+  // for any reason, the signup still goes through, just unattributed.
+  const growthFields = () => {
+    try {
+      const { attribution, device } = getGrowthContext();
+      return { attribution, device };
+    } catch {
+      return {};
+    }
+  };
+
   const register = useCallback(async ({ name, email, password }) => {
     const data = await apiFetch('auth-register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ name, email, password, ...growthFields() }),
     });
     persist(data.user, data.token);
     return data.user;
@@ -64,7 +79,7 @@ export function AuthProvider({ children }) {
     const data = await apiFetch('auth-login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, ...growthFields() }),
     });
     persist(data.user, data.token);
     return data.user;

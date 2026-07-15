@@ -5,11 +5,17 @@
 
 # Growth OS scheduled jobs.
 #
-# NOTE: a function declaring a `schedule` is NOT invocable over HTTP - Netlify
-# returns 404. That is why each job has a dedicated *-cron function and the
-# console's manual equivalents (growth-compact, growth-analyze) are separate,
-# admin-gated, and deliberately unscheduled. Adding a schedule to those would
-# silently 404 the console buttons. See _growthRunAnalysis.mjs.
+# THE EXECUTION LIMITS THAT SHAPE ALL OF THIS (Netlify, per function type):
+#   synchronous ~10s  |  scheduled 30s  |  background 15min (`-background` suffix)
+#
+# A scheduled function is also NOT invocable over HTTP (404). So the two roles
+# cannot share one function, and long work cannot live in either:
+#   - growth-analyze-cron fires growth-analyze-background and returns instantly.
+#     The analysis itself takes 20-40s (four Claude calls) and would blow the
+#     30s scheduled cap - silently, every Monday.
+#   - growth-compact-cron does its own work but caps days per run to stay well
+#     inside 30s; a backlog drains over successive nights.
+# See _growthRunAnalysis.mjs for the full topology.
 
 # Rolls finished days of one-key-per-event blobs into one blob per day, so reads
 # stay cheap as history accumulates. 03:15 UTC - after any plausible day

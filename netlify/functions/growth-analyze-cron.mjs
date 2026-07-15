@@ -1,28 +1,60 @@
-// The weekly analyst run. Scheduled only — Netlify does not route HTTP to a
-// function that declares a schedule, so this needs no auth check: it is not
-// reachable by anyone.
+// Weekly trigger for the analyst run. Scheduled, so it is NOT HTTP-routable
+// and has a hard 30-second execution limit.
 //
-// Failures are logged rather than returned. Nothing reads this function's
-// response, so a silent throw would mean the reports simply stop appearing and
-// nobody finds out until someone wonders why the console looks stale.
-import { runAnalysis } from './_growthRunAnalysis.mjs';
-import { isAiConfigured } from './_aiClient.mjs';
+// It therefore does NOT do the work. Four Claude calls take 20-40s and would
+// blow the 30s cap — silently, every Monday, with the only symptom being that
+// reports quietly stopped appearing. Instead this fires the background function
+// (15-minute limit) and returns immediately, which is Netlify's documented
+// pattern for scheduled work that outlives the scheduler.
+//
+// The self-call needs an admin token, which this can mint directly: it runs
+// server-side and already has KHAN_ADMIN_PASSCODE, the same secret
+// verification-admin-auth signs with. No passcode is transmitted — only the
+// short-lived HMAC token.
+import { issueToken } from './_adminAuth.mjs';
 import { jsonResponse } from './_growthEvents.mjs';
 
 export async function handler() {
-  if (!isAiConfigured()) {
-    console.warn('[growth-analyze-cron] skipped: ANTHROPIC_API_KEY is not configured.');
-    return jsonResponse(200, { skipped: true, reason: 'AI_NOT_CONFIGURED' });
+  // process.env.URL is injected by Netlify and is the site's primary URL.
+  const siteUrl = process.env.URL || process.env.DEPLOY_PRIME_URL;
+  if (!siteUrl) {
+    console.error('[growth-analyze-cron] no site URL in env; cannot reach the background function.');
+    return jsonResponse(200, { ok: false, reason: 'NO_SITE_URL' });
+  }
+
+  let token;
+  try {
+    token = issueToken();
+  } catch (error) {
+    // issueToken throws when KHAN_ADMIN_PASSCODE is unset in production. That
+    // is the same fail-closed posture the rest of admin auth takes.
+    console.error(`[growth-analyze-cron] cannot issue an admin token: ${error.message}`);
+    return jsonResponse(200, { ok: false, reason: 'ADMIN_NOT_CONFIGURED' });
   }
 
   try {
-    const report = await runAnalysis({ trigger: 'scheduled' });
-    console.log(`[growth-analyze-cron] report ${report.id} saved.`);
-    return jsonResponse(200, { ok: true, reportId: report.id });
+    // Fire-and-forget by design: the background function answers 202
+    // immediately and keeps running long after this scheduled invocation has
+    // exited. Awaiting anything more than the 202 would defeat the point.
+    const response = await fetch(`${siteUrl}/.netlify/functions/growth-analyze-background`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ trigger: 'scheduled' }),
+    });
+
+    if (response.status !== 202) {
+      // 202 is the contract for a background function. Anything else means the
+      // function is missing or misnamed (a `-background` suffix typo silently
+      // turns it back into a 10s synchronous function), which is worth shouting
+      // about rather than discovering weeks later.
+      console.error(`[growth-analyze-cron] expected 202 from the background function, got ${response.status}.`);
+      return jsonResponse(200, { ok: false, status: response.status });
+    }
+
+    console.log('[growth-analyze-cron] weekly analysis triggered.');
+    return jsonResponse(200, { ok: true });
   } catch (error) {
-    // Hitting the monthly cap is correct behaviour, not an incident.
-    const level = error.code === 'BUDGET_EXCEEDED' ? 'warn' : 'error';
-    console[level](`[growth-analyze-cron] ${error.code || 'failed'}: ${error.message}`);
-    return jsonResponse(200, { ok: false, code: error.code || null, message: error.message });
+    console.error(`[growth-analyze-cron] failed to trigger: ${error.message}`);
+    return jsonResponse(200, { ok: false, message: error.message });
   }
 }

@@ -18,15 +18,63 @@ export default function OverviewPage({ token }) {
   const { data, state, reload } = useAdminResource('growth-reports', token);
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState('');
+  // The run takes 20-40s behind a 202, so without a progress line the button
+  // just looks hung and the operator clicks it again — paying twice.
+  const [progress, setProgress] = useState('');
+
+  // The analyst run is a BACKGROUND function: it answers 202 with an empty body
+  // immediately and keeps working for another 20-40s. It can never hand us the
+  // report, so the only way to observe the result is to poll growth-reports and
+  // watch for a report id we have not seen before.
+  //
+  // (It has to be a background function — four Claude calls take far longer
+  // than the ~10s a synchronous Netlify function is allowed, which is why the
+  // old direct-POST version could only ever return a 504.)
+  const POLL_INTERVAL_MS = 4000;
+  const POLL_TIMEOUT_MS = 240000; // 4 min: comfortably past a slow run, far under the 15-min function limit.
 
   const runAnalysis = async () => {
     setRunning(true);
     setRunError('');
+    setProgress('Starting the team…');
+
+    const idBefore = data?.report?.id || null;
+
     try {
-      await adminFetch('growth-analyze', { token, method: 'POST' });
-      await reload();
+      await adminFetch('growth-analyze-background', {
+        token,
+        method: 'POST',
+        body: { trigger: 'manual' },
+      });
+
+      setProgress('Analysts are working. This usually takes under a minute…');
+      const startedAt = Date.now();
+
+      // Poll until a NEW report appears, or we give up waiting.
+      for (;;) {
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+
+        const latest = await adminFetch('growth-reports', { token }).catch(() => null);
+        if (latest?.report?.id && latest.report.id !== idBefore) {
+          await reload();
+          setProgress('');
+          return;
+        }
+
+        if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+          // The run may still be going — we simply stopped watching. Say that
+          // rather than claiming it failed, which would be a guess.
+          setRunError(
+            'No report appeared within 4 minutes. The run may still be in progress — reload shortly. ' +
+            'If nothing shows up, check the growth-analyze-background function logs in Netlify.'
+          );
+          setProgress('');
+          return;
+        }
+      }
     } catch (error) {
       setRunError(error.message);
+      setProgress('');
     } finally {
       setRunning(false);
     }
@@ -79,7 +127,7 @@ export default function OverviewPage({ token }) {
           <RefreshCw size={15} /> {running ? 'Running the team…' : 'Run analysis now'}
         </button>
         <span className="console-hint">
-          Runs automatically every Monday. A manual run costs roughly a cent.
+          {progress || 'Runs automatically every Monday. A manual run costs roughly a cent.'}
         </span>
       </div>
       {runError && <p className="lookup-message error">{runError}</p>}

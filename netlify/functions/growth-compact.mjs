@@ -15,14 +15,25 @@ export async function handler(event) {
     // Only days before today: compacting the live day could race an in-flight
     // write.
     const today = new Date().toISOString().slice(0, 10);
-    const days = (await listRawDays()).filter((day) => day < today);
+    const pending = (await listRawDays()).filter((day) => day < today);
+
+    // This is a SYNCHRONOUS function (~10s limit), so it is capped harder than
+    // the nightly cron. Compaction is idempotent and stopping early is safe —
+    // `remaining` tells the caller to run it again rather than leaving them to
+    // wonder why a 504 came back.
+    const days = pending.slice(0, 3);
 
     const results = [];
     for (const day of days) {
       results.push(await compactDay(day));
     }
 
-    return jsonResponse(200, { ok: true, compactedDays: results.length, results });
+    return jsonResponse(200, {
+      ok: true,
+      compactedDays: results.length,
+      remaining: pending.length - days.length,
+      results,
+    });
   } catch (error) {
     return jsonResponse(500, { message: `growth-compact failed: ${error.message}` });
   }

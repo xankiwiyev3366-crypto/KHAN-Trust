@@ -1,23 +1,24 @@
-// The analyst run itself, shared by the manual endpoint and the cron job.
+// The analyst run itself. Called only from growth-analyze-background.mjs.
 //
-// WHY THIS IS A SEPARATE MODULE
+// WHY THE FUNCTION TOPOLOGY LOOKS LIKE THIS
 //
-// A Netlify function that declares a `schedule` is NOT invocable over HTTP —
-// Netlify serves it a 404. So a single dual-purpose endpoint cannot be both the
-// weekly cron and the console's "Run analysis now" button: adding the schedule
-// silently kills the button, and the failure looks like a routing bug rather
-// than a design error.
+// This job makes four Claude calls and takes 20-40 seconds. Netlify's three
+// function types each cap execution, and only one of them is long enough:
 //
-// Trying to tell the two apart inside one handler (sniffing for absent headers,
-// or a `next_run` field in the body) is worse than useless: it is a guess about
-// an undocumented invocation shape, and every version of that guess is either
-// an auth hole (anyone can trigger a paid AI run by faking the marker) or a
-// silent failure (the cron gets 401'd forever and no one notices the reports
-// stopped).
+//   synchronous  ~10s   -> too short. Returned a 504 and nothing else.
+//   scheduled     30s   -> too short. Would have died silently every Monday.
+//   background    15min -> the only one that fits.
 //
-// So: two thin, unambiguous entry points around one runner.
-//   growth-analyze.mjs      HTTP,   admin-gated, no schedule  -> the button
-//   growth-analyze-cron.mjs schedule, not routable            -> the weekly run
+// A background function cannot be scheduled and a scheduled function cannot be
+// HTTP-invoked, so the work sits in a background function with two thin callers:
+//
+//   growth-analyze-background.mjs  15-min limit, admin-gated  <- does the work
+//   growth-analyze-cron.mjs        scheduled, 30s, not routable -> fires it weekly
+//   src/admin/pages/OverviewPage   the console button           -> fires it manually
+//
+// The background function answers 202 with an empty body and can never return
+// the report to its caller, so both callers are fire-and-forget: the console
+// polls growth-reports for a new report id, and the cron just logs.
 import { buildWarehouse } from './_growthWarehouse.mjs';
 import { buildFactPack, contentStrategist, growthAnalyst, productAnalyst, executiveBrief } from './_growthAnalyst.mjs';
 import { saveReport } from './_growthReportStore.mjs';

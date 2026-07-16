@@ -12,6 +12,7 @@
 import React from 'react';
 
 import { useT } from '../i18n/ConsoleI18nProvider.jsx';
+import { renderReason } from '../lib/reason.js';
 
 export function SectionTitle({ icon: Icon, eyebrow, title }) {
   return (
@@ -133,16 +134,12 @@ export function DataTable({ columns, rows, emptyText }) {
 // carries a confidence verdict, and this chip is how that verdict stays
 // attached to the number on screen instead of being quietly dropped.
 export function ConfidenceChip({ confidence }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   if (!confidence) return null;
-  const { level, sampleSize, reason } = confidence;
-  // `reason` stays in English: it is generated server-side by the Confidence
-  // Engine (which has no notion of locale) and is diagnostic detail on hover,
-  // not primary UI copy. Translating it would mean duplicating the statistical
-  // prose in two places and letting them drift.
+  const { level, sampleSize } = confidence;
   const label = t(`confidence.${level}`);
   return (
-    <span className={`confidence-chip confidence-${level}`} title={reason || ''}>
+    <span className={`confidence-chip confidence-${level}`} title={renderReason(lang, confidence)}>
       {label}
       {typeof sampleSize === 'number' ? ` · n=${sampleSize}` : ''}
     </span>

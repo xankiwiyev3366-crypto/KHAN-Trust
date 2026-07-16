@@ -39,7 +39,14 @@ export async function handler() {
     const response = await fetch(`${siteUrl}/.netlify/functions/growth-analyze-background`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ trigger: 'scheduled' }),
+      // The weekly run has no operator present to read a language preference
+      // from, so it takes one from the environment. Defaults to English.
+      // Set KHAN_AI_REPORT_LANG=az to have the Monday brief arrive in
+      // Azerbaijani.
+      body: JSON.stringify({
+        trigger: 'scheduled',
+        language: process.env.KHAN_AI_REPORT_LANG === 'az' ? 'az' : 'en',
+      }),
     });
 
     if (response.status !== 202) {

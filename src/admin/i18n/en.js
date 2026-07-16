@@ -75,6 +75,12 @@ export default {
     progressStarting: 'Starting the team…',
     progressWorking: 'Analysts are working. This usually takes under a minute…',
     pollTimeout: 'No report appeared within 4 minutes. The run may still be in progress — reload shortly. If nothing shows up, check the growth-analyze-background function logs in Netlify.',
+    // Shown when a stored report's prose is in a language other than the one
+    // the console is currently displaying. Reports are immutable — the honest
+    // move is to say so, not to silently show English under an Azerbaijani UI.
+    langMismatch: 'This report was written in {reportLang}. Reports are not re-translated — run the analysis again to get one in {currentLang}.',
+    langEn: 'English',
+    langAz: 'Azerbaijani',
     noBriefTitle: 'No brief yet',
     noBriefBody: 'The team has not run. It will run automatically on Monday, or you can trigger it above. With an empty event log it will correctly report that it has nothing to work from rather than inventing a strategy.',
     generatedAt: 'Generated {at} · {trigger} · {days}-day window',
@@ -88,6 +94,31 @@ export default {
     unknownsIntro: 'These were withheld from the analysts because the data cannot support a conclusion. They are the highest-value things to go and make measurable.',
   },
 
+  // Server-generated explanations, rendered from a code + params the warehouse
+  // emits alongside its English prose. Without these the operator would read an
+  // Azerbaijani heading over an English paragraph.
+  reasons: {
+    fabricated_numbers: 'Dropped: cites {numbers}, which do not appear in the source metrics. Treated as fabricated.',
+    below_min_sample: 'Only {n} observations — below the {min} needed before a rate means anything. Not enough data to act on.',
+    interval_tight: 'n={n}. True value is very likely within {range}. Reliable enough to decide on.',
+    interval_wide: 'n={n}. True value is somewhere in {range} — wide, so treat the direction as real but the exact figure as provisional.',
+    interval_too_wide: 'n={n}. The true value could be anywhere in {range} — too wide to support any conclusion.',
+    count_too_few: 'Only {n} recorded — too few to read a pattern into.',
+    count_rough: '{n} recorded — enough to see a rough shape, not enough to be precise.',
+    count_fine: '{n} recorded.',
+    change_insufficient: 'One or both periods have too little data to compare. Any percentage change between them is noise.',
+    change_separated: 'The two periods’ confidence intervals do not overlap — this change is real, not noise.',
+    change_overlapping: 'The two periods’ confidence intervals overlap — this apparent change is consistent with random variation.',
+    instrumentation_gap: 'Not one of the {upstreamCount} visitors who reached “{upstreamStage}” registered a “{stage}” event. That is either a total funnel collapse at this step or the event is not being tracked. Verify instrumentation before treating it as a growth problem.',
+    bottleneck_found: '“{stage}” converts at the lowest rate of any step with usable data ({percent}%).',
+    bottleneck_insufficient: 'No funnel step has enough data to identify a bottleneck yet. More traffic is required before this question is answerable.',
+    bottleneck_blocked_by_gaps: 'No funnel step can be ranked yet: the steps with enough traffic to judge have no events recorded at all, which points at missing instrumentation rather than a growth problem.',
+    retention_matured_only: 'Only cohorts whose horizon has fully elapsed are counted, so recent signups never appear as retention failures.',
+    retention_no_signups: 'Cohort retention needs registrations inside the window, and enough elapsed time for each horizon to have matured.',
+    data_plane_thin: 'The Growth Data Plane is newly deployed and this window is thin. Most rates will read “insufficient” until traffic accumulates — that is correct behaviour, not a bug.',
+    hit_rate_too_few: 'Only {n} initiative(s) measured so far — far too few to judge the system’s advice. This becomes meaningful after a dozen or so.',
+  },
+
   roles: {
     content_strategist: 'Acquisition & Content Strategist',
     growth_analyst: 'Growth Analyst',
@@ -96,6 +127,14 @@ export default {
   },
 
   funnel: {
+    stages: {
+      visited: 'Visited',
+      activated: 'Scanned a token',
+      registered: 'Registered',
+      pricing: 'Viewed pricing',
+      checkout: 'Started checkout',
+      converted: 'Paid',
+    },
     title: 'Conversion funnel',
     intro: 'Measured in visitors, not events — one person scanning forty tokens is one activated visitor, not forty. Every rate carries its statistical standing; a rate marked “Not enough data” is not a small number, it is an unknown one.',
     introStrong: 'visitors, not events',

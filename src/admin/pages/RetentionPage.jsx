@@ -4,11 +4,12 @@ import { Users } from 'lucide-react';
 import { SectionTitle, EmptyState, StatCard, ConfidenceChip, DataTable } from '../ui/primitives.jsx';
 import { useT } from '../i18n/ConsoleI18nProvider.jsx';
 import { useWarehouse, formatRate } from '../lib/useGrowthData.js';
+import { renderNote } from '../lib/reason.js';
 
 const HORIZONS = ['d1', 'd7', 'd30'];
 
 export default function RetentionPage({ token }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const { data, state } = useWarehouse(token, 90);
 
   if (state.status === 'loading') return <SectionTitle icon={Users} eyebrow={t('common.eyebrow')} title={t('common.loading')} />;
@@ -67,7 +68,7 @@ export default function RetentionPage({ token }) {
           horizonCell(cohort.horizons.d7),
           horizonCell(cohort.horizons.d30),
         ]))}
-        emptyText={retention.note}
+        emptyText={renderNote(lang, retention)}
       />
     </>
   );

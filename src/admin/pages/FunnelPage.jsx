@@ -4,11 +4,12 @@ import { AlertTriangle, Filter } from 'lucide-react';
 import { SectionTitle, EmptyState, StatCard, ConfidenceChip, DataTable } from '../ui/primitives.jsx';
 import { useT } from '../i18n/ConsoleI18nProvider.jsx';
 import { useWarehouse, formatRate } from '../lib/useGrowthData.js';
+import { renderReason } from '../lib/reason.js';
 
 const WINDOWS = [7, 30, 90];
 
 export default function FunnelPage({ token }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   const [days, setDays] = useState(30);
   const { data, state } = useWarehouse(token, days);
 
@@ -38,14 +39,13 @@ export default function FunnelPage({ token }) {
 
       {/* Instrumentation doubt outranks every other reading on this page: if an
           event is not firing, the funnel below it describes tracking, not
-          behaviour. It has to be the first thing the operator sees.
-          `gap.reason` is generated server-side and stays in English. */}
+          behaviour. It has to be the first thing the operator sees. */}
       {instrumentationGaps?.length > 0 && (
         <div className="console-callout">
           <strong><AlertTriangle size={15} /> {t('funnel.trackingGap')}</strong>
           <ul>
             {instrumentationGaps.map((gap) => (
-              <li key={gap.stage}>{gap.reason}</li>
+              <li key={gap.stage}>{renderReason(lang, gap)}</li>
             ))}
           </ul>
         </div>
@@ -55,7 +55,7 @@ export default function FunnelPage({ token }) {
         {funnel.stages.map((stage) => (
           <StatCard
             key={stage.id}
-            label={stage.label}
+            label={t(`funnel.stages.${stage.id}`)}
             value={stage.count}
             sublabel={stage.countIsEvents ? t('funnel.events') : t('common.visitors')}
           />
@@ -66,7 +66,7 @@ export default function FunnelPage({ token }) {
       <DataTable
         columns={[t('funnel.colStep'), t('funnel.colReached'), t('funnel.colConversion'), t('confidence.canWeTrust')]}
         rows={funnel.stages.filter((stage) => stage.rate).map((stage) => ([
-          stage.label,
+          t(`funnel.stages.${stage.id}`),
           stage.count,
           <span className={stage.rate.confidence.level === 'insufficient' ? 'metric-insufficient' : ''}>
             {formatRate(stage.rate.value)}
@@ -79,12 +79,12 @@ export default function FunnelPage({ token }) {
       <h4 className="console-h4">{t('funnel.bottleneck')}</h4>
       {bottleneck.stage ? (
         <div className="console-callout">
-          <strong>{bottleneck.label}</strong>
-          <p>{bottleneck.reason}</p>
+          <strong>{t(`funnel.stages.${bottleneck.stage}`)}</strong>
+          <p>{renderReason(lang, bottleneck)}</p>
           <ConfidenceChip confidence={bottleneck.confidence} />
         </div>
       ) : (
-        <EmptyState title={t('funnel.notAnswerable')} text={bottleneck.reason} />
+        <EmptyState title={t('funnel.notAnswerable')} text={renderReason(lang, bottleneck)} />
       )}
 
       <h4 className="console-h4">{t('funnel.blockers')}</h4>

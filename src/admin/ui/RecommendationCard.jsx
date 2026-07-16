@@ -13,19 +13,26 @@ import React from 'react';
 import { ArrowRight } from 'lucide-react';
 
 import { useT } from '../i18n/ConsoleI18nProvider.jsx';
+import { renderReason } from '../lib/reason.js';
 
 // NOTE ON WHAT IS AND IS NOT TRANSLATED HERE.
 //
-// The LABELS and headings below are console copy and are translated. The
-// recommendation's own prose - title, reasoning, expectedImpact, roiEstimate,
-// risks - is data: it was written by Claude in English and stored in the report
-// blob. It is rendered as-is.
+// The LABELS and headings below are console copy, translated at render time.
 //
-// That is deliberate. A stored report is a historical record of what the team
-// said at a point in time; re-rendering it in another language would mean
-// either re-running the analysts (paying again, and getting different advice)
-// or machine-translating an evidence-gated document, which would put text
-// through a second model that the fabrication validator never checked.
+// The recommendation's own prose - title, reasoning, expectedImpact,
+// roiEstimate, risks - is data, rendered exactly as stored. It is not
+// translated HERE because it was already WRITTEN in the operator's language:
+// the console passes its active language to the analysts, who compose in it
+// directly (see _growthAnalyst.mjs languageDirective).
+//
+// That distinction matters. Composing in Azerbaijani produces native prose;
+// post-translating an English report would produce a translation, and would
+// push an evidence-gated document through a second model that the fabrication
+// validator never checked.
+//
+// The consequence is that a stored report is immutable: one written in English
+// stays English even if the console later switches to Azerbaijani. OverviewPage
+// says so explicitly rather than leaving the operator to wonder.
 export function RecommendationCard({ recommendation, onAccept, accepting }) {
   const { t } = useT();
   const rec = recommendation;
@@ -79,7 +86,7 @@ export function DataVerdict({ verdict }) {
 // regression in the prompt or the model, and the operator needs to see it
 // happening rather than silently receive a shorter list.
 export function FabricationNotice({ rejected }) {
-  const { t } = useT();
+  const { t, lang } = useT();
   if (!rejected?.length) return null;
   return (
     <div className="console-callout console-callout-warn">
@@ -88,7 +95,7 @@ export function FabricationNotice({ rejected }) {
       <ul>
         {rejected.map((entry, index) => (
           <li key={index}>
-            <em>{entry.finding.title}</em> — {entry.reason}
+            <em>{entry.finding.title}</em> — {renderReason(lang, entry)}
           </li>
         ))}
       </ul>

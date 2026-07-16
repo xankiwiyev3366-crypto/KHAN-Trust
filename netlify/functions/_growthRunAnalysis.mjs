@@ -24,7 +24,11 @@ import { buildFactPack, contentStrategist, growthAnalyst, productAnalyst, execut
 import { saveReport } from './_growthReportStore.mjs';
 import { budgetStatus } from './_aiBudget.mjs';
 
-export async function runAnalysis({ trigger }) {
+// `language` selects the language the analysts WRITE in. It does not change
+// what they are given or how they reason — the fact pack, the grounding rules
+// and the fabrication check are identical either way (the validator is
+// language-agnostic; it checks numbers).
+export async function runAnalysis({ trigger, language = 'en' }) {
   const warehouse = await buildWarehouse({ days: 30 });
   const factPack = buildFactPack(warehouse);
 
@@ -35,9 +39,9 @@ export async function runAnalysis({ trigger }) {
   // allSettled, not all: one analyst failing (a refusal, a truncation) must not
   // discard the other two, which have already been paid for.
   const settled = await Promise.allSettled([
-    contentStrategist(factPack),
-    growthAnalyst(factPack),
-    productAnalyst(factPack),
+    contentStrategist(factPack, language),
+    growthAnalyst(factPack, language),
+    productAnalyst(factPack, language),
   ]);
 
   const analyses = settled.filter((r) => r.status === 'fulfilled').map((r) => r.value);
@@ -58,7 +62,7 @@ export async function runAnalysis({ trigger }) {
   // with no synthesis still beat nothing.
   let brief = null;
   try {
-    brief = await executiveBrief(factPack, analyses);
+    brief = await executiveBrief(factPack, analyses, language);
   } catch (error) {
     failures.push({ error: `Executive brief failed: ${error.message}`, code: error.code || null });
   }
@@ -66,6 +70,12 @@ export async function runAnalysis({ trigger }) {
   return saveReport({
     generatedAt: new Date().toISOString(),
     trigger,
+    // Stamped on the report because a report is IMMUTABLE prose. One written in
+    // English stays English forever; re-rendering it in another language would
+    // mean re-running the analysts (paying again, and getting different advice).
+    // The console reads this to tell the operator when an old report is in a
+    // language other than the one they are currently reading in.
+    language,
     windowDays: warehouse.windowDays,
     brief,
     analyses,

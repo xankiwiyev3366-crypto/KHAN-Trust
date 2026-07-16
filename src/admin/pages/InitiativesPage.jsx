@@ -5,6 +5,7 @@ import { SectionTitle, EmptyState, StatCard } from '../ui/primitives.jsx';
 import { useT } from '../i18n/ConsoleI18nProvider.jsx';
 import { useAdminResource, formatDate } from '../lib/useGrowthData.js';
 import { adminFetch } from '../lib/adminSession.js';
+import { renderReason } from '../lib/reason.js';
 
 // Mirrors the server's state machine (_growthInitiatives.mjs). The server is
 // authoritative and rejects illegal moves; this only decides which buttons to
@@ -72,9 +73,14 @@ export default function InitiativesPage({ token }) {
         </div>
       )}
 
-      {/* Server-generated caveat; stays in English like other warehouse prose. */}
       {summary?.hitRateNote && (
-        <div className="console-callout"><p>{summary.hitRateNote}</p></div>
+        <div className="console-callout">
+          <p>{renderReason(lang, {
+            reason: summary.hitRateNote,
+            reasonCode: summary.hitRateNoteCode,
+            reasonParams: summary.hitRateNoteParams,
+          })}</p>
+        </div>
       )}
 
       {!initiatives.length ? (

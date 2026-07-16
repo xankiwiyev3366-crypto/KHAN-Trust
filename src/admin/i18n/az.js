@@ -79,6 +79,9 @@ export default {
     progressStarting: 'Komanda başladılır…',
     progressWorking: 'Analitiklər işləyir. Bu, adətən bir dəqiqədən az çəkir…',
     pollTimeout: '4 dəqiqə ərzində hesabat görünmədi. Təhlil hələ davam edə bilər — bir azdan səhifəni yeniləyin. Yenə də görünməsə, Netlify-da growth-analyze-background funksiyasının loglarını yoxlayın.',
+    langMismatch: 'Bu hesabat {reportLang} dilində yazılıb. Hesabatlar yenidən tərcümə edilmir — {currentLang} dilində almaq üçün təhlili yenidən başladın.',
+    langEn: 'ingilis',
+    langAz: 'Azərbaycan',
     noBriefTitle: 'Hələ hesabat yoxdur',
     noBriefBody: 'Komanda hələ işə düşməyib. Bazar ertəsi avtomatik işləyəcək və ya yuxarıdakı düymə ilə başlada bilərsiniz. Hadisə jurnalı boş olduqda komanda strategiya uydurmaq əvəzinə, işləmək üçün məlumatı olmadığını düzgün bildirəcək.',
     generatedAt: 'Yaradılıb: {at} · {trigger} · {days} günlük dövr',
@@ -92,6 +95,28 @@ export default {
     unknownsIntro: 'Bunlar analitiklərə verilmədi, çünki məlumat nəticə çıxarmağa imkan vermir. Ölçülə bilən hala gətirmək üçün ən dəyərli məsələlər məhz bunlardır.',
   },
 
+  reasons: {
+    fabricated_numbers: 'Çıxarıldı: mənbə göstəricilərində olmayan {numbers} rəqəmlərinə istinad edir. Uydurma sayılır.',
+    below_min_sample: 'Cəmi {n} müşahidə — göstəricinin mənası olması üçün lazım olan {min} həddindən aşağı. Qərar vermək üçün məlumat kifayət etmir.',
+    interval_tight: 'n={n}. Həqiqi dəyər böyük ehtimalla {range} aralığındadır. Qərar vermək üçün etibarlıdır.',
+    interval_wide: 'n={n}. Həqiqi dəyər {range} aralığındadır — geniş aralıqdır, ona görə istiqamətini real, dəqiq rəqəmini isə ilkin sayın.',
+    interval_too_wide: 'n={n}. Həqiqi dəyər {range} aralığında istənilən yerdə ola bilər — hər hansı nəticə çıxarmaq üçün həddən artıq genişdir.',
+    count_too_few: 'Cəmi {n} qeyd — hər hansı qanunauyğunluq görmək üçün çox azdır.',
+    count_rough: '{n} qeyd — ümumi mənzərəni görmək üçün kifayətdir, dəqiq olmaq üçün yox.',
+    count_fine: '{n} qeyd.',
+    change_insufficient: 'Dövrlərdən biri və ya hər ikisi müqayisə üçün kifayət qədər məlumata malik deyil. Aralarındakı hər hansı faiz dəyişikliyi təsadüfi səs-küydür.',
+    change_separated: 'İki dövrün etibarlılıq aralıqları üst-üstə düşmür — bu dəyişiklik realdır, səs-küy deyil.',
+    change_overlapping: 'İki dövrün etibarlılıq aralıqları üst-üstə düşür — bu görünən dəyişiklik təsadüfi tərəddüdlə uyğun gəlir.',
+    instrumentation_gap: '“{upstreamStage}” addımına çatan {upstreamCount} ziyarətçidən heç biri “{stage}” hadisəsini qeydə almayıb. Bu ya bu addımda hunidəki tam çöküşdür, ya da hadisə ümumiyyətlə izlənmir. Bunu artım problemi saymazdan əvvəl izləmənin işlədiyini yoxlayın.',
+    bottleneck_found: 'Etibarlı məlumatı olan addımlar arasında ən aşağı konversiya “{stage}” addımındadır ({percent}%).',
+    bottleneck_insufficient: 'Hələ heç bir huni addımında dar boğazı müəyyən etmək üçün kifayət qədər məlumat yoxdur. Bu suala cavab vermək üçün daha çox trafik lazımdır.',
+    bottleneck_blocked_by_gaps: 'Hələ heç bir huni addımını sıralamaq mümkün deyil: qiymətləndirmək üçün kifayət qədər trafiki olan addımlarda ümumiyyətlə hadisə qeydə alınmayıb. Bu, artım problemindən çox, izləmənin olmamasına işarə edir.',
+    retention_matured_only: 'Yalnız müddəti tam başa çatmış kohortlar sayılır, ona görə yeni qeydiyyatlar heç vaxt saxlanma uğursuzluğu kimi görünmür.',
+    retention_no_signups: 'Kohort saxlanması üçün dövr ərzində qeydiyyatlar və hər müddətin tamamlanması üçün kifayət qədər vaxt lazımdır.',
+    data_plane_thin: 'Growth Data Plane yeni yerləşdirilib və bu dövr azdır. Trafik toplanana qədər göstəricilərin əksəriyyəti “məlumat kifayət etmir” göstərəcək — bu, səhv deyil, düzgün davranışdır.',
+    hit_rate_too_few: 'İndiyədək cəmi {n} təşəbbüs ölçülüb — sistemin məsləhətini qiymətləndirmək üçün çox azdır. Bu, təxminən onlarla təşəbbüsdən sonra mənalı olur.',
+  },
+
   roles: {
     content_strategist: 'Cəlbetmə və kontent strateqi',
     growth_analyst: 'Artım analitiki',
@@ -100,6 +125,14 @@ export default {
   },
 
   funnel: {
+    stages: {
+      visited: 'Ziyarət etdi',
+      activated: 'Token taradı',
+      registered: 'Qeydiyyatdan keçdi',
+      pricing: 'Qiymətlərə baxdı',
+      checkout: 'Ödənişə başladı',
+      converted: 'Ödədi',
+    },
     title: 'Konversiya hunisi',
     intro: 'Hadisələrlə deyil, ziyarətçilərlə ölçülür — qırx token tarayan bir nəfər qırx yox, bir aktiv ziyarətçidir. Hər göstərici öz statistik dayanıqlığını daşıyır; “Məlumat kifayət etmir” işarəsi kiçik rəqəm deyil, naməlum rəqəm deməkdir.',
     introStrong: 'ziyarətçilərlə, hadisələrlə deyil',

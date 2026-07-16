@@ -6,6 +6,7 @@ import { RecommendationCard, DataVerdict, FabricationNotice } from '../ui/Recomm
 import { useT } from '../i18n/ConsoleI18nProvider.jsx';
 import { useAdminResource, useWarehouse, formatUsd, formatDate } from '../lib/useGrowthData.js';
 import { adminFetch } from '../lib/adminSession.js';
+import { renderNote } from '../lib/reason.js';
 
 // The analyst run is a BACKGROUND function: it answers 202 with an empty body
 // immediately and keeps working for another 20-40s. It can never hand us the
@@ -35,7 +36,9 @@ export default function OverviewPage({ token }) {
       await adminFetch('growth-analyze-background', {
         token,
         method: 'POST',
-        body: { trigger: 'manual' },
+        // The analysts write in whatever language the console is currently in,
+        // so the brief matches the UI around it.
+        body: { trigger: 'manual', language: lang },
       });
 
       setProgress(t('overview.progressWorking'));
@@ -114,11 +117,10 @@ export default function OverviewPage({ token }) {
         </div>
       )}
 
-      {/* Server-generated; stays in English like other warehouse prose. */}
       {warehouse?.dataHealth?.note && (
         <div className="console-callout">
           <strong>{t('overview.dataHealth')}</strong>
-          <p>{warehouse.dataHealth.note}</p>
+          <p>{renderNote(lang, warehouse.dataHealth)}</p>
         </div>
       )}
 
@@ -134,6 +136,21 @@ export default function OverviewPage({ token }) {
         <EmptyState title={t('overview.noBriefTitle')} text={t('overview.noBriefBody')} />
       ) : (
         <>
+          {/* A report's prose is immutable. If it was written in another
+              language, say so plainly rather than showing English under an
+              Azerbaijani UI and leaving the operator to wonder whether the
+              switcher is broken. */}
+          {report.language && report.language !== lang && (
+            <div className="console-callout">
+              <p>
+                {t('overview.langMismatch', {
+                  reportLang: t(`overview.lang${report.language === 'az' ? 'Az' : 'En'}`),
+                  currentLang: t(`overview.lang${lang === 'az' ? 'Az' : 'En'}`),
+                })}
+              </p>
+            </div>
+          )}
+
           <p className="console-hint">
             {t('overview.generatedAt', {
               at: formatDate(report.generatedAt, lang),

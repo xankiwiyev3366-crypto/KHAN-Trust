@@ -27,6 +27,9 @@ import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { runAnalysis } from './_growthRunAnalysis.mjs';
 import { isAiConfigured } from './_aiClient.mjs';
 
+// The languages the console offers. Kept in lockstep with src/admin/i18n/.
+const SUPPORTED_LANGUAGES = new Set(['en', 'az']);
+
 export async function handler(event) {
   if (!verifyToken(bearerToken(event))) {
     console.warn('[growth-analyze-background] unauthorised invocation ignored; no work done.');
@@ -39,15 +42,21 @@ export async function handler(event) {
   }
 
   let trigger = 'manual';
+  let language = 'en';
   try {
-    trigger = JSON.parse(event.body || '{}').trigger === 'scheduled' ? 'scheduled' : 'manual';
+    const body = JSON.parse(event.body || '{}');
+    trigger = body.trigger === 'scheduled' ? 'scheduled' : 'manual';
+    // Allow-listed rather than passed through: `language` reaches the model's
+    // system prompt, so an arbitrary caller-supplied string here would be a
+    // prompt-injection vector. Anything unrecognised falls back to English.
+    language = SUPPORTED_LANGUAGES.has(body.language) ? body.language : 'en';
   } catch {
-    // Body is optional; default to manual.
+    // Body is optional; defaults stand.
   }
 
   try {
-    const report = await runAnalysis({ trigger });
-    console.log(`[growth-analyze-background] ${trigger} run complete — report ${report.id} saved.`);
+    const report = await runAnalysis({ trigger, language });
+    console.log(`[growth-analyze-background] ${trigger} run complete (${language}) — report ${report.id} saved.`);
     return { statusCode: 200 };
   } catch (error) {
     // Hitting the monthly cap is correct behaviour, not an incident.

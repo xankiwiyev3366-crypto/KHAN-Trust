@@ -77,12 +77,40 @@ function round(value, places) {
   return Math.round(value * factor) / factor;
 }
 
+// Normalises the two ways a comma appears inside a number before scanning.
+//
+// The bare number regex below does not know about commas, so it reads "1,234"
+// as the two integers 1 and 234, and "22,5%" as 22 and 5. Both are wrong, and
+// both are dangerous in the same direction: the real value disappears and a
+// fragment of it (234, 22) gets reported as an unverifiable — deleting a
+// correct finding as though the model had fabricated it.
+//
+//   1. THOUSANDS ("1,234 visitors" — English). Stripped. Recognised by exactly
+//      three trailing digits, which is what a grouping separator always is.
+//   2. DECIMAL ("22,5%" — Azerbaijani, and most of Europe). Rewritten to a
+//      period. Recognised by one or two trailing digits, which a grouping
+//      separator never is.
+//
+// Order matters: strip groupings first, or "1,234" would be read as the decimal
+// 1.234. The digit-count split is what keeps the two rules from colliding.
+//
+// Residual ambiguity, accepted knowingly: an Azerbaijani three-decimal value
+// ("1,234" meaning 1.234) is indistinguishable from an English thousands group
+// and will be read as 1234. Three-decimal figures do not occur in this
+// warehouse's metrics — rates are reported to at most two places — so the
+// grouping interpretation is the right bet.
+function normaliseNumberSeparators(text) {
+  return text
+    .replace(/(\d),(?=\d{3}(?!\d))/g, '$1')
+    .replace(/(\d),(\d{1,2})\b/g, '$1.$2');
+}
+
 // Returns every number in `text` that cannot be traced to the source facts.
 export function findUnverifiedNumbers(text, sourceNumbers) {
   if (typeof text !== 'string') return [];
 
   const offenders = [];
-  for (const match of text.matchAll(/-?\d+(?:\.\d+)?/g)) {
+  for (const match of normaliseNumberSeparators(text).matchAll(/-?\d+(?:\.\d+)?/g)) {
     const value = Number(match[0]);
     if (!Number.isFinite(value) || isTrivial(value)) continue;
 
@@ -121,6 +149,10 @@ export function rejectFabricatedFindings(findings, sourceFacts, textFields) {
       rejected.push({
         finding,
         reason: `Dropped: cites ${offenders.map((n) => JSON.stringify(n)).join(', ')}, which do not appear in the source metrics. Treated as fabricated.`,
+        // Code + params so the console can render this in the operator's
+        // language; the prose above remains the fallback.
+        reasonCode: 'fabricated_numbers',
+        reasonParams: { numbers: offenders.join(', ') },
         unverifiedNumbers: offenders,
       });
     } else {

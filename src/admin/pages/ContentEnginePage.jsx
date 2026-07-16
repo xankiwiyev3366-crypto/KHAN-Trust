@@ -77,7 +77,8 @@ export default function ContentEnginePage({ token }) {
         <EmptyState title={t('content.noPlanTitle')} text={t('content.noPlanBody')} />
       ) : (
         <>
-          {/* The analyst's own words — data, not copy. Rendered as written. */}
+          {/* The analyst's own words, composed in the language selected when the
+              report was run. Rendered as stored. */}
           <p className="console-page-intro"><strong>{strategist.headline}</strong></p>
           <DataVerdict verdict={strategist.dataVerdict} />
           <FabricationNotice rejected={strategist.rejectedForFabrication} />

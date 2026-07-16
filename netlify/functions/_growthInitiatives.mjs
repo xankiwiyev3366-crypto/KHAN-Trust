@@ -176,6 +176,8 @@ export function summarise(initiatives) {
     hitRateNote: measured.length < 5
       ? `Only ${measured.length} initiative(s) measured so far — far too few to judge the system's advice. This becomes meaningful after a dozen or so.`
       : null,
+    hitRateNoteCode: measured.length < 5 ? 'hit_rate_too_few' : null,
+    hitRateNoteParams: { n: measured.length },
   };
 }
 

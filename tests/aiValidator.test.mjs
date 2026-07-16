@@ -83,6 +83,41 @@ test('rejections are reported, not silently swallowed', () => {
   assert.ok(rejected[0].reason.length > 0);
 });
 
+// ── Azerbaijani number formatting ────────────────────────────────────────────
+//
+// Once the analysts write in Azerbaijani they write 3,2% rather than 3.2%. A
+// period-only parser turns that into the integers 3 and 2, and a legitimate
+// figure like 22,5 becomes an unverifiable "22" — deleting a correct finding.
+// The validator must not punish correct Azerbaijani.
+
+test('an Azerbaijani comma-decimal traced to source is accepted', () => {
+  const numbers = collectSourceNumbers({ rate: 0.225, visitors: 400 });
+  // "22,5%" is the az rendering of the source proportion 0.225.
+  assert.deepEqual(findUnverifiedNumbers('Nisbət 22,5% təşkil edir.', numbers), []);
+});
+
+test('a fabricated comma-decimal is STILL caught', () => {
+  // The comma tolerance must not become a hole to smuggle invented stats through.
+  const numbers = collectSourceNumbers({ rate: 0.0316 });
+  const offenders = findUnverifiedNumbers('Sənaye ortalaması 8,5%-dir.', numbers);
+  assert.ok(offenders.includes(8.5), 'an invented az-formatted benchmark must still be caught');
+});
+
+test('an English thousands separator is not mistaken for a decimal', () => {
+  // "1,234" groups three digits — a thousands separator, not a decimal. If it
+  // were rewritten to 1.234 the real value 1234 would look unverifiable.
+  const numbers = collectSourceNumbers({ visitors: 1234 });
+  assert.deepEqual(findUnverifiedNumbers('There were 1,234 visitors.', numbers), []);
+});
+
+test('mixed az prose and code identifiers validate correctly', () => {
+  const numbers = collectSourceNumbers({ failures: 7, rate: 0.075 });
+  assert.deepEqual(
+    findUnverifiedNumbers('wallet_required 7 dəfə baş verdi, yəni 7,5% hal.', numbers),
+    []
+  );
+});
+
 test('a finding with no numbers at all passes', () => {
   const { kept, rejected } = rejectFabricatedFindings(
     [{ title: 'Publish more', reasoning: 'The channel has no content yet.' }],

@@ -57,6 +57,28 @@ const MIN_SAMPLE = 30;
 const SUFFICIENT_WIDTH = 0.10;
 const DIRECTIONAL_WIDTH = 0.20;
 
+// Machine-readable reason codes, emitted ALONGSIDE the English prose.
+//
+// The prose is what the AI reads (its prompt is English) and is the console's
+// fallback. The code+params are what the console translates, so an operator
+// reading in Azerbaijani gets an Azerbaijani explanation rather than an English
+// paragraph under a translated heading.
+//
+// Emitting both — rather than replacing prose with codes — keeps this additive:
+// the fact pack, the analysts and any existing consumer are unaffected.
+export const REASON = {
+  BELOW_MIN_SAMPLE: 'below_min_sample',
+  INTERVAL_TIGHT: 'interval_tight',
+  INTERVAL_WIDE: 'interval_wide',
+  INTERVAL_TOO_WIDE: 'interval_too_wide',
+  COUNT_TOO_FEW: 'count_too_few',
+  COUNT_ROUGH: 'count_rough',
+  COUNT_FINE: 'count_fine',
+  CHANGE_INSUFFICIENT: 'change_insufficient',
+  CHANGE_SEPARATED: 'change_separated',
+  CHANGE_OVERLAPPING: 'change_overlapping',
+};
+
 export const CONFIDENCE = {
   SUFFICIENT: 'sufficient',
   DIRECTIONAL: 'directional',
@@ -70,6 +92,8 @@ export function assessRate(successes, total) {
       level: CONFIDENCE.INSUFFICIENT,
       sampleSize: total || 0,
       reason: `Only ${total || 0} observations — below the ${MIN_SAMPLE} needed before a rate means anything. Not enough data to act on.`,
+      reasonCode: REASON.BELOW_MIN_SAMPLE,
+      reasonParams: { n: total || 0, min: MIN_SAMPLE },
       interval: null,
     };
   }
@@ -83,6 +107,8 @@ export function assessRate(successes, total) {
       level: CONFIDENCE.SUFFICIENT,
       sampleSize: total,
       reason: `n=${total}. True value is very likely within ${range}. Reliable enough to decide on.`,
+      reasonCode: REASON.INTERVAL_TIGHT,
+      reasonParams: { n: total, range },
       interval,
     };
   }
@@ -92,6 +118,8 @@ export function assessRate(successes, total) {
       level: CONFIDENCE.DIRECTIONAL,
       sampleSize: total,
       reason: `n=${total}. True value is somewhere in ${range} — wide, so treat the direction as real but the exact figure as provisional.`,
+      reasonCode: REASON.INTERVAL_WIDE,
+      reasonParams: { n: total, range },
       interval,
     };
   }
@@ -100,6 +128,8 @@ export function assessRate(successes, total) {
     level: CONFIDENCE.INSUFFICIENT,
     sampleSize: total,
     reason: `n=${total}. The true value could be anywhere in ${range} — too wide to support any conclusion.`,
+    reasonCode: REASON.INTERVAL_TOO_WIDE,
+    reasonParams: { n: total, range },
     interval,
   };
 }
@@ -116,6 +146,8 @@ export function assessCount(count, { minMeaningful = 10, minReliable = 50 } = {}
       level: CONFIDENCE.INSUFFICIENT,
       sampleSize: count,
       reason: `Only ${count} recorded — too few to read a pattern into.`,
+      reasonCode: REASON.COUNT_TOO_FEW,
+      reasonParams: { n: count },
       interval: null,
     };
   }
@@ -124,6 +156,8 @@ export function assessCount(count, { minMeaningful = 10, minReliable = 50 } = {}
       level: CONFIDENCE.DIRECTIONAL,
       sampleSize: count,
       reason: `${count} recorded — enough to see a rough shape, not enough to be precise.`,
+      reasonCode: REASON.COUNT_ROUGH,
+      reasonParams: { n: count },
       interval: null,
     };
   }
@@ -131,6 +165,8 @@ export function assessCount(count, { minMeaningful = 10, minReliable = 50 } = {}
     level: CONFIDENCE.SUFFICIENT,
     sampleSize: count,
     reason: `${count} recorded.`,
+    reasonCode: REASON.COUNT_FINE,
+    reasonParams: { n: count },
     interval: null,
   };
 }
@@ -151,6 +187,8 @@ export function assessChange(currentSuccesses, currentTotal, previousSuccesses, 
       significant: false,
       level: CONFIDENCE.INSUFFICIENT,
       reason: 'One or both periods have too little data to compare. Any percentage change between them is noise.',
+      reasonCode: REASON.CHANGE_INSUFFICIENT,
+      reasonParams: {},
     };
   }
 
@@ -163,6 +201,8 @@ export function assessChange(currentSuccesses, currentTotal, previousSuccesses, 
     reason: separated
       ? 'The two periods\' confidence intervals do not overlap — this change is real, not noise.'
       : 'The two periods\' confidence intervals overlap — this apparent change is consistent with random variation.',
+    reasonCode: separated ? REASON.CHANGE_SEPARATED : REASON.CHANGE_OVERLAPPING,
+    reasonParams: {},
   };
 }
 

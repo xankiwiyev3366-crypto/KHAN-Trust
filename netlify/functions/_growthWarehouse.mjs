@@ -147,6 +147,15 @@ export function findInstrumentationGaps(funnel) {
         label: stage.label,
         upstreamCount: upstream.count,
         reason: `Not one of the ${upstream.count} visitors who reached "${upstream.label}" registered a "${stage.label}" event. That is either a total funnel collapse at this step or the event is not being tracked. Verify instrumentation before treating it as a growth problem.`,
+        // Code + params so the console can render this in the operator's
+        // language; the prose above stays for the AI and as a fallback.
+        //
+        // The stage params carry IDs, not labels: the console resolves them
+        // against funnel.stages.* so the embedded step name is translated too.
+        // Passing stage.label here would strand "Scanned a token" inside an
+        // otherwise-Azerbaijani sentence.
+        reasonCode: 'instrumentation_gap',
+        reasonParams: { upstreamCount: upstream.count, upstreamStage: upstream.id, stage: stage.id },
       });
     }
   }
@@ -175,6 +184,8 @@ export function findBottleneck(funnel) {
       reason: gaps.size
         ? 'No funnel step can be ranked yet: the steps with enough traffic to judge have no events recorded at all, which points at missing instrumentation rather than a growth problem.'
         : 'No funnel step has enough data to identify a bottleneck yet. More traffic is required before this question is answerable.',
+      reasonCode: gaps.size ? 'bottleneck_blocked_by_gaps' : 'bottleneck_insufficient',
+      reasonParams: {},
       instrumentationGaps: Array.from(gaps),
     };
   }
@@ -186,6 +197,8 @@ export function findBottleneck(funnel) {
     rate: worst.rate.value,
     confidence: worst.rate.confidence,
     reason: `"${worst.label}" converts at the lowest rate of any step with usable data (${(worst.rate.value * 100).toFixed(1)}%).`,
+    reasonCode: 'bottleneck_found',
+    reasonParams: { stage: worst.id, percent: (worst.rate.value * 100).toFixed(1) },
     instrumentationGaps: Array.from(gaps),
   };
 }
@@ -212,6 +225,7 @@ export function buildRetention(events, now = Date.now()) {
         d30: metric(null, { level: CONFIDENCE.INSUFFICIENT, sampleSize: 0, reason: 'No registrations recorded in this window.' }),
       },
       note: 'Cohort retention needs registrations inside the window, and enough elapsed time for each horizon to have matured.',
+      noteCode: 'retention_no_signups',
     };
   }
 
@@ -287,6 +301,7 @@ export function buildRetention(events, now = Date.now()) {
     cohorts,
     summary: { d1: summarise(1), d7: summarise(7), d30: summarise(30) },
     note: 'Only cohorts whose horizon has fully elapsed are counted, so recent signups never appear as retention failures.',
+    noteCode: 'retention_matured_only',
   };
 }
 
@@ -501,6 +516,7 @@ export async function buildWarehouse({ days = 30, now = Date.now() } = {}) {
       note: events.length < 500
         ? 'The Growth Data Plane is newly deployed and this window is thin. Most rates will read "insufficient" until traffic accumulates — that is correct behaviour, not a bug.'
         : null,
+      noteCode: events.length < 500 ? 'data_plane_thin' : null,
     },
   };
 }

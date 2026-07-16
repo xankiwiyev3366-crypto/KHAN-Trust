@@ -712,7 +712,7 @@ export default {
       payingNow: 'Cüzdan təsdiqi gözlənilir...',
       walletVerifiedFollowUp: 'Ödəniş zəncir üzərində təsdiqləndi. Premium indi bu cüzdan üçün açıldı.',
       backupLabel: 'Ehtiyat üsul: artıq əl ilə ödəniş göndərmisinizsə və tranzaksiya hash-ini təsdiqləmək lazımdırsa bunu istifadə edin.',
-      connectWalletFirst: 'Girişin haraya veriləcəyini bilmək üçün əvvəlcə yuxarıda bir cüzdan qoşun.',
+      signInFirst: 'Ödənişə keçmək üçün hesabınıza daxil olun.',
       planLabel: 'Plan',
       planPremiumOption: 'Premium - ayda 9 USDT',
       planEarlySupporterOption: 'Erkən Dəstəkçi - bir dəfəlik 29 USDT',

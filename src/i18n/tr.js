@@ -712,7 +712,7 @@ export default {
       payingNow: 'Cüzdan onayı bekleniyor...',
       walletVerifiedFollowUp: 'Ödeme zincir üzerinde doğrulandı. Premium artık bu cüzdan için açıldı.',
       backupLabel: 'Yedek yöntem: zaten manuel olarak ödeme gönderdiyseniz ve işlem hash\'ini doğrulamanız gerekiyorsa bunu kullanın.',
-      connectWalletFirst: 'Erişimin nereye verileceğini bilmemiz için önce yukarıdan bir cüzdan bağlayın.',
+      signInFirst: 'Ödemeye devam etmek için oturum açın.',
       planLabel: 'Plan',
       planPremiumOption: 'Premium - ayda 9 USDT',
       planEarlySupporterOption: 'Erken Destekçi - tek seferlik 29 USDT',

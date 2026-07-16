@@ -1,15 +1,53 @@
-// Persistence layer for paid access. Keyed by Solana wallet address rather
+// Persistence layer for paid access, keyed by SUBJECT.
+//
+// A subject is one of two things:
+//
+//   "u:<userId>"   an authenticated account. The primary identity for every
+//                  new purchase.
+//   "<wallet>"     a Solana address. LEGACY: how every purchase before the
+//                  account migration was keyed.
+//
+// WHY BOTH, FOREVER
+//
+// This store's original header read: "Keyed by Solana wallet address rather
 // than a user account, since the site has no auth/accounts system - the
-// connected wallet is the identity. Uses Netlify Blobs so entitlements
-// survive across deploys/instances instead of living only in a browser.
+// connected wallet is the identity." That was true when it was written. The
+// site later grew accounts (_authStore.mjs) and this layer never caught up, so
+// the platform ended up with two identity systems and a checkout that demanded
+// a wallet before it would take someone's money — asking the most
+// security-anxious user on the internet to connect their wallet in order to buy
+// protection from wallet risk.
+//
+// Accounts are now primary. But existing paid entitlements are keyed by wallet,
+// and those users must never lose access, so wallet keys are not deprecated,
+// migrated in bulk, or cleaned up. They are read forever. A legacy user can
+// optionally bind their purchase to their account (premium-claim-wallet.mjs),
+// which COPIES rather than moves — the wallet key survives the claim, so even a
+// broken claim cannot cost someone access they paid for.
+//
+// The two key spaces cannot collide: base58 wallet addresses never contain ':'
+// and never start with "u:". _premiumAccess.mjs already depended on this
+// property for manual grants; it is now load-bearing here too.
 import { getNamedStore, jsonResponse } from './_blobsClient.mjs';
 
 const STORE_NAME = 'khan-trust-entitlements';
 const ENTITLEMENTS_KEY = 'entitlements.json';
 const USED_SIGNATURES_KEY = 'used-signatures.json';
 
+const ACCOUNT_PREFIX = 'u:';
+
 function store() {
   return getNamedStore(STORE_NAME);
+}
+
+// The subject key for an authenticated account.
+export function accountSubject(userId) {
+  const clean = String(userId || '').trim();
+  return clean ? `${ACCOUNT_PREFIX}${clean}` : '';
+}
+
+export function isAccountSubject(subject) {
+  return String(subject || '').startsWith(ACCOUNT_PREFIX);
 }
 
 export async function readEntitlements() {
@@ -21,21 +59,37 @@ export async function writeEntitlements(entitlements) {
   await store().setJSON(ENTITLEMENTS_KEY, entitlements);
 }
 
-export async function getEntitlement(walletAddress) {
+// Reads by subject — an account key OR a legacy wallet address. The parameter
+// keeps its old name at every call site that passes a wallet; nothing about the
+// wallet path changed.
+export async function getEntitlement(subject) {
+  if (!subject) return null;
   const entitlements = await readEntitlements();
-  return entitlements[walletAddress] || null;
+  return entitlements[subject] || null;
 }
 
-export async function grantEntitlement(walletAddress, record) {
+export async function grantEntitlement(subject, record) {
   const entitlements = await readEntitlements();
-  entitlements[walletAddress] = record;
+  entitlements[subject] = record;
   await writeEntitlements(entitlements);
 }
 
-export async function revokeEntitlement(walletAddress) {
+export async function revokeEntitlement(subject) {
   const entitlements = await readEntitlements();
-  delete entitlements[walletAddress];
+  delete entitlements[subject];
   await writeEntitlements(entitlements);
+}
+
+// Convenience readers for the account lane, so callers do not have to know how
+// a subject key is spelled.
+export async function getAccountEntitlement(userId) {
+  return getEntitlement(accountSubject(userId));
+}
+
+export async function grantAccountEntitlement(userId, record) {
+  const subject = accountSubject(userId);
+  if (!subject) throw new Error('grantAccountEntitlement requires a userId');
+  return grantEntitlement(subject, record);
 }
 
 // Single definition of "this plan counts as Premium" - Early Supporter is a
@@ -53,20 +107,32 @@ export async function hasPremiumEntitlement(walletAddress) {
 }
 
 // Stripe webhooks (e.g. subscription cancellation) identify the affected
-// customer/subscription, not the wallet directly - entitlements are keyed by
-// wallet, so look up the wallet by scanning for the matching Stripe id that
+// customer/subscription, not the subject directly - entitlements are keyed by
+// subject, so look up the subject by scanning for the matching Stripe id that
 // was recorded on it at grant time.
-export async function findWalletByStripeSubscription(subscriptionId) {
+//
+// Subject-agnostic on purpose: it matches whichever key carries the Stripe id,
+// so a cancellation revokes correctly whether the purchase was made by an
+// account (new) or by a wallet (legacy). Keying this to wallets only would mean
+// account subscriptions could never be cancelled — the customer stops paying
+// and keeps Premium forever.
+export async function findSubjectByStripeSubscription(subscriptionId) {
   if (!subscriptionId) return null;
   const entitlements = await readEntitlements();
-  return Object.keys(entitlements).find((wallet) => entitlements[wallet]?.stripeSubscriptionId === subscriptionId) || null;
+  return Object.keys(entitlements).find((subject) => entitlements[subject]?.stripeSubscriptionId === subscriptionId) || null;
 }
 
-export async function findWalletByStripeCustomer(customerId) {
+export async function findSubjectByStripeCustomer(customerId) {
   if (!customerId) return null;
   const entitlements = await readEntitlements();
-  return Object.keys(entitlements).find((wallet) => entitlements[wallet]?.stripeCustomerId === customerId) || null;
+  return Object.keys(entitlements).find((subject) => entitlements[subject]?.stripeCustomerId === customerId) || null;
 }
+
+// Pre-existing names, kept so nothing that imports them breaks. Same behaviour:
+// they always returned "the key carrying this Stripe id", which is now spelled
+// "subject" because it may be an account.
+export const findWalletByStripeSubscription = findSubjectByStripeSubscription;
+export const findWalletByStripeCustomer = findSubjectByStripeCustomer;
 
 // A confirmed transaction signature can only ever redeem one entitlement -
 // without this, the same paid tx hash could be replayed against the verify

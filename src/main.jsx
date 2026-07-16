@@ -172,7 +172,7 @@ import {
 import { isStripeConfigured, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
-import { fetchEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
+import { fetchEntitlement, fetchAccountEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
 import { buildAdvancedResearch, buildPremiumAnalysis, buildLocalizedRiskSummary, friendlyMissingFields } from './premiumResearch.js';
 import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction, submitBulkPremiumAction, fetchUserActivity, fetchUserActivityDetail } from './premiumAdmin.js';
 import { recordWalletLink } from './walletLink.js';
@@ -3043,7 +3043,7 @@ function handleEarlySupporterClick(wallet) {
 
 async function handleCheckout(plan, wallet) {
   // Every abandoned path below is recorded with its REASON, not just its
-  // existence. A checkout that dies on 'wallet_required' is a product
+  // existence. A checkout that dies on 'sign_in_required' is a product
   // bottleneck the operator can fix; one that dies on 'missing_config' is an
   // outage losing revenue silently. Both look like "no conversion" in Google
   // Analytics, which is why they are recorded first-party here.
@@ -3053,12 +3053,16 @@ async function handleCheckout(plan, wallet) {
     return { ok: false, message: stripeUnavailableMessage() };
   }
 
-  if (!wallet) {
-    trackCheckoutUnavailable(plan, 'wallet_required');
-    growth.checkoutFailed(plan, 'wallet_required');
-    return { ok: false, message: 'Connect a wallet first so we know where to grant access.' };
-  }
-
+  // NOTE: the 'wallet_required' gate that used to sit here is gone. It refused
+  // to start checkout without a connected Solana wallet, because entitlements
+  // were keyed by wallet — so the platform demanded that people afraid of
+  // wallet risk connect a wallet before it would sell them protection from it.
+  // The buyer's identity is now their account; startStripeCheckout reports
+  // 'sign_in_required' if they are signed out, which is recorded below like any
+  // other abandonment reason.
+  //
+  // `wallet` is still threaded through as optional metadata for wallet-specific
+  // features. It is not a precondition of anything.
   trackCheckoutStarted(plan);
   growth.checkoutStarted(plan);
   try {
@@ -3157,7 +3161,7 @@ function App() {
   const [editingProject, setEditingProject] = useState(null);
   const [verificationMap, setVerificationMap] = useState({});
   const [requestingVerification, setRequestingVerification] = useState(null);
-  const { hasPremium, wallet: entitledWallet } = useWalletEntitlement();
+  const { hasPremium, wallet: entitledWallet } = usePremiumEntitlement();
 
   // Synced Watchlist (Premium/Early Supporter only): merge in whatever the
   // account has saved server-side so the watchlist follows the user across
@@ -4353,32 +4357,50 @@ function entitlementRank(e) {
   return 1;
 }
 
-// In-memory merge only. The winning object is returned as-is; neither the paid
-// record nor the manual record is ever written from the other, keeping payment
-// and manual Premium completely independent (see task spec, section 9).
-function mergeEntitlements(paid, manual) {
-  if (entitlementRank(manual) > entitlementRank(paid)) return manual;
-  return paid || manual || null;
+// In-memory merge only. The winning object is returned as-is; no record is ever
+// written from another, keeping payment and manual Premium completely
+// independent (see task spec, section 9).
+//
+// Variadic across every source a plan can come from — account-paid (primary),
+// wallet-paid (legacy), and admin-granted. Highest tier wins, so a legacy user
+// keeps Premium whether or not their wallet is connected, and nobody can lose
+// access by the platform simply looking in a different place.
+function mergeEntitlements(...sources) {
+  const candidates = sources.filter(Boolean);
+  if (!candidates.length) return null;
+  return candidates.reduce((best, next) => (entitlementRank(next) > entitlementRank(best) ? next : best));
 }
 
-// Polls the server-recorded entitlement (see entitlements.js) for whichever
-// wallet is currently connected, AND the admin-granted manual entitlement for
-// the currently signed-in account (see premiumAdmin.js / premium-me.mjs), so
-// Premium UI reflects either a real verified payment or a manual grant instead
-// of always showing the locked state. A manual grant unlocks Premium with no
-// wallet and no logout required.
-function useWalletEntitlement() {
+// Polls every source a Premium plan can come from and merges them by tier:
+//
+//   1. the signed-in ACCOUNT's paid entitlement  (entitlement-status + JWT)
+//      — primary; every purchase since checkout stopped demanding a wallet
+//   2. the connected WALLET's paid entitlement   (entitlement-status?wallet=)
+//      — legacy; purchases from before this site had accounts
+//   3. the account's admin-granted manual grant  (premium-me)
+//
+// So Premium UI reflects a real verified payment or a manual grant instead of
+// the locked state, and — the point of all this — NONE of those paths requires
+// a wallet except the one that is only there for backwards compatibility.
+//
+// Renamed from useWalletEntitlement: the wallet is no longer the organising
+// idea, and a hook called "useWallet*" that returns Premium for accounts with
+// no wallet would mislead every future reader of this file.
+function usePremiumEntitlement() {
   const { address, connected } = useKhanWallet();
   const { user } = useAuth();
   const [walletEnt, setWalletEnt] = useState(null);
+  const [accountEnt, setAccountEnt] = useState(null);
   const [manualEnt, setManualEnt] = useState(null);
 
   const refresh = React.useCallback(async () => {
-    const [w, m] = await Promise.all([
+    const [w, a, m] = await Promise.all([
       connected && address ? fetchEntitlement(address) : Promise.resolve(null),
+      user ? fetchAccountEntitlement() : Promise.resolve(null),
       user ? fetchMyManualPremium() : Promise.resolve(null),
     ]);
     setWalletEnt(w);
+    setAccountEnt(a);
     setManualEnt(m);
   }, [connected, address, user]);
 
@@ -4393,11 +4415,18 @@ function useWalletEntitlement() {
     if (user?.id && connected && address) recordWalletLink(address);
   }, [user?.id, connected, address]);
 
-  const entitlement = mergeEntitlements(walletEnt, manualEnt);
+  const entitlement = mergeEntitlements(accountEnt, walletEnt, manualEnt);
 
   return {
     entitlement,
+    // Still surfaced for wallet-SPECIFIC features and for the legacy claim
+    // prompt. Nothing gates Premium on it any more.
     wallet: connected ? address : '',
+    // True when this caller has a paid plan attached to a wallet but NOT to
+    // their account: the one case where connecting a wallet still buys them
+    // something, because it is how they claim the purchase onto their account
+    // and stop needing the wallet forever. Drives the claim prompt.
+    canClaimWalletPurchase: Boolean(user && walletEnt && !accountEnt),
     hasPremium: hasPlanAccess(entitlement, 'premium'),
     isEarlySupporter: isEarlySupporter(entitlement),
     refresh,
@@ -4516,7 +4545,7 @@ function ResearchList({ items, tone = 'neutral' }) {
 // analysis uses (see premiumResearch.js). Free users see an upgrade CTA.
 function AdvancedResearchCard({ project, navigate }) {
   const { t } = useTranslation();
-  const { hasPremium, entitlement } = useWalletEntitlement();
+  const { hasPremium, entitlement } = usePremiumEntitlement();
   if (!project.assetCategory) return null; // nothing to analyze yet
   return (
     <section className="detail-section premium-ai-card">
@@ -4555,7 +4584,7 @@ function AdvancedResearchCard({ project, navigate }) {
 // An ADDITIONAL section alongside (never replacing) the free AI Risk Summary.
 function PremiumAnalysisCard({ project, navigate }) {
   const { t } = useTranslation();
-  const { hasPremium, entitlement } = useWalletEntitlement();
+  const { hasPremium, entitlement } = usePremiumEntitlement();
   if (!project.assetCategory) return null;
   return (
     <section className="detail-section premium-ai-card">
@@ -4686,7 +4715,7 @@ function SavedReportsPanel({ wallet, project }) {
 function PremiumLockedSection({ project, navigate }) {
   const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
-  const { hasPremium, isEarlySupporter: isEarly, wallet } = useWalletEntitlement();
+  const { hasPremium, isEarlySupporter: isEarly, wallet } = usePremiumEntitlement();
   const unlockPremium = async () => {
     const result = await handleUnlockPremiumClick(project, wallet);
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
@@ -4728,7 +4757,7 @@ function PremiumLockedSection({ project, navigate }) {
 function OneTimeUnlockCard({ project, navigate }) {
   const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
-  const { hasPremium, isEarlySupporter: isEarly, wallet } = useWalletEntitlement();
+  const { hasPremium, isEarlySupporter: isEarly, wallet } = usePremiumEntitlement();
   const unlockPremium = async () => {
     const result = await handleUnlockPremiumClick(project, wallet);
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
@@ -4797,7 +4826,7 @@ function PlanComparisonTable() {
 function PricingPage({ navigate }) {
   const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
-  const { entitlement, hasPremium, isEarlySupporter: isEarly, wallet, refresh } = useWalletEntitlement();
+  const { entitlement, hasPremium, isEarlySupporter: isEarly, wallet, refresh } = usePremiumEntitlement();
   const beginCheckout = async (plan, walletOverride) => {
     const checkoutWallet = walletOverride || wallet;
     const result = plan === 'early_supporter' ? await handleEarlySupporterClick(checkoutWallet) : await handleUnlockPremiumClick(undefined, checkoutWallet);
@@ -5056,9 +5085,19 @@ function WalletPaymentSection({ onEntitlementChange }) {
   );
 }
 
+// Card checkout. A wallet is NOT required here and the buttons are never
+// disabled for the want of one — that gate was the single most expensive line in
+// the product: it disabled the buy button until the most wallet-anxious user on
+// the internet connected a wallet, in order to buy protection from wallet risk.
+//
+// The buyer's identity is their account, so the only prerequisite is being
+// signed in, and even that does not disable the button: the user is told what is
+// needed and the reason is recorded as a first-party abandonment reason. The
+// connected address is still passed to beginCheckout as optional metadata.
 function CardPaymentSection({ beginCheckout }) {
   const { t } = useTranslation();
-  const { address, connected } = useKhanWallet();
+  const { address } = useKhanWallet();
+  const { user } = useAuth();
   const cardReady = isStripeConfigured();
   return (
     <div className="payment-method-card">
@@ -5066,12 +5105,12 @@ function CardPaymentSection({ beginCheckout }) {
       <h3>{t('pricing.payment.cardTitle')}</h3>
       <p>{t('pricing.payment.cardDescription')}</p>
       {!cardReady && <p className="inline-note">{t('pricing.payment.cardNotConfigured')}</p>}
-      {cardReady && !connected && <p className="inline-note">{t('pricing.payment.connectWalletFirst')}</p>}
+      {cardReady && !user && <p className="inline-note">{t('pricing.payment.signInFirst')}</p>}
       <div className="payment-action-row">
-        <button className="primary-button" type="button" disabled={!cardReady || !connected} onClick={() => beginCheckout('premium', address)}>
+        <button className="primary-button" type="button" disabled={!cardReady} onClick={() => beginCheckout('premium', address)}>
           {t('premium.unlockPremium')}
         </button>
-        <button className="secondary-button" type="button" disabled={!cardReady || !connected} onClick={() => beginCheckout('early_supporter', address)}>
+        <button className="secondary-button" type="button" disabled={!cardReady} onClick={() => beginCheckout('early_supporter', address)}>
           {t('pricing.plans.earlySupporter').cta}
         </button>
       </div>
@@ -6571,7 +6610,7 @@ const launchpadInitialForm = {
 function LaunchpadUpgradeScreen({ navigate }) {
   const { t } = useTranslation();
   const [paymentMessage, setPaymentMessage] = useState('');
-  const { wallet } = useWalletEntitlement();
+  const { wallet } = usePremiumEntitlement();
   const unlockPremium = async () => {
     const result = await handleUnlockPremiumClick(undefined, wallet);
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
@@ -6602,7 +6641,7 @@ function LaunchpadUpgradeScreen({ navigate }) {
 
 function LaunchpadPage({ onCreateProfile, navigate }) {
   const { t } = useTranslation();
-  const { hasPremium } = useWalletEntitlement();
+  const { hasPremium } = usePremiumEntitlement();
   const [form, setForm] = useState(launchpadInitialForm);
   const [network, setNetwork] = useState('devnet');
   const [mainnetConfirmations, setMainnetConfirmations] = useState({
@@ -10711,7 +10750,7 @@ function EmailVerificationAction({ compact = false }) {
 // ── Auth nav button shown in Header and MobileNav ──────────────────────────
 function AuthNavButton({ navigate, navTo, onOpenAuth, variant = 'desktop' }) {
   const { user, logout } = useAuth();
-  const { entitlement } = useWalletEntitlement();
+  const { entitlement } = usePremiumEntitlement();
   const go = navTo || navigate; // navTo applies gating; fall back if not provided
   const { t } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -10898,7 +10937,7 @@ function PremiumProfilePanel({ entitlement }) {
 // ── User Profile Page ─────────────────────────────────────────────────────────
 function UserProfilePage({ navigate, onOpenAuth }) {
   const { user, logout, updateProfile, fetchUserScans } = useAuth();
-  const { entitlement } = useWalletEntitlement();
+  const { entitlement } = usePremiumEntitlement();
   const { t, language } = useTranslation();
   const [scans, setScans] = useState([]);
   const [scansLoading, setScansLoading] = useState(false);

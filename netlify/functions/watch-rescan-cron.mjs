@@ -1,0 +1,55 @@
+// Hourly trigger for the re-scan worker. Scheduled, so it is NOT HTTP-routable
+// and has a hard 30-second execution limit.
+//
+// It therefore does NOT do the work — same split, and for the same reason, as
+// growth-analyze-cron: re-scanning N watched tokens at two HTTP calls each
+// blows 30s as soon as N is more than a handful, and it would blow it SILENTLY,
+// every hour, with the only symptom being that alerts quietly stopped firing.
+// Which is exactly the class of failure this whole workstream exists to end.
+// So this fires watch-rescan-background (15-minute limit) and returns.
+//
+// Runs hourly at :00. alerts-run is pinned to :30 for this reason: the two are
+// a pipeline (observe, then notify), so they must not share a cron minute. At
+// the same minute they would race and alerts would read snapshots up to an hour
+// stale — for a liquidity drain, the difference between a warning and a
+// post-mortem. The half-hour gap sits comfortably inside the background
+// function's 15-minute cap.
+import { issueToken } from './_adminAuth.mjs';
+
+export const config = { schedule: '0 * * * *' };
+
+export async function handler() {
+  const siteUrl = process.env.URL || process.env.DEPLOY_PRIME_URL;
+  if (!siteUrl) {
+    console.error('[watch-rescan-cron] no site URL in env; cannot reach the background function.');
+    return { statusCode: 200, body: 'no site url' };
+  }
+
+  let token;
+  try {
+    // Runs server-side and already has KHAN_ADMIN_PASSCODE, so it can mint the
+    // short-lived HMAC token directly. No passcode is transmitted.
+    token = issueToken();
+  } catch (error) {
+    console.error(`[watch-rescan-cron] cannot issue an admin token: ${error.message}`);
+    return { statusCode: 200, body: 'admin not configured' };
+  }
+
+  try {
+    // Fire-and-forget: the background function answers 202 immediately and
+    // keeps running long after this scheduled invocation has exited.
+    const response = await fetch(`${siteUrl}/.netlify/functions/watch-rescan-background`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ trigger: 'scheduled' }),
+    });
+
+    if (response.status !== 202) {
+      console.warn(`[watch-rescan-cron] background function answered ${response.status}, expected 202.`);
+    }
+    return { statusCode: 200, body: `triggered (${response.status})` };
+  } catch (error) {
+    console.error(`[watch-rescan-cron] could not trigger the worker: ${error.message}`);
+    return { statusCode: 200, body: 'trigger failed' };
+  }
+}

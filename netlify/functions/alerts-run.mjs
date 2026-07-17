@@ -33,6 +33,7 @@ import { listSubscriptions, saveSubscription } from './_alertsStore.mjs';
 import { getWatchSnapshot } from './_watchSnapshotStore.mjs';
 import { RESCAN_ENGINE_VERSION } from './_rescanEngine.mjs';
 import { sendEmail, isEmailConfigured } from './_email.mjs';
+import { addNotifications, riskAlertId } from './_notificationStore.mjs';
 
 // Runs hourly at :30, deliberately NOT at :00 where watch-rescan-cron fires.
 //
@@ -96,11 +97,23 @@ function num(value) {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-export function changeReasons(prev, current) {
-  const reasons = [];
+// The reason detection itself, as structured CODES rather than sentences:
+// [{ code, params }]. Two consumers render these, and they must never disagree
+// about what happened:
+//
+//   - the email digest, in English, via changeReasons() below;
+//   - the in-app notification center, in the reader's own language, by passing
+//     the code to the client's i18n at RENDER time (see _notificationStore.mjs).
+//
+// Splitting detection from wording is what makes the second one possible. A
+// sentence built here is frozen in English forever; a code is late-bound. The
+// email stays English because an email is delivered once, at write time, with no
+// reader context - the in-app bell has both, so it gets the better treatment.
+export function changeReasonCodes(prev, current) {
+  const codes = [];
   const before = prev?.signals;
   const after = current?.signals;
-  if (!before || !after) return reasons;
+  if (!before || !after) return codes;
 
   const prevLiq = num(before.totalLiquidityUsd);
   const currLiq = num(after.totalLiquidityUsd);
@@ -108,33 +121,49 @@ export function changeReasons(prev, current) {
     const ratio = (currLiq - prevLiq) / prevLiq;
     // A total drain is the headline event, named as what it is rather than as
     // "liquidity dropped 100%".
-    if (currLiq === 0) reasons.push('all liquidity has been removed');
-    else if (ratio <= -0.1) reasons.push(`liquidity dropped ${Math.round(Math.abs(ratio) * 100)}%`);
+    if (currLiq === 0) codes.push({ code: 'liquidityRemoved', params: {} });
+    else if (ratio <= -0.1) codes.push({ code: 'liquidityDropped', params: { percent: Math.round(Math.abs(ratio) * 100) } });
   }
 
   const prevHolder = num(before.topHolderPercent);
   const currHolder = num(after.topHolderPercent);
   if (prevHolder !== null && currHolder !== null && currHolder - prevHolder >= 3) {
-    reasons.push(`largest holder grew from ${prevHolder}% to ${currHolder}% of supply`);
+    codes.push({ code: 'topHolderGrew', params: { from: prevHolder, to: currHolder } });
   }
 
   // An authority flipping back on is a categorical change, not a gradual one:
   // someone can now mint or freeze supply that they previously could not.
   if (before.mintAuthorityEnabled === false && after.mintAuthorityEnabled === true) {
-    reasons.push('mint authority has been re-enabled — new supply can be created');
+    codes.push({ code: 'mintReenabled', params: {} });
   }
   if (before.freezeAuthorityEnabled === false && after.freezeAuthorityEnabled === true) {
-    reasons.push('freeze authority has been re-enabled — your balance can be frozen');
+    codes.push({ code: 'freezeReenabled', params: {} });
   }
 
   const prevHolders = num(before.holderCount);
   const currHolders = num(after.holderCount);
   if (prevHolders !== null && currHolders !== null && prevHolders > 0) {
     const ratio = (currHolders - prevHolders) / prevHolders;
-    if (ratio <= -0.2) reasons.push(`holder count fell ${Math.round(Math.abs(ratio) * 100)}%`);
+    if (ratio <= -0.2) codes.push({ code: 'holdersFell', params: { percent: Math.round(Math.abs(ratio) * 100) } });
   }
 
-  return reasons;
+  return codes;
+}
+
+// English renderings for the email digest. The wording is unchanged from when
+// this function did the detecting itself - the email is a delivered artefact and
+// its exact text is pinned by tests/alertsRun.test.mjs.
+const REASON_TEXT = {
+  liquidityRemoved: () => 'all liquidity has been removed',
+  liquidityDropped: ({ percent }) => `liquidity dropped ${percent}%`,
+  topHolderGrew: ({ from, to }) => `largest holder grew from ${from}% to ${to}% of supply`,
+  mintReenabled: () => 'mint authority has been re-enabled — new supply can be created',
+  freezeReenabled: () => 'freeze authority has been re-enabled — your balance can be frozen',
+  holdersFell: ({ percent }) => `holder count fell ${percent}%`,
+};
+
+export function changeReasons(prev, current) {
+  return changeReasonCodes(prev, current).map(({ code, params }) => REASON_TEXT[code](params));
 }
 
 function buildDigest(changes) {
@@ -148,17 +177,66 @@ function buildDigest(changes) {
   return `Some tokens you're watching on KHAN Trust have a higher risk profile than before:\n\n${lines.join('\n')}\n\nOpen KHAN Trust for the full explainable breakdown: https://khantrust.net\n\nYou're receiving this because you enabled trust alerts on these tokens.`;
 }
 
+// One risk change -> one in-app notification row. Carries KEYS AND PARAMS, never
+// a sentence, so the bell renders in the reader's language (see
+// _notificationStore.mjs). The id is derived from the token plus the exact
+// observation, so this cron re-running over unchanged state writes nothing.
+//
+// No `link`: the alert knows the token's IDENTITY, but a project id is a
+// client-side notion (projects live in the browser's storage - see
+// findStoredProject in main.jsx), so the server cannot build a correct URL. The
+// client resolves identity -> project at render time, where that mapping exists.
+function toNotification(change) {
+  const { token, current, prev, codes } = change;
+  // High severity for the categorical events - an authority re-enabled or the
+  // liquidity gone are not "your score moved", they are "act now".
+  const isCritical =
+    current.riskLevel === 'High' ||
+    codes.some(({ code }) => code === 'liquidityRemoved' || code === 'mintReenabled' || code === 'freezeReenabled');
+
+  return {
+    id: riskAlertId(token.identity, current.observedAt),
+    type: 'risk_alert',
+    severity: isCritical ? 'high' : 'medium',
+    titleKey: 'notifications.riskAlert.title',
+    bodyKey: 'notifications.riskAlert.body',
+    params: {
+      identity: token.identity,
+      contract: token.contract || '',
+      chain: token.chain || '',
+      name: token.name || token.ticker || token.contract || '',
+      ticker: token.ticker || '',
+      score: current.trustScore,
+      riskLevel: current.riskLevel,
+      previousScore: prev?.score ?? null,
+      previousRiskLevel: prev?.riskLevel ?? null,
+      reasons: codes,
+    },
+    at: current.observedAt || new Date().toISOString(),
+  };
+}
+
 export async function handler() {
   try {
-    if (!isEmailConfigured()) {
-      return { statusCode: 200, body: 'alerts-run: email not configured, skipped' };
-    }
+    // Email is OPTIONAL to this loop, not a precondition for it.
+    //
+    // This used to return early when email was unconfigured, which was correct
+    // when an email WAS the only delivery. Now the in-app notification center is
+    // the other half, and it must not inherit email's dependencies: a site with
+    // no SMTP configured would otherwise have a permanently empty bell AND a
+    // frozen baseline - i.e. the retention loop dead again, for a reason nobody
+    // would think to look for. Observation and baselining now always run; each
+    // delivery channel opts in for itself.
+    const emailReady = isEmailConfigured();
 
     const subscriptions = await listSubscriptions();
     let notified = 0;
+    let inApp = 0;
 
     for (const sub of subscriptions) {
-      if (!sub?.email || !Array.isArray(sub.tokens) || !sub.tokens.length) continue;
+      // userId, not email, is the requirement now - the bell is addressed by
+      // account. An address is only needed by the email channel below.
+      if (!sub?.userId || !Array.isArray(sub.tokens) || !sub.tokens.length) continue;
       const lastNotified = sub.lastNotified || {};
       const changes = [];
 
@@ -173,7 +251,13 @@ export async function handler() {
 
         const prev = lastNotified[token.identity];
         if (riskWorsened(prev, current)) {
-          changes.push({ token, current, prev, reasons: changeReasons(prev, current) });
+          changes.push({
+            token,
+            current,
+            prev,
+            reasons: changeReasons(prev, current),      // English, for the email digest
+            codes: changeReasonCodes(prev, current),    // structured, for the localized bell
+          });
         }
 
         // Re-baseline to the latest each run so we compare run-over-run and
@@ -192,19 +276,30 @@ export async function handler() {
       }
 
       if (changes.length) {
-        await sendEmail({
-          to: sub.email,
-          subject: `KHAN Trust alert: ${changes.length} watched token${changes.length > 1 ? 's' : ''} got riskier`,
-          text: buildDigest(changes),
-        });
-        notified += 1;
+        // In-app first, and unconditionally. It is the channel that always
+        // exists, needs no address, and cannot bounce. One write per user per
+        // run, deduped by id inside the store.
+        const written = await addNotifications(sub.userId, changes.map(toNotification));
+        inApp += written.length;
+
+        if (emailReady && sub.email) {
+          await sendEmail({
+            to: sub.email,
+            subject: `KHAN Trust alert: ${changes.length} watched token${changes.length > 1 ? 's' : ''} got riskier`,
+            text: buildDigest(changes),
+          });
+          notified += 1;
+        }
       }
 
       sub.lastNotified = lastNotified;
       await saveSubscription(sub);
     }
 
-    return { statusCode: 200, body: `alerts-run: processed ${subscriptions.length} subscriptions, notified ${notified}` };
+    return {
+      statusCode: 200,
+      body: `alerts-run: processed ${subscriptions.length} subscriptions, notified ${notified}, in-app ${inApp}`,
+    };
   } catch (error) {
     return { statusCode: 500, body: `alerts-run crashed: ${error.message}` };
   }

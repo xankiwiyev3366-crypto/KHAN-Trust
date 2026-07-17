@@ -9253,3 +9253,329 @@ main {
 @media (prefers-reduced-motion: reduce) {
   .spin { animation: none; }
 }
+
+/* ── Notification Center ───────────────────────────────────────────────────── */
+
+.notification-bell-wrap { position: relative; display: inline-flex; }
+
+.notification-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-soft);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.notification-bell:hover { border-color: var(--gold-soft); color: var(--gold); }
+
+.notification-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #10100e;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+}
+
+.notification-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 360px;
+  max-height: 460px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  z-index: 60;
+}
+
+.notification-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+}
+
+.notification-mark-all {
+  background: none;
+  border: none;
+  color: var(--gold);
+  font-size: 0.76rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.notification-mark-all:hover { text-decoration: underline; }
+
+.notification-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 30px 20px;
+  color: var(--muted);
+}
+
+.notification-empty strong { color: var(--text); }
+.notification-empty p { margin: 0; font-size: 0.82rem; line-height: 1.5; }
+
+.notification-list { list-style: none; margin: 0; padding: 0; }
+
+.notification-row {
+  position: relative;
+  border-bottom: 1px solid var(--border-soft);
+  border-left: 2px solid transparent;
+}
+
+.notification-row:last-child { border-bottom: none; }
+.notification-row.unread { background: rgba(224, 183, 92, 0.04); }
+.notification-row.unread.severity-high { border-left-color: var(--danger); }
+.notification-row.unread.severity-medium { border-left-color: var(--warning); }
+.notification-row.unread.severity-info { border-left-color: var(--gold); }
+
+.notification-row-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 11px 26px 11px 14px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.notification-row-btn:hover { background: var(--panel-2); }
+
+.notification-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+.notification-row-head strong { font-size: 0.87rem; min-width: 0; }
+.notification-age { color: var(--muted); font-size: 0.7rem; flex-shrink: 0; }
+.notification-row-btn p { margin: 0; color: var(--muted); font-size: 0.79rem; line-height: 1.45; }
+
+.notification-reasons {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.notification-reasons li {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
+  padding-left: 10px;
+  position: relative;
+}
+
+.notification-reasons li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--gold-soft);
+}
+
+.notification-dot {
+  position: absolute;
+  top: 15px;
+  right: 12px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gold);
+  pointer-events: none;
+}
+
+/* ── Personalized dashboard ────────────────────────────────────────────────── */
+
+.retention-dashboard {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 26px 20px 6px;
+}
+
+.retention-greeting { margin: 0 0 16px; font-size: 1.3rem; }
+.retention-loading, .retention-muted { color: var(--muted); font-size: 0.85rem; margin: 0; }
+
+.retention-card-label {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 5px;
+}
+
+.retention-continue {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border: 1px solid var(--gold-soft);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.retention-continue strong { font-size: 1.05rem; }
+.retention-continue button { flex-shrink: 0; display: inline-flex; align-items: center; gap: 7px; }
+
+.retention-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.retention-stat {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 13px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  min-width: 0;
+}
+
+.retention-stat strong { font-size: 1.1rem; line-height: 1.25; }
+.retention-stat small { color: var(--muted); font-size: 0.74rem; }
+
+button.retention-stat { cursor: pointer; color: inherit; font: inherit; }
+button.retention-stat:hover { border-color: var(--gold-soft); }
+.retention-alert-stat { border-color: rgba(247, 190, 82, 0.4); }
+.retention-alert-stat strong { color: var(--warning); font-size: 0.95rem; }
+
+.retention-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.retention-column {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  min-width: 0;
+}
+
+.retention-column-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+.retention-link {
+  background: none;
+  border: none;
+  color: var(--gold);
+  font-size: 0.76rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.retention-link:hover { text-decoration: underline; }
+
+.retention-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.retention-list li { min-width: 0; }
+
+.retention-list button, .retention-list-flat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+
+.retention-list button { cursor: pointer; }
+.retention-list button:hover { background: var(--panel-2); }
+
+.retention-list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.retention-score {
+  font-style: normal;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.retention-score.low { background: rgba(103, 211, 156, 0.14); color: var(--success); }
+.retention-score.medium { background: rgba(247, 190, 82, 0.16); color: var(--warning); }
+.retention-score.high { background: rgba(255, 117, 110, 0.16); color: var(--danger); }
+
+@media (max-width: 900px) {
+  .retention-columns { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 720px) {
+  .retention-dashboard { padding: 20px 14px 4px; }
+  .retention-greeting { font-size: 1.12rem; }
+  .retention-grid { grid-template-columns: 1fr 1fr; }
+  .retention-continue { flex-direction: column; align-items: stretch; }
+  .retention-continue button { width: 100%; justify-content: center; }
+
+  /* The bell panel becomes a near-full-width sheet: a 360px dropdown anchored
+     right would hang off the left edge of a 375px screen. */
+  .notification-panel {
+    position: fixed;
+    top: 62px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-height: calc(100vh - 80px);
+  }
+}
+
+@media (max-width: 380px) {
+  .retention-grid { grid-template-columns: 1fr; }
+}

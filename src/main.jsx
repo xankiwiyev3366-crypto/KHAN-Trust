@@ -142,6 +142,8 @@ import { useKhanWallet } from './wallet/useKhanWallet.js';
 import { useApprovalScanner } from './approvals/useApprovalScanner.js';
 import { lamportsToSol } from './approvals/solanaLane.js';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
+import { RetentionProvider, useRetention } from './RetentionContext.jsx';
+import { contextFromProject } from './retention.js';
 import { AuthModal } from './auth/AuthModal.jsx';
 // Early Stage Projects - additive, lazy-loaded feature. React.lazy keeps this
 // entire module (and its earlyStage.js client) out of the initial bundle; it
@@ -2580,10 +2582,27 @@ function contractSecuritySummary(data = {}) {
   return translate('common.notAvailable');
 }
 
+// The score bands, defined ONCE. riskKey() is the machine-readable form (a CSS
+// hook, a lookup); riskBadge() is the human-readable, translated label built
+// from the same bands - so the colour a user sees can never disagree with the
+// words next to it, and moving a threshold moves both.
+//
+// riskBadge returns TRANSLATED text and must never be used as a className: that
+// yields `class="High Risk"` in English (two junk classes, no styling) and a
+// Cyrillic class name in Russian. Use riskKey for that.
+const RISK_BANDS = [
+  { min: 78, key: 'low' },
+  { min: 55, key: 'medium' },
+  { min: -Infinity, key: 'high' },
+];
+
+function riskKey(score) {
+  const band = RISK_BANDS.find((entry) => Number(score) >= entry.min);
+  return band ? band.key : 'high';
+}
+
 function riskBadge(score) {
-  if (score >= 78) return translate('common.lowRisk');
-  if (score >= 55) return translate('common.mediumRisk');
-  return translate('common.highRisk');
+  return translate(`common.${riskKey(score)}Risk`);
 }
 
 function confidenceScore(project = {}) {
@@ -3164,6 +3183,7 @@ function App() {
   const [verificationMap, setVerificationMap] = useState({});
   const [requestingVerification, setRequestingVerification] = useState(null);
   const { hasPremium, wallet: entitledWallet } = usePremiumEntitlement();
+  const { recordContext, touch: retentionTouch } = useRetention();
 
   // Synced Watchlist (Premium/Early Supporter only): merge in whatever the
   // account has saved server-side so the watchlist follows the user across
@@ -3252,7 +3272,19 @@ function App() {
   useEffect(() => {
     if (selectedProject) trackProjectViewEvent(selectedProject);
     if (selectedProject) growth.projectView(selectedProject);
-  }, [selectedProject?.id]);
+    // The resume context for "continue where you left off". recordContext()
+    // ignores a repeat of the project already recorded, and the server skips the
+    // write for the same reason - so browsing back and forth costs nothing.
+    if (selectedProject) recordContext(contextFromProject(selectedProject));
+  }, [selectedProject?.id, recordContext]);
+
+  // Records the day when a tab stays open across UTC midnight. touch() checks
+  // the local day first and no-ops otherwise, so ordinary navigation issues no
+  // request - without this, a long-lived session would silently break its own
+  // streak while the user was actively using the app.
+  useEffect(() => {
+    retentionTouch();
+  }, [page, retentionTouch]);
 
   const navigate = (target, options = {}) => {
     setRevealScan(Boolean(options.revealScan));
@@ -3521,7 +3553,7 @@ function App() {
       {!isAdminPage && <KhanAiBackdrop />}
       <Sidebar page={page} navigate={navigate} navTo={navTo} alertCount={alertCount} />
       <div className="app-content">
-      <Header page={page} navigate={navigate} navTo={navTo} setAuthModalMode={setAuthModalMode} />
+      <Header page={page} navigate={navigate} navTo={navTo} setAuthModalMode={setAuthModalMode} projects={projects} />
       <main>
         {page === 'home' && (
           <HomePage
@@ -3535,6 +3567,8 @@ function App() {
             onTokenCheck={handleTokenCheck}
             navigate={navigate}
             openMethodology={() => setMethodologyOpen(true)}
+            watchlist={watchlist}
+            alertCount={alertCount}
           />
         )}
         {page === 'explore' && (
@@ -3666,7 +3700,184 @@ function navTargetFor(itemId) {
   return itemId;
 }
 
-function Header({ page, navigate, navTo, setAuthModalMode }) {
+// ── Notification Center ───────────────────────────────────────────────────────
+//
+// Renders rows from stored KEYS + PARAMS, never stored prose - which is what
+// lets a notification written months ago appear in whatever language the reader
+// picked today (see netlify/functions/_notificationStore.mjs).
+
+// Relative time, in the reader's language, from the four bucket strings rather
+// than a date library. The bell only ever needs coarse recency ("2h ago"); an
+// exact timestamp would be noise, and Intl.RelativeTimeFormat pluralisation
+// across az/tr/ru is not worth the bundle for four buckets.
+function notificationAge(iso, t) {
+  const ts = Date.parse(iso || '');
+  if (Number.isNaN(ts)) return '';
+  const minutes = Math.floor((Date.now() - ts) / 60000);
+  if (minutes < 1) return t('notifications.justNow');
+  if (minutes < 60) return t('notifications.minutesAgo', { count: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t('notifications.hoursAgo', { count: hours });
+  return t('notifications.daysAgo', { count: Math.floor(hours / 24) });
+}
+
+// A risk alert stores the token's IDENTITY (`c:<contract>` / `id:<projectId>`),
+// because the server cannot know a client-side project id (see the note in
+// alerts-run.mjs). Resolving it to a route is therefore done here, where the
+// project list exists. Unresolvable -> no link rather than a dead one.
+function notificationTarget(notification, projects) {
+  const link = notification.link;
+  if (link) return link;
+  const { identity, contract } = notification.params || {};
+  if (contract) {
+    const match = projects.find((project) => project.contract === contract);
+    if (match) return `project/${match.id}`;
+  }
+  if (typeof identity === 'string' && identity.startsWith('id:')) {
+    const id = identity.slice(3);
+    if (projects.some((project) => project.id === id)) return `project/${id}`;
+  }
+  return '';
+}
+
+// The stored params carry the risk LEVEL as the engine's own value ('High' /
+// 'Medium' / 'Low') - it is data, not display text, and the server has no reader
+// to translate it for. Left raw, it produces a half-translated sentence: an
+// Azerbaijani body reading "Etibar Balı indi 30/100 (High risk)". So the levels
+// are localized here, at render time, through the SAME common.* keys
+// riskAlerts.js already uses - one vocabulary for risk levels across the app.
+function localizedParams(params, t) {
+  const level = (value) => {
+    if (typeof value !== 'string' || !value) return value;
+    const key = value.toLowerCase();
+    return ['high', 'medium', 'low'].includes(key) ? t(`common.${key}`) : value;
+  };
+  return {
+    ...params,
+    riskLevel: level(params?.riskLevel),
+    previousRiskLevel: level(params?.previousRiskLevel),
+  };
+}
+
+function NotificationRow({ notification, projects, navigate, onRead, onClose }) {
+  const { t } = useTranslation();
+  const target = notificationTarget(notification, projects);
+  const reasons = Array.isArray(notification.params?.reasons) ? notification.params.reasons : [];
+  const params = localizedParams(notification.params, t);
+
+  const open = () => {
+    if (!notification.read) onRead([notification.id]);
+    if (target) {
+      navigate(target);
+      onClose();
+    }
+  };
+
+  return (
+    <li className={`notification-row${notification.read ? '' : ' unread'} severity-${notification.severity}`}>
+      <button type="button" className="notification-row-btn" onClick={open}>
+        <div className="notification-row-head">
+          <strong>{t(`${notification.titleKey}`, params)}</strong>
+          <span className="notification-age">{notificationAge(notification.at, t)}</span>
+        </div>
+        <p>{t(`${notification.bodyKey}`, params)}</p>
+        {reasons.length > 0 && (
+          <ul className="notification-reasons">
+            {reasons.map(({ code, params }) => (
+              <li key={code}>{t(`notifications.reasons.${code}`, params)}</li>
+            ))}
+          </ul>
+        )}
+      </button>
+      {!notification.read && <span className="notification-dot" aria-hidden="true" />}
+    </li>
+  );
+}
+
+function NotificationBell({ projects, navigate }) {
+  const { t } = useTranslation();
+  const { user } = useAuth();
+  const { notifications, unread, markRead } = useRetention();
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  // Signed-out users have no bell: notifications are addressed by account.
+  // Rendering an empty bell would advertise a feature that cannot work.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event) => {
+      if (wrapRef.current && !wrapRef.current.contains(event.target)) setOpen(false);
+    };
+    const onEsc = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [open]);
+
+  if (!user) return null;
+
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next) trackEvent('notification_center_opened', { unread });
+  };
+
+  return (
+    <div className="notification-bell-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className="notification-bell"
+        onClick={toggle}
+        aria-label={t('notifications.open')}
+        aria-expanded={open}
+      >
+        <Bell size={18} />
+        {unread > 0 && <span className="notification-count">{unread > 9 ? '9+' : unread}</span>}
+      </button>
+
+      {open && (
+        <div className="notification-panel" role="dialog" aria-label={t('notifications.title')}>
+          <div className="notification-panel-head">
+            <strong>{t('notifications.title')}</strong>
+            {unread > 0 && (
+              <button type="button" className="notification-mark-all" onClick={() => markRead()}>
+                {t('notifications.markAllRead')}
+              </button>
+            )}
+          </div>
+
+          {!notifications.length ? (
+            <div className="notification-empty">
+              <Bell size={22} />
+              <strong>{t('notifications.empty')}</strong>
+              <p>{t('notifications.emptyHint')}</p>
+            </div>
+          ) : (
+            <ul className="notification-list">
+              {notifications.map((notification) => (
+                <NotificationRow
+                  key={notification.id}
+                  notification={notification}
+                  projects={projects}
+                  navigate={navigate}
+                  onRead={markRead}
+                  onClose={() => setOpen(false)}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Header({ page, navigate, navTo, setAuthModalMode, projects }) {
   const { t } = useTranslation();
   return (
     <header className="site-header">
@@ -3679,6 +3890,7 @@ function Header({ page, navigate, navTo, setAuthModalMode }) {
           </span>
         </button>
         <div className="header-right">
+          <NotificationBell projects={projects} navigate={navigate} />
           <AuthNavButton navigate={navigate} navTo={navTo} onOpenAuth={() => setAuthModalMode('login')} />
           <ConnectWalletButton variant="desktop" />
           <LanguageSwitcher variant="desktop" />
@@ -3786,7 +3998,197 @@ function Sidebar({ page, navigate, navTo, alertCount }) {
   );
 }
 
-function HomePage({ projects, query, setQuery, searchState, scanProgress, onSearch, onSelectMatch, onTokenCheck, navigate, openMethodology }) {
+// ── Personalized dashboard (signed-in users only) ─────────────────────────────
+//
+// Sits above the generic home content and is built ENTIRELY from things the user
+// actually did. It reuses what already exists rather than duplicating it:
+//
+//   - recent scans come from auth-user-scans.mjs (the same endpoint the profile
+//     page already uses), derived from the one analytics event log;
+//   - the watchlist and its risk-change alerts come from the existing watchlist
+//     state and useWatchlistAlertCount - no second alert implementation;
+//   - streak / activity / resume context come from retention-sync.
+//
+// Renders NOTHING for a signed-out visitor: a dashboard of empty panels is a
+// worse landing page than the marketing one, and this must not push the search
+// box below the fold for someone who arrived to scan a token.
+function ContinueCard({ context, projects, navigate }) {
+  const { t } = useTranslation();
+  if (!context) return null;
+  // Only offer a resume the app can actually honour. The project lives in the
+  // browser's storage, so a context recorded on another device may point at
+  // something this one has never seen - a card that navigates nowhere is worse
+  // than no card.
+  const project = projects.find((item) => item.id === context.projectId);
+  if (!project) return null;
+  const label = project.name || project.ticker || context.name || context.ticker;
+
+  return (
+    <div className="retention-continue">
+      <div>
+        <span className="retention-card-label">{t('retention.continueTitle')}</span>
+        <strong>{label}</strong>
+      </div>
+      <button className="secondary-button" type="button" onClick={() => navigate(`project/${project.id}`)}>
+        {t('retention.continueCta', { name: label })} <ArrowRight size={14} />
+      </button>
+    </div>
+  );
+}
+
+function StreakCard({ streak }) {
+  const { t } = useTranslation();
+  if (!streak) return null;
+
+  // Three genuinely different states, deliberately not collapsed into one
+  // number. "0" for someone who signed up ninety seconds ago reads as a failure
+  // they have not had time to have; and a lapsed user needs to know when they
+  // were last here, not just that the streak is gone.
+  let value;
+  let hint;
+  if (!streak.started) {
+    value = t('retention.streakNone');
+    hint = t('retention.streakNoneHint');
+  } else if (streak.current > 0) {
+    value = t(streak.current === 1 ? 'retention.streakDay' : 'retention.streakDays', { count: streak.current });
+    hint = streak.longest > streak.current ? t('retention.streakLongest', { count: streak.longest }) : '';
+  } else {
+    value = t('retention.streakNone');
+    const days = streak.lastActiveDay ? Math.max(1, Math.round((Date.now() - Date.parse(`${streak.lastActiveDay}T00:00:00Z`)) / 86400000)) : null;
+    hint = days ? t('retention.streakBroken', { days }) : '';
+  }
+
+  return (
+    <div className="retention-stat">
+      <span className="retention-card-label">{t('retention.streakTitle')}</span>
+      <strong>{value}</strong>
+      {hint && <small>{hint}</small>}
+    </div>
+  );
+}
+
+function RetentionDashboard({ projects, watchlist, navigate, alertCount }) {
+  const { t } = useTranslation();
+  const { user, fetchUserScans } = useAuth();
+  const { status, retention } = useRetention();
+  const [scans, setScans] = useState([]);
+  const [scansLoading, setScansLoading] = useState(false);
+
+  // Reuses the endpoint the profile page already calls. Recent scans are derived
+  // from the shared analytics event log, so this needs no new persistence.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    setScansLoading(true);
+    fetchUserScans()
+      .then((list) => { if (!cancelled) setScans(list.slice(0, 4)); })
+      .catch(() => { if (!cancelled) setScans([]); })
+      .finally(() => { if (!cancelled) setScansLoading(false); });
+    return () => { cancelled = true; };
+  }, [user?.id, fetchUserScans]);
+
+  if (!user) return null;
+
+  const watched = projects.filter((project) => watchlist.includes(project.id)).slice(0, 4);
+  const firstName = (user.name || user.email || '').split(/[\s@]/)[0];
+  // A first-ever day is a welcome, not a welcome BACK. Getting this backwards on
+  // someone's first minute is a small thing that reads as the product not
+  // knowing who it is talking to.
+  const returning = Boolean(retention?.activity?.totalActiveDays > 1);
+
+  return (
+    <section className="retention-dashboard">
+      <h2 className="retention-greeting">
+        {t(returning ? 'retention.welcomeBack' : 'retention.welcomeFirst', { name: firstName })}
+      </h2>
+
+      {status === 'loading' && <p className="retention-loading">{t('retention.loading')}</p>}
+
+      {/* status === 'error' renders nothing extra on purpose: retention is
+          memory, and a broken memory must not become an error banner on the
+          home page of a product people came here to scan tokens with. */}
+
+      <ContinueCard context={retention?.continueContext} projects={projects} navigate={navigate} />
+
+      <div className="retention-grid">
+        <StreakCard streak={retention?.streak} />
+
+        {retention?.activity && (
+          <div className="retention-stat">
+            <span className="retention-card-label">{t('retention.activityTitle')}</span>
+            <strong>{t('retention.activityLast7', { count: retention.activity.activeDaysLast7 })}</strong>
+            <small>{t('retention.activityLast30', { count: retention.activity.activeDaysLast30 })}</small>
+          </div>
+        )}
+
+        {alertCount > 0 && (
+          <button className="retention-stat retention-alert-stat" type="button" onClick={() => navigate('watchlist')}>
+            <span className="retention-card-label">{t('sidebar.alerts')}</span>
+            <strong>{t(alertCount === 1 ? 'retention.alertsPending' : 'retention.alertsPending_plural', { count: alertCount })}</strong>
+          </button>
+        )}
+      </div>
+
+      <div className="retention-columns">
+        <div className="retention-column">
+          <div className="retention-column-head">
+            <strong>{t('retention.recentTitle')}</strong>
+          </div>
+          {scansLoading && <p className="retention-muted">{t('retention.loading')}</p>}
+          {!scansLoading && !scans.length && <p className="retention-muted">{t('retention.recentEmpty')}</p>}
+          <ul className="retention-list">
+            {scans.map((scan) => {
+              // A scan event records the contract; the routable project may or
+              // may not exist in this browser. Unresolvable -> plain row, not a
+              // link that goes nowhere.
+              const project = projects.find((item) => item.contract && item.contract === scan.contract);
+              const label = scan.projectName || scan.ticker || scan.contract || '';
+              return (
+                <li key={`${scan.contract || scan.projectId}-${scan.timestamp}`}>
+                  {project ? (
+                    <button type="button" onClick={() => navigate(`project/${project.id}`)}>
+                      <span>{label}</span>
+                      {typeof scan.trustScore === 'number' && <em className={`retention-score ${riskKey(scan.trustScore)}`}>{scan.trustScore}</em>}
+                    </button>
+                  ) : (
+                    <span className="retention-list-flat">
+                      <span>{label}</span>
+                      {typeof scan.trustScore === 'number' && <em className={`retention-score ${riskKey(scan.trustScore)}`}>{scan.trustScore}</em>}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+
+        <div className="retention-column">
+          <div className="retention-column-head">
+            <strong>{t('retention.watchlistTitle')}</strong>
+            {watched.length > 0 && (
+              <button type="button" className="retention-link" onClick={() => navigate('watchlist')}>
+                {t('retention.watchlistCta')}
+              </button>
+            )}
+          </div>
+          {!watched.length && <p className="retention-muted">{t('retention.watchlistEmpty')}</p>}
+          <ul className="retention-list">
+            {watched.map((project) => (
+              <li key={project.id}>
+                <button type="button" onClick={() => navigate(`project/${project.id}`)}>
+                  <span>{project.name || project.ticker}</span>
+                  {typeof project.trustScore === 'number' && <em className={`retention-score ${riskKey(project.trustScore)}`}>{project.trustScore}</em>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HomePage({ projects, query, setQuery, searchState, scanProgress, onSearch, onSelectMatch, onTokenCheck, navigate, openMethodology, watchlist, alertCount }) {
   const { t } = useTranslation();
   const featured = projects.slice(0, 4);
   const heroProject = featured[0];
@@ -3864,6 +4266,11 @@ function HomePage({ projects, query, setQuery, searchState, scanProgress, onSear
           </div>
         </div>
       </section>
+      {/* Directly BELOW the hero, never above it. The hero holds the search box,
+          and this is a token scanner: pushing search under a wall of personal
+          panels would serve the retention loop at the expense of the thing
+          people actually came to do. Renders nothing at all when signed out. */}
+      <RetentionDashboard projects={projects} watchlist={watchlist} navigate={navigate} alertCount={alertCount} />
       <CheckAnyTokenSection onTokenCheck={onTokenCheck} navigate={navigate} />
       <KhanEcosystemStrip navigate={navigate} />
       <section className="content-band">
@@ -11541,9 +11948,15 @@ function Root() {
   return (
     <I18nProvider>
       <AuthProvider>
-        <WalletContextProvider>
-          <App />
-        </WalletContextProvider>
+        {/* Inside AuthProvider: retention is keyed by the signed-in account and
+            reads `user` from it. Outside WalletContextProvider because it has
+            nothing to do with a wallet - a free, wallet-less account has a
+            streak and a notification bell like anyone else. */}
+        <RetentionProvider>
+          <WalletContextProvider>
+            <App />
+          </WalletContextProvider>
+        </RetentionProvider>
       </AuthProvider>
     </I18nProvider>
   );

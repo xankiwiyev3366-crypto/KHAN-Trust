@@ -91,6 +91,13 @@ export const RATE_POLICIES = {
   forgot_ip: { max: 5, windowMs: HOUR },
   forgot_email: { max: 3, windowMs: HOUR },
   reset_ip: { max: 15, windowMs: 15 * MINUTE },
+  // Retention sync is not security-sensitive (it reads and writes only the
+  // caller's own JWT-identified record), so this is a runaway-client guard, not
+  // a brute-force one. The ceiling sits far above any legitimate session - the
+  // client sends at most one per day plus one per context change - and is
+  // per-IP rather than per-user so a shared office NAT is not the unit being
+  // limited. Fails open like every other policy here.
+  retention_sync_ip: { max: 120, windowMs: 5 * MINUTE },
 };
 
 // Convenience wrapper: enforce one named policy for one identifier.

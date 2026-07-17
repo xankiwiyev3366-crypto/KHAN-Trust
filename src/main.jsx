@@ -139,6 +139,8 @@ import LanguageSwitcher from './LanguageSwitcher.jsx';
 import WalletContextProvider from './wallet/WalletContextProvider.jsx';
 import ConnectWalletButton from './ConnectWalletButton.jsx';
 import { useKhanWallet } from './wallet/useKhanWallet.js';
+import { useApprovalScanner } from './approvals/useApprovalScanner.js';
+import { lamportsToSol } from './approvals/solanaLane.js';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { AuthModal } from './auth/AuthModal.jsx';
 // Early Stage Projects - additive, lazy-loaded feature. React.lazy keeps this
@@ -3571,6 +3573,11 @@ function App() {
         {(page === 'watchlist' || page === 'alerts') && pageAuthReady && (
           <WatchlistPage projects={projects} watchlist={watchlist} toggleWatch={toggleWatch} navigate={navigate} />
         )}
+        {/* Not in GATED_PAGES: the scanner is gated by a connected WALLET, not
+            by an account. Requiring sign-in would block the one user who most
+            needs it - someone who suspects their wallet is compromised right
+            now and has no reason to trust us with an email first. */}
+        {page === 'approvals' && <ApprovalsPage projects={projects} />}
         {page.startsWith('report/') && reportProject && (
           <RiskReportPage project={reportProject} navigate={navigate} />
         )}
@@ -3731,6 +3738,7 @@ const SIDEBAR_ITEMS = [
   { id: 'early-stage', labelKey: 'sidebar.earlyStage', icon: Rocket },
   { id: 'watchlist', labelKey: 'sidebar.watchlist', icon: Eye },
   { id: 'alerts', labelKey: 'sidebar.alerts', icon: Bell, badgeFrom: 'alertCount' },
+  { id: 'approvals', labelKey: 'sidebar.approvals', icon: Shield },
   { id: 'compare', labelKey: 'sidebar.comparison', icon: Scale },
   { id: 'top-projects', labelKey: 'sidebar.topProjects', icon: Trophy },
   { id: 'categories', labelKey: 'sidebar.categories', icon: Tags },
@@ -4075,6 +4083,352 @@ function WatchlistPage({ projects, watchlist, toggleWatch, navigate }) {
           </div>
         ))}
       </div>
+    </section>
+  );
+}
+
+// ── Wallet Approval Scanner ───────────────────────────────────────────────────
+//
+// Shows which addresses may move tokens out of the connected wallet, and lets
+// the user take that permission back. All chain knowledge lives in
+// src/approvals/ - this is presentation only, so an EVM lane needs no change
+// here (see src/approvals/index.js).
+//
+// Mainnet explorer, no cluster suffix: unlike the Launchpad (which is devnet by
+// default, hence solanaExplorerUrl's `network` argument), the scanner reads the
+// wallet the user has actually connected, which is mainnet. Reusing the devnet
+// helper here would link every revoke receipt to a cluster it does not exist on.
+function mainnetTxUrl(signature) {
+  return `https://explorer.solana.com/tx/${signature}`;
+}
+
+// A token we already know about gets its ticker; anything else keeps its raw
+// mint. Never invents a symbol - see the note in solanaLane.normalizeAccount.
+function approvalSymbol(approval, t) {
+  return approval.tokenSymbol || approval.tokenName || t('approvals.row.unknownToken');
+}
+
+function formatApprovalAmount(uiAmount, isUnlimited, t) {
+  if (isUnlimited) return t('approvals.row.unlimited');
+  // null means we could not determine decimals, so any number we printed would
+  // be wrong by orders of magnitude. Say so instead.
+  if (uiAmount === null || uiAmount === undefined) return t('approvals.row.unknownAmount');
+  // Zero is printed HERE rather than deferred to formatNumber, which renders any
+  // falsy value as "Not available". That is reasonable for the market data it
+  // was written for, where 0 liquidity really does mean "no reading" - but it is
+  // exactly backwards here. An empty balance is a KNOWN fact, and the specific
+  // fact that makes a dormant approval dormant. Showing it as "unknown" would
+  // invert the meaning of the safest row on the page.
+  if (uiAmount === 0) return '0';
+  return formatNumber(uiAmount);
+}
+
+function ApprovalReasons({ approval }) {
+  const { t } = useTranslation();
+  const symbol = approvalSymbol(approval, t);
+  return (
+    <ul className="approval-reasons">
+      {approval.reasonCodes.map((code) => (
+        <li key={code}>
+          {t(`approvals.reasons.${code}`, {
+            symbol,
+            amount: formatApprovalAmount(approval.approvedUi, approval.isUnlimited, t),
+          })}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ApprovalCard({ approval, onRevoke, busy }) {
+  const { t } = useTranslation();
+  const symbol = approvalSymbol(approval, t);
+  return (
+    <article className={`approval-card risk-${approval.risk}`}>
+      <header className="approval-card-head">
+        <div className="approval-token">
+          <strong>{symbol}</strong>
+          <code className="approval-mint" title={approval.tokenAddress}>{formatWalletAddress(approval.tokenAddress)}</code>
+        </div>
+        <span className={`approval-risk-badge risk-${approval.risk}`}>{t(`approvals.risk.${approval.risk}`)}</span>
+      </header>
+
+      <dl className="approval-facts">
+        <div>
+          <dt>{t('approvals.row.delegate')}</dt>
+          <dd><code title={approval.spender}>{formatWalletAddress(approval.spender)}</code></dd>
+        </div>
+        <div>
+          <dt>{t('approvals.row.approved')}</dt>
+          <dd>{formatApprovalAmount(approval.approvedUi, approval.isUnlimited, t)}</dd>
+        </div>
+        <div>
+          <dt>{t('approvals.row.balance')}</dt>
+          <dd>{formatApprovalAmount(approval.balanceUi, false, t)}</dd>
+        </div>
+        <div>
+          <dt>{t('approvals.row.exposure')}</dt>
+          <dd className={approval.hasLiveExposure ? 'approval-exposed' : ''}>
+            {formatApprovalAmount(approval.exposureUi, false, t)}
+          </dd>
+        </div>
+      </dl>
+
+      <ApprovalReasons approval={approval} />
+
+      <button className="danger-button approval-revoke-btn" type="button" onClick={() => onRevoke(approval)} disabled={busy}>
+        <Shield size={16} /> {t('approvals.row.revoke')}
+      </button>
+    </article>
+  );
+}
+
+// The confirmation dialog and every terminal state of a revoke.
+//
+// Renders only from an explicit user action, and `confirm` is the ONLY phase
+// with a button that signs. The user sees the exact delegate, the exact token,
+// the exact approved amount, the risk level and the real network fee BEFORE that
+// button exists - which is the point of preparing the transaction first (see
+// solanaLane.prepareRevoke).
+function RevokeConfirmModal({ state, onConfirm, onCancel }) {
+  const { t } = useTranslation();
+  const { phase, approval, feeLamports, signature, message } = state;
+  if (phase === 'idle' || !approval) return null;
+
+  const symbol = approvalSymbol(approval, t);
+  const feeSol = lamportsToSol(feeLamports);
+  const feeLabel = feeSol === null ? t('approvals.confirm.feeUnknown') : `~${feeSol.toFixed(6)} SOL`;
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t('approvals.confirm.title')}>
+      <div className="modal-panel revoke-modal">
+        {phase === 'preparing' && (
+          <div className="revoke-state">
+            <RefreshCw size={26} className="spin" />
+            <p>{t('approvals.confirm.preparing')}</p>
+          </div>
+        )}
+
+        {phase === 'confirm' && (
+          <>
+            <h3>{t('approvals.confirm.title')}</h3>
+            <p className="revoke-intro">{t('approvals.confirm.intro')}</p>
+            <dl className="revoke-facts">
+              <div>
+                <dt>{t('approvals.confirm.token')}</dt>
+                <dd>{symbol} <code>{formatWalletAddress(approval.tokenAddress)}</code></dd>
+              </div>
+              <div>
+                <dt>{t('approvals.confirm.delegate')}</dt>
+                <dd><code className="revoke-delegate">{approval.spender}</code></dd>
+              </div>
+              <div>
+                <dt>{t('approvals.confirm.approved')}</dt>
+                <dd>{formatApprovalAmount(approval.approvedUi, approval.isUnlimited, t)} {symbol}</dd>
+              </div>
+              <div>
+                <dt>{t('approvals.confirm.risk')}</dt>
+                <dd><span className={`approval-risk-badge risk-${approval.risk}`}>{t(`approvals.risk.${approval.risk}`)}</span></dd>
+              </div>
+              <div>
+                <dt>{t('approvals.confirm.fee')}</dt>
+                <dd>{feeLabel}<small>{t('approvals.confirm.feeNote')}</small></dd>
+              </div>
+            </dl>
+            <p className="revoke-wallet-note"><Lock size={14} /> {t('approvals.confirm.walletNote')}</p>
+            <div className="revoke-actions">
+              <button className="ghost-button" type="button" onClick={onCancel}>{t('approvals.confirm.cancel')}</button>
+              <button className="danger-button" type="button" onClick={onConfirm}>{t('approvals.confirm.confirm')}</button>
+            </div>
+          </>
+        )}
+
+        {phase === 'signing' && (
+          <div className="revoke-state">
+            <RefreshCw size={26} className="spin" />
+            <h3>{t('approvals.confirm.signingTitle')}</h3>
+            <p>{t('approvals.confirm.signingText')}</p>
+          </div>
+        )}
+
+        {phase === 'success' && (
+          <div className="revoke-state">
+            <CheckCircle2 size={30} className="revoke-icon-success" />
+            <h3>{t('approvals.confirm.successTitle')}</h3>
+            <p>{t('approvals.confirm.successText', { symbol })}</p>
+            {signature && (
+              <a className="ghost-button" href={mainnetTxUrl(signature)} target="_blank" rel="noreferrer noopener">
+                <ExternalLink size={14} /> {t('approvals.confirm.viewTx')}
+              </a>
+            )}
+            <button className="primary-button" type="button" onClick={onCancel}>{t('approvals.confirm.done')}</button>
+          </div>
+        )}
+
+        {/* Declining in the wallet is a legitimate answer, not a failure - it is
+            deliberately not styled as an error. */}
+        {phase === 'rejected' && (
+          <div className="revoke-state">
+            <Info size={28} />
+            <h3>{t('approvals.confirm.rejectedTitle')}</h3>
+            <p>{t('approvals.confirm.rejectedText')}</p>
+            <div className="revoke-actions">
+              <button className="ghost-button" type="button" onClick={onCancel}>{t('approvals.confirm.close')}</button>
+              <button className="primary-button" type="button" onClick={onConfirm}>{t('approvals.confirm.tryAgain')}</button>
+            </div>
+          </div>
+        )}
+
+        {phase === 'error' && (
+          <div className="revoke-state">
+            <AlertTriangle size={28} className="revoke-icon-error" />
+            <h3>{t(state.prepared ? 'approvals.confirm.errorTitle' : 'approvals.confirm.prepareFailedTitle')}</h3>
+            <p>{t(state.prepared ? 'approvals.confirm.errorText' : 'approvals.confirm.prepareFailedText', { message: message || '' })}</p>
+            <button className="ghost-button" type="button" onClick={onCancel}>{t('approvals.confirm.close')}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ApprovalsPage({ projects }) {
+  const { t } = useTranslation();
+  const { connected, publicKey, connection, sendTransaction } = useKhanWallet();
+
+  // Mint -> an already-scanned project, so a token the platform genuinely knows
+  // shows its name instead of a raw address. Built from data the app already
+  // holds; costs no extra network call, and an unknown mint stays unknown.
+  const tokenLookup = useMemo(() => {
+    const map = {};
+    for (const project of projects) {
+      if (project.contract) map[project.contract] = project;
+    }
+    return map;
+  }, [projects]);
+
+  const scanner = useApprovalScanner({
+    chain: 'solana',
+    connection,
+    publicKey,
+    sendTransaction,
+    tokenLookup,
+  });
+
+  const revoking = scanner.revoke.phase !== 'idle';
+
+  return (
+    <section className="page-section approvals-page">
+      <SectionTitle icon={Shield} eyebrow={t('approvals.eyebrow')} title={t('approvals.title')} />
+      <p className="approvals-subtitle">{t('approvals.subtitle')}</p>
+
+      <details className="approvals-explainer">
+        <summary>{t('approvals.explainerTitle')}</summary>
+        <p>{t('approvals.explainerText')}</p>
+      </details>
+
+      {!scanner.supported && (
+        <KhanAiEmptyState title={t('approvals.unsupportedTitle')} text={t('approvals.unsupportedText')} />
+      )}
+
+      {scanner.supported && !connected && (
+        <div className="approvals-connect">
+          <KhanAiEmptyState title={t('approvals.connectTitle')} text={t('approvals.connectText')} />
+          <ConnectWalletButton variant="desktop" />
+        </div>
+      )}
+
+      {scanner.supported && connected && (
+        <>
+          {scanner.scanState === 'scanning' && (
+            <div className="approvals-loading">
+              <RefreshCw size={22} className="spin" /> <span>{t('approvals.scanning')}</span>
+            </div>
+          )}
+
+          {/* A failed scan is never rendered as a clean wallet. */}
+          {scanner.scanState === 'error' && (
+            <div className="approvals-error">
+              <AlertTriangle size={20} />
+              <div>
+                <strong>{t('approvals.errorTitle')}</strong>
+                <p>{t('approvals.errorText')}</p>
+                {scanner.scanError && <code className="approvals-error-detail">{scanner.scanError}</code>}
+              </div>
+              <button className="secondary-button" type="button" onClick={() => scanner.rescan()}>
+                {t('approvals.retry')}
+              </button>
+            </div>
+          )}
+
+          {scanner.scanState === 'ready' && !scanner.approvals.length && (
+            <>
+              <KhanAiEmptyState title={t('approvals.cleanTitle')} text={t('approvals.cleanText')} />
+              <div className="approvals-toolbar">
+                <button className="secondary-button" type="button" onClick={() => scanner.rescan()}>
+                  <RefreshCw size={15} /> {t('approvals.rescan')}
+                </button>
+              </div>
+            </>
+          )}
+
+          {scanner.scanState === 'ready' && scanner.approvals.length > 0 && (
+            <>
+              <div className="approvals-summary">
+                <div className="approvals-summary-item">
+                  <span>{t('approvals.summaryTotal')}</span>
+                  <strong>{scanner.summary.total}</strong>
+                </div>
+                <div className="approvals-summary-item risk-high">
+                  <span>{t('approvals.summaryHigh')}</span>
+                  <strong>{scanner.summary.high}</strong>
+                </div>
+                <div className="approvals-summary-item risk-medium">
+                  <span>{t('approvals.summaryMedium')}</span>
+                  <strong>{scanner.summary.medium}</strong>
+                </div>
+                <div className="approvals-summary-item risk-low">
+                  <span>{t('approvals.summaryLow')}</span>
+                  <strong>{scanner.summary.low}</strong>
+                </div>
+                <div className="approvals-summary-item">
+                  <span>{t('approvals.summaryLive')}</span>
+                  <strong>{scanner.summary.liveExposureCount}</strong>
+                </div>
+              </div>
+
+              <div className="approvals-toolbar">
+                <button className="secondary-button" type="button" onClick={() => scanner.rescan()} disabled={revoking}>
+                  <RefreshCw size={15} /> {t('approvals.rescan')}
+                </button>
+              </div>
+
+              <div className="approvals-grid">
+                {scanner.approvals.map((approval) => (
+                  <ApprovalCard
+                    key={approval.id}
+                    approval={approval}
+                    onRevoke={scanner.requestRevoke}
+                    busy={revoking}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* Outside the `connected` gate on purpose. This is the promise that KHAN
+          Trust never asks for a seed phrase and can never move funds - the
+          reassurance a cautious user needs BEFORE deciding to connect a wallet
+          to a page that talks about revoking permissions, not after. */}
+      {scanner.supported && <p className="approvals-disclaimer"><Lock size={13} /> {t('approvals.disclaimer')}</p>}
+
+      <RevokeConfirmModal
+        state={scanner.revoke}
+        onConfirm={scanner.confirmRevoke}
+        onCancel={scanner.cancelRevoke}
+      />
     </section>
   );
 }

@@ -8947,3 +8947,309 @@ main {
   .khan-living-metal::after { opacity: 0; }
   .khan-bg-packet { opacity: 0; }
 }
+
+/* ── Wallet Approval Scanner ───────────────────────────────────────────────── */
+
+.approvals-subtitle {
+  color: var(--muted);
+  max-width: 62ch;
+  margin: -4px 0 18px;
+  line-height: 1.55;
+}
+
+.approvals-explainer {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 20px;
+}
+
+.approvals-explainer summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--gold);
+}
+
+.approvals-explainer p {
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 10px 0 2px;
+}
+
+.approvals-connect {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.approvals-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 16px;
+  color: var(--muted);
+}
+
+/* A failed scan must never look like a clean wallet, so it gets the danger
+   treatment rather than a quiet empty state. */
+.approvals-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: rgba(255, 117, 110, 0.08);
+  border: 1px solid rgba(255, 117, 110, 0.35);
+  border-radius: var(--radius);
+  padding: 16px;
+  color: var(--text);
+}
+
+.approvals-error > svg { color: var(--danger); flex-shrink: 0; margin-top: 2px; }
+.approvals-error > div { flex: 1 1 240px; min-width: 0; }
+.approvals-error p { color: var(--muted); margin: 4px 0 0; line-height: 1.5; }
+
+.approvals-error-detail {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  word-break: break-word;
+}
+
+.approvals-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.approvals-summary-item {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.approvals-summary-item span { color: var(--muted); font-size: 0.78rem; }
+.approvals-summary-item strong { font-size: 1.5rem; line-height: 1; }
+.approvals-summary-item.risk-high { border-color: rgba(255, 117, 110, 0.4); }
+.approvals-summary-item.risk-high strong { color: var(--danger); }
+.approvals-summary-item.risk-medium { border-color: rgba(247, 190, 82, 0.4); }
+.approvals-summary-item.risk-medium strong { color: var(--warning); }
+.approvals-summary-item.risk-low strong { color: var(--success); }
+
+.approvals-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 14px;
+}
+
+.approvals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.approval-card {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.approval-card.risk-high { border-left-color: var(--danger); }
+.approval-card.risk-medium { border-left-color: var(--warning); }
+.approval-card.risk-low { border-left-color: var(--success); }
+
+.approval-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.approval-token { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.approval-token strong { font-size: 1.05rem; }
+.approval-mint { color: var(--muted); font-size: 0.76rem; }
+
+.approval-risk-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.approval-risk-badge.risk-high { background: rgba(255, 117, 110, 0.16); color: var(--danger); }
+.approval-risk-badge.risk-medium { background: rgba(247, 190, 82, 0.16); color: var(--warning); }
+.approval-risk-badge.risk-low { background: rgba(103, 211, 156, 0.14); color: var(--success); }
+
+.approval-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 0;
+}
+
+.approval-facts > div { min-width: 0; }
+.approval-facts dt { color: var(--muted); font-size: 0.72rem; margin-bottom: 2px; }
+.approval-facts dd { margin: 0; font-size: 0.9rem; word-break: break-word; }
+.approval-facts code { font-size: 0.8rem; }
+.approval-exposed { color: var(--danger); font-weight: 600; }
+
+.approval-reasons {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.approval-reasons li {
+  color: var(--muted);
+  font-size: 0.83rem;
+  line-height: 1.45;
+  padding-left: 14px;
+  position: relative;
+}
+
+.approval-reasons li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gold-soft);
+}
+
+.approval-revoke-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: auto;
+}
+
+.approvals-disclaimer {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.approvals-disclaimer svg { flex-shrink: 0; margin-top: 2px; }
+
+/* ── Revoke confirmation modal ─────────────────────────────────────────────── */
+
+.revoke-modal {
+  max-width: 480px;
+  width: 100%;
+  padding: 22px;
+}
+
+.revoke-modal h3 { margin: 0 0 8px; font-size: 1.15rem; }
+.revoke-intro { color: var(--muted); line-height: 1.55; margin: 0 0 16px; }
+
+.revoke-facts { display: flex; flex-direction: column; gap: 11px; margin: 0 0 16px; }
+
+.revoke-facts > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.revoke-facts dt { color: var(--muted); font-size: 0.82rem; flex-shrink: 0; }
+.revoke-facts dd { margin: 0; text-align: right; font-size: 0.9rem; min-width: 0; }
+.revoke-facts dd small { display: block; color: var(--muted); font-size: 0.72rem; margin-top: 2px; }
+
+/* The delegate address is the single most important fact in this dialog - the
+   user is being asked to confirm WHO loses access. It is shown in full, never
+   truncated, and is allowed to wrap. */
+.revoke-delegate {
+  font-size: 0.76rem;
+  word-break: break-all;
+  text-align: right;
+  display: inline-block;
+}
+
+.revoke-wallet-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 0.79rem;
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+
+.revoke-wallet-note svg { flex-shrink: 0; margin-top: 2px; }
+
+.revoke-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.revoke-actions button { flex: 1 1 auto; min-width: 120px; }
+
+.revoke-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 12px;
+  padding: 14px 4px;
+}
+
+.revoke-state p { color: var(--muted); line-height: 1.55; margin: 0; max-width: 42ch; }
+.revoke-state .revoke-actions { width: 100%; margin-top: 6px; }
+.revoke-icon-success { color: var(--success); }
+.revoke-icon-error { color: var(--danger); }
+
+.spin { animation: khanAiSpin 1s linear infinite; }
+
+@media (max-width: 720px) {
+  .approvals-grid { grid-template-columns: 1fr; }
+  .approvals-summary { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
+  .approvals-summary-item strong { font-size: 1.25rem; }
+  .approvals-toolbar { justify-content: stretch; }
+  .approvals-toolbar button { width: 100%; }
+  .revoke-modal { padding: 18px; }
+  /* Stack label above value: side-by-side rows squeeze a full Solana address
+     into a few characters per line on a narrow screen. */
+  .revoke-facts > div { flex-direction: column; align-items: flex-start; gap: 3px; }
+  .revoke-facts dd { text-align: left; }
+  .revoke-delegate { text-align: left; }
+  .revoke-actions button { width: 100%; flex: 1 1 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
+}

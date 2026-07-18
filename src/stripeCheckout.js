@@ -19,12 +19,28 @@ const AUTH_TOKEN_KEY = 'khan-trust-auth-token-v1';
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 
-export function isStripeConfigured() {
-  return Boolean(PUBLISHABLE_KEY);
+// CARD PAYMENTS ARE BEHIND A DELIBERATE FEATURE FLAG.
+//
+// The platform has no active Stripe account yet, so card payments must not be
+// shown at all — no buttons, no "not configured" notices, nothing half-built.
+// The Stripe code stays in the tree (client wrapper here, server functions in
+// netlify/functions/create-stripe-checkout-session.mjs + stripe-webhook.mjs) so
+// that turning it on later is purely a configuration step: add the keys, set
+// VITE_STRIPE_ENABLED=true, create the Products/Prices, point the webhook — no
+// code to rewrite.
+//
+// The flag is AND-ed with the publishable key so a stray `true` with no key can
+// never surface a broken card UI. Every card entry point in the app gates on
+// isCardPaymentEnabled(); when it returns false the UI simply offers Wallet and
+// Manual Crypto and routes upgrade CTAs to the pricing page instead.
+const STRIPE_ENABLED = import.meta.env.VITE_STRIPE_ENABLED === 'true';
+
+export function isCardPaymentEnabled() {
+  return STRIPE_ENABLED && Boolean(PUBLISHABLE_KEY);
 }
 
 export function stripeUnavailableMessage() {
-  return 'Card payments are not configured yet';
+  return 'Card payments are not available right now';
 }
 
 function authToken() {
@@ -32,8 +48,8 @@ function authToken() {
 }
 
 export async function startStripeCheckout(plan = 'premium', wallet = '') {
-  if (!isStripeConfigured()) {
-    return { ok: false, reason: 'missing_config', message: stripeUnavailableMessage() };
+  if (!isCardPaymentEnabled()) {
+    return { ok: false, reason: 'card_disabled', message: stripeUnavailableMessage() };
   }
 
   // The account is the subject of the purchase, so the session cannot be

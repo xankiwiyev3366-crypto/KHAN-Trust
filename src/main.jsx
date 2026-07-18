@@ -174,7 +174,7 @@ import {
   trackCryptoVerifySuccess,
   trackCryptoVerifyFailed,
 } from './analytics.js';
-import { isStripeConfigured, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
+import { isCardPaymentEnabled, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
 import { planUsdAmount } from './lib/pricing.js';
@@ -3053,6 +3053,25 @@ async function handleDownloadPdf(project) {
   }
 }
 
+// The ONE entry point every "Unlock Premium" / plan CTA calls. It hides the
+// card/Stripe split from every caller:
+//   - card ENABLED  -> the Stripe checkout funnel (handleCheckout), exactly as before;
+//   - card DISABLED -> there is no card option to offer, so instead of surfacing
+//                      a "not configured" error it routes the user to the pricing
+//                      page, where the working Wallet and Manual Crypto methods
+//                      live. Returns { ok:true } so no caller shows an error.
+// `navigate` is required so the disabled path can move the user; every call site
+// already has it in scope.
+async function startPremiumUpgrade({ navigate, project, plan = 'premium', wallet }) {
+  if (!isCardPaymentEnabled()) {
+    navigate('pricing');
+    return { ok: true, routed: 'pricing' };
+  }
+  return plan === 'early_supporter'
+    ? handleEarlySupporterClick(wallet)
+    : handleUnlockPremiumClick(project, wallet);
+}
+
 function handleUnlockPremiumClick(project, wallet) {
   trackPremiumClick();
   growth.premiumClick();
@@ -3067,12 +3086,12 @@ function handleEarlySupporterClick(wallet) {
 async function handleCheckout(plan, wallet) {
   // Every abandoned path below is recorded with its REASON, not just its
   // existence. A checkout that dies on 'sign_in_required' is a product
-  // bottleneck the operator can fix; one that dies on 'missing_config' is an
-  // outage losing revenue silently. Both look like "no conversion" in Google
+  // bottleneck the operator can fix; one that dies on 'card_disabled' means the
+  // card rail is intentionally off. Both look like "no conversion" in Google
   // Analytics, which is why they are recorded first-party here.
-  if (!isStripeConfigured(plan)) {
-    trackCheckoutUnavailable(plan, 'missing_config');
-    growth.checkoutFailed(plan, 'missing_config');
+  if (!isCardPaymentEnabled()) {
+    trackCheckoutUnavailable(plan, 'card_disabled');
+    growth.checkoutFailed(plan, 'card_disabled');
     return { ok: false, message: stripeUnavailableMessage() };
   }
 
@@ -5616,7 +5635,7 @@ function PremiumLockedSection({ project, navigate }) {
   const [paymentMessage, setPaymentMessage] = useState('');
   const { hasPremium, isEarlySupporter: isEarly, wallet } = usePremiumEntitlement();
   const unlockPremium = async () => {
-    const result = await handleUnlockPremiumClick(project, wallet);
+    const result = await startPremiumUpgrade({ navigate, project, wallet });
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
   };
 
@@ -5658,7 +5677,7 @@ function OneTimeUnlockCard({ project, navigate }) {
   const [paymentMessage, setPaymentMessage] = useState('');
   const { hasPremium, isEarlySupporter: isEarly, wallet } = usePremiumEntitlement();
   const unlockPremium = async () => {
-    const result = await handleUnlockPremiumClick(project, wallet);
+    const result = await startPremiumUpgrade({ navigate, project, wallet });
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
   };
 
@@ -5727,6 +5746,13 @@ function PricingPage({ navigate }) {
   const [paymentMessage, setPaymentMessage] = useState('');
   const { entitlement, hasPremium, isEarlySupporter: isEarly, wallet, refresh } = usePremiumEntitlement();
   const beginCheckout = async (plan, walletOverride) => {
+    // With card payments off, the plan cards can't start a Stripe session — the
+    // working methods (Wallet / Manual Crypto) are already on this same page, so
+    // the CTA just brings them into view instead of erroring.
+    if (!isCardPaymentEnabled()) {
+      document.getElementById('payment-methods')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
     const checkoutWallet = walletOverride || wallet;
     const result = plan === 'early_supporter' ? await handleEarlySupporterClick(checkoutWallet) : await handleUnlockPremiumClick(undefined, checkoutWallet);
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
@@ -5788,10 +5814,14 @@ function PricingPage({ navigate }) {
 }
 
 function PaymentMethodsSection({ beginCheckout, onEntitlementChange }) {
+  // Card is rendered ONLY when Stripe is enabled. Until then users see just the
+  // two working rails — Wallet Connect and Manual Crypto — with no disabled
+  // buttons and no "not configured" notice. The `id` is the scroll anchor the
+  // plan-card CTAs jump to when card checkout is off.
   return (
-    <section className="payment-methods">
+    <section className="payment-methods" id="payment-methods">
       <WalletPaymentSection onEntitlementChange={onEntitlementChange} />
-      <CardPaymentSection beginCheckout={beginCheckout} />
+      {isCardPaymentEnabled() && <CardPaymentSection beginCheckout={beginCheckout} />}
       <CryptoPaymentSection onEntitlementChange={onEntitlementChange} />
     </section>
   );
@@ -5984,32 +6014,28 @@ function WalletPaymentSection({ onEntitlementChange }) {
   );
 }
 
-// Card checkout. A wallet is NOT required here and the buttons are never
-// disabled for the want of one — that gate was the single most expensive line in
-// the product: it disabled the buy button until the most wallet-anxious user on
-// the internet connected a wallet, in order to buy protection from wallet risk.
+// Card checkout. Rendered ONLY when card payments are enabled (see
+// PaymentMethodsSection / isCardPaymentEnabled), so there is no "not configured"
+// state to handle here — if this component is on screen, Stripe is live.
 //
-// The buyer's identity is their account, so the only prerequisite is being
-// signed in, and even that does not disable the button: the user is told what is
-// needed and the reason is recorded as a first-party abandonment reason. The
+// A wallet is NOT required. The buyer's identity is their account, so the only
+// prerequisite is being signed in; the user is told when they need to, and the
 // connected address is still passed to beginCheckout as optional metadata.
 function CardPaymentSection({ beginCheckout }) {
   const { t } = useTranslation();
   const { address } = useKhanWallet();
   const { user } = useAuth();
-  const cardReady = isStripeConfigured();
   return (
     <div className="payment-method-card">
       <span className="status-badge">{t('pricing.payment.cardBadge')}</span>
       <h3>{t('pricing.payment.cardTitle')}</h3>
       <p>{t('pricing.payment.cardDescription')}</p>
-      {!cardReady && <p className="inline-note">{t('pricing.payment.cardNotConfigured')}</p>}
-      {cardReady && !user && <p className="inline-note">{t('pricing.payment.signInFirst')}</p>}
+      {!user && <p className="inline-note">{t('pricing.payment.signInFirst')}</p>}
       <div className="payment-action-row">
-        <button className="primary-button" type="button" disabled={!cardReady} onClick={() => beginCheckout('premium', address)}>
+        <button className="primary-button" type="button" onClick={() => beginCheckout('premium', address)}>
           {t('premium.unlockPremium')}
         </button>
-        <button className="secondary-button" type="button" disabled={!cardReady} onClick={() => beginCheckout('early_supporter', address)}>
+        <button className="secondary-button" type="button" onClick={() => beginCheckout('early_supporter', address)}>
           {t('pricing.plans.earlySupporter').cta}
         </button>
       </div>
@@ -6298,7 +6324,7 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
   const { address: profileWallet } = useKhanWallet();
   const canEdit = canEditProject(project, profileWallet);
   const unlockPremium = async () => {
-    const result = await handleUnlockPremiumClick(project, profileWallet);
+    const result = await startPremiumUpgrade({ navigate, project, wallet: profileWallet });
     if (!result?.ok) alert(result?.message || stripeUnavailableMessage());
   };
   const [reportModalOpen, setReportModalOpen] = useState(false);
@@ -7511,7 +7537,7 @@ function LaunchpadUpgradeScreen({ navigate }) {
   const [paymentMessage, setPaymentMessage] = useState('');
   const { wallet } = usePremiumEntitlement();
   const unlockPremium = async () => {
-    const result = await handleUnlockPremiumClick(undefined, wallet);
+    const result = await startPremiumUpgrade({ navigate, wallet });
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
   };
 
@@ -8193,7 +8219,7 @@ function VerificationRequestModal({ project, onClose, onSubmitted }) {
 // and writes the manual-premium store (see netlify/functions/_premiumStore.mjs)
 // and never touches wallet entitlements, Stripe, or payment records. Reuses the
 // same shared admin token as every other admin page.
-const PREMIUM_PLAN_LABELS = { free: 'Free', premium: 'Premium', early_supporter: 'Early Supporter' };
+const PREMIUM_PLAN_LABELS = { free: 'Free', premium: 'Premium', early_supporter: 'KHAN Founding Member' };
 const PREMIUM_SOURCE_OPTIONS = ['manual', 'payment', 'giveaway', 'promotion', 'early_supporter'];
 const PREMIUM_DURATION_OPTIONS = ['lifetime', 'none', '7d', '30d', '90d', 'custom'];
 const PREMIUM_REASON_OPTIONS = ['giveaway_winner', 'early_supporter', 'investor', 'partner', 'moderator', 'testing', 'promotion', 'other'];

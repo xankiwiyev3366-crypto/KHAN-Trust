@@ -521,8 +521,8 @@ export default {
     // Each item is [title, description, status]. 'active' tools are real and
     // unlocked immediately; 'comingSoon' items are not built yet and are
     // shown only as a transparent roadmap note, never claimed as included.
-    // The Early Supporter Badge and Lifetime Recognition are exclusive to
-    // the Early Supporter plan (see earlySupporter.items below) - they must
+    // The KHAN Founding Member Badge and Lifetime Recognition are exclusive to
+    // the KHAN Founding Member plan (see earlySupporter.items below) - they must
     // never appear in this list.
     items: [
       ['Saved Reports', 'Save any scan report to your connected wallet and come back to it later, from any device.', 'active'],
@@ -541,23 +541,23 @@ export default {
     },
   },
   earlySupporter: {
-    eyebrow: 'Early Supporter',
-    badgeLabel: 'Early Supporter',
+    eyebrow: 'KHAN Founding Member',
+    badgeLabel: 'KHAN Founding Member',
     badgeTooltip: 'This wallet backed KHAN Trust early - thank you.',
-    activeTitle: 'Early Supporter Active',
+    activeTitle: 'KHAN Founding Member Active',
     activeNote: 'Thank you for backing KHAN Trust early. Your supporter status is permanently linked to this wallet, alongside the Premium tools below.',
-    // Early Supporter Badge and Lifetime Recognition are exclusive to this
+    // KHAN Founding Member Badge and Lifetime Recognition are exclusive to this
     // $99 one-time plan - they must never be listed under premium.items.
     items: [
-      ['Early Supporter Badge', 'A permanent badge shown next to your wallet across the site.', 'active'],
+      ['KHAN Founding Member Badge', 'A permanent badge shown next to your wallet across the site.', 'active'],
       ['Lifetime Recognition', 'One-time payment, recognition that never expires - tied to your wallet for good.', 'active'],
       ['Premium Tools Included', 'Saved Reports, Synced Watchlist, and Launchpad token creation - the same tools $9/month Premium unlocks.', 'active'],
     ],
     unlockedMessageTitle: 'Here is what you just unlocked',
-    noInvestmentReminder: 'Early Supporter is a one-time recognition payment, not an investment. It does not represent a KHAN token allocation, equity, or any promise of profit or future returns.',
+    noInvestmentReminder: 'KHAN Founding Member is a one-time recognition payment, not an investment. It does not represent a KHAN token allocation, equity, or any promise of profit or future returns.',
   },
   premiumResearchCommon: {
-    upgradeText: 'This is a Premium research tool. Upgrade to Premium or Early Supporter to unlock the full deep analysis.',
+    upgradeText: 'This is a Premium research tool. Upgrade to Premium or KHAN Founding Member to unlock the full deep analysis.',
   },
   missingDataLabels: {
     marketCap: 'Market Cap',
@@ -647,19 +647,19 @@ export default {
     premiumStatus: 'Premium Status',
     premiumSource: 'Premium Source',
     expiration: 'Expiration',
-    plans: { free: 'Free', premium: 'Premium', early_supporter: 'Early Supporter' },
-    freeNote: 'You are on the Free plan. Upgrade to Premium or Early Supporter to unlock Premium tools.',
+    plans: { free: 'Free', premium: 'Premium', early_supporter: 'KHAN Founding Member' },
+    freeNote: 'You are on the Free plan. Upgrade to Premium or KHAN Founding Member to unlock Premium tools.',
     lifetimePremium: 'Lifetime Premium',
     noExpiration: 'No Expiration',
     lifetimeMember: 'Lifetime Member',
-    earlySupporterRecognition: 'Early Supporter',
+    earlySupporterRecognition: 'KHAN Founding Member',
     status: { active: 'Active', expired: 'Expired', lifetime: 'Lifetime' },
     sources: {
       payment: 'Payment',
       manual: 'Manual',
       giveaway: 'Giveaway',
       promotion: 'Promotion',
-      early_supporter: 'Early Supporter',
+      early_supporter: 'KHAN Founding Member',
       partner: 'Partner',
       investor: 'Investor',
     },
@@ -668,10 +668,10 @@ export default {
   pricing: {
     eyebrow: 'Pricing',
     title: 'Plans for KHAN Trust',
-    intro: 'Trust Score, risk analysis, holder insights, and PDF export are free for everyone, with no account needed. Premium and Early Supporter add wallet-linked tools on top - they do not gate anything shown above.',
+    intro: 'Trust Score, risk analysis, holder insights, and PDF export are free for everyone, with no account needed. Premium and KHAN Founding Member add wallet-linked tools on top - they do not gate anything shown above.',
     noInvestmentNote: 'KHAN Trust does not promise profit, returns, or investment outcomes. No investment claims.',
-    launchpadNote: 'KHAN Launchpad token creation is included with Premium and Early Supporter - no separate per-token fee. Mainnet minting still costs real SOL network fees, paid directly by your wallet.',
-    footerNote: 'Premium and Early Supporter features are optional and unlock platform tools only. KHAN Trust does not promise profit, returns, or investment outcomes.',
+    launchpadNote: 'KHAN Launchpad token creation is included with Premium and KHAN Founding Member - no separate per-token fee. Mainnet minting still costs real SOL network fees, paid directly by your wallet.',
+    footerNote: 'Premium and KHAN Founding Member features are optional and unlock platform tools only. KHAN Trust does not promise profit, returns, or investment outcomes.',
     plans: {
       free: {
         name: 'Free',
@@ -688,16 +688,16 @@ export default {
         cta: 'Unlock Premium',
       },
       earlySupporter: {
-        name: 'Early Supporter',
+        name: 'KHAN Founding Member',
         price: '$99 one-time or 99 USDT one-time',
         description: 'One-time recognition as an early KHAN Trust supporter, plus every Premium tool, for life.',
-        features: ['Exclusive Early Supporter badge (lifetime)', 'Lifetime recognition', 'All Premium features included, for life', 'No expiry, no recurring payment', 'Not an investment - no profit claims'],
-        cta: 'Become Early Supporter',
+        features: ['Exclusive KHAN Founding Member badge (lifetime)', 'Lifetime recognition', 'All Premium features included, for life', 'No expiry, no recurring payment', 'Not an investment - no profit claims'],
+        cta: 'Become KHAN Founding Member',
       },
     },
     comparison: {
       title: 'Compare plans',
-      columns: ['Feature', 'Free', 'Premium', 'Early Supporter'],
+      columns: ['Feature', 'Free', 'Premium', 'KHAN Founding Member'],
       rows: [
         ['Trust Score & Risk Level', true, true, true],
         ['Full risk factor breakdown', true, true, true],
@@ -707,7 +707,7 @@ export default {
         ['Synced Watchlist', false, true, true],
         ['Token Creation (Launchpad)', false, true, true],
         ['Premium Badge', false, true, true],
-        ['Exclusive Early Supporter Badge (lifetime)', false, false, true],
+        ['Exclusive KHAN Founding Member Badge (lifetime)', false, false, true],
         ['Lifetime Recognition', false, false, true],
         ['Billing', 'Free', 'Monthly', 'One-time'],
       ],
@@ -728,20 +728,20 @@ export default {
       backupLabel: 'Backup method: use this if you already sent a payment manually and need to verify the transaction hash.',
       cardBadge: 'Card payment via Stripe',
       cardTitle: 'Card payments',
-      cardDescription: 'Use Stripe Checkout for Premium or Early Supporter access. Payments unlock platform features only.',
+      cardDescription: 'Use Stripe Checkout for Premium or KHAN Founding Member access. Payments unlock platform features only.',
       cardNotConfigured: 'Card payments are not configured yet',
       signInFirst: 'Sign in to continue to checkout.',
       cryptoBadge: 'Manual crypto payment (backup)',
       cryptoTitle: 'Manual crypto payment',
       cryptoDescription: 'Supported networks: Solana / USDC / SOL. Automatic on-chain verification of your transaction hash.',
       premiumPrice: 'Premium: 9 USDT/month',
-      earlySupporterPrice: 'Early Supporter: 99 USDT one-time',
+      earlySupporterPrice: 'KHAN Founding Member: 99 USDT one-time',
       walletLabel: 'Payment wallet',
       copyWallet: 'Copy wallet address',
       cryptoNotConfigured: 'Crypto payments are not configured yet',
       planLabel: 'Plan',
       planPremiumOption: 'Premium - 9 USDT/month',
-      planEarlySupporterOption: 'Early Supporter - 99 USDT one-time',
+      planEarlySupporterOption: 'KHAN Founding Member - 99 USDT one-time',
       transactionHashLabel: 'Transaction hash',
       transactionHashPlaceholder: 'Paste transaction hash after payment',
       verifyPayment: 'Verify payment',
@@ -1853,13 +1853,13 @@ export default {
     auditTitle: 'Audit Log',
     auditEmptyTitle: 'No audit history yet',
     auditEmptyText: 'Manual premium actions will appear here.',
-    plans: { free: 'Free', premium: 'Premium', early_supporter: 'Early Supporter' },
+    plans: { free: 'Free', premium: 'Premium', early_supporter: 'KHAN Founding Member' },
     sources: {
       manual: 'Manual',
       payment: 'Payment',
       giveaway: 'Giveaway',
       promotion: 'Promotion',
-      early_supporter: 'Early Supporter',
+      early_supporter: 'KHAN Founding Member',
     },
     durations: {
       lifetime: 'Lifetime',
@@ -1944,7 +1944,7 @@ export default {
     },
     reasons: {
       giveaway_winner: 'Giveaway Winner',
-      early_supporter: 'Early Supporter',
+      early_supporter: 'KHAN Founding Member',
       investor: 'Investor',
       partner: 'Partner',
       moderator: 'Moderator',

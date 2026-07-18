@@ -29,7 +29,7 @@ export async function handler(event) {
 
     const access = await resolveVerifiedPremiumAccess(event);
     if (!access.entitled) {
-      return jsonResponse(403, { message: 'This account does not have an active Premium or Early Supporter entitlement.' });
+      return jsonResponse(403, { message: 'This account does not have an active Premium or KHAN Founding Member entitlement.' });
     }
 
     const data = await getUserData(access.storageKey);

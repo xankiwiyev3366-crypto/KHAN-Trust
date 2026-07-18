@@ -2366,6 +2366,30 @@ main {
   line-height: 1.5;
 }
 
+/* Chart recovery row: reload / live fallback / open externally. Kept compact
+   and unobtrusive so it reads as a helper under a working chart, but is the
+   guaranteed escape when a Dexscreener embed is stuck on "Loading pair...". */
+.market-chart-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 14px;
+  margin: -6px 0 16px;
+}
+
+.market-chart-recovery .inline-note {
+  margin: 0;
+}
+
+.market-chart-recovery .ghost-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
 .market-metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

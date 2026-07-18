@@ -1296,35 +1296,65 @@ async function lookupSolanaTokenUncached(address, report) {
 // notion of "the official token" and ranks purely by pool stats. Used as
 // the fallback layer beneath CoinGecko's canonical resolution, never as
 // the primary source of truth for which contract is the real asset.
+// Ranks two DEX search matches by SCAM-RESISTANT strength. marketCap/FDV are
+// self-reported per pool and trivially spoofed - an impersonator that shares a
+// real token's symbol (e.g. "PYTH") reports a fake multi-billion cap on a single
+// dead pool to jump to the top of a symbol search. Real 24h trading volume,
+// aggregate on-chain liquidity, and how many independent pools a token actually
+// trades in are far harder to fake, so ranking on those surfaces the real,
+// actively-traded mint instead of the impersonator. marketCap is kept for
+// DISPLAY only, never used to rank.
+function compareDexMatchStrength(a, b) {
+  const volumeDiff = Number(b?.volume24h || 0) - Number(a?.volume24h || 0);
+  if (volumeDiff !== 0) return volumeDiff;
+  const liquidityDiff = Number(b?.liquidityUsd || 0) - Number(a?.liquidityUsd || 0);
+  if (liquidityDiff !== 0) return liquidityDiff;
+  return Number(b?.pairCount || 0) - Number(a?.pairCount || 0);
+}
+
 async function fetchDexscreenerSearchMatches(term) {
   const response = await fetch(`${DEXSCREENER_SEARCH_URL}?q=${encodeURIComponent(term)}`);
   if (!response.ok) throw new Error('Token search failed.');
   const data = await response.json();
   const pairs = Array.isArray(data?.pairs) ? data.pairs : [];
+  // Aggregate ACROSS every pool per distinct (chain, base-token address) so the
+  // strength signals below reflect the whole token, not a single cherry-picked
+  // (or spoofed) pool. This is what stops a symbol collision from resolving to
+  // an impersonator: the real token trades in many pools with real volume; the
+  // fake one is a lone pool with a fabricated cap and ~zero volume.
   const byKey = new Map();
   pairs.forEach((pair) => {
     const address = pair.baseToken?.address;
     const chainId = pair.chainId;
     if (!address || !chainId) return;
     const key = `${chainId}-${address.toLowerCase()}`;
-    const marketCap = Number(pair.marketCap || pair.fdv || 0);
-    const existing = byKey.get(key);
-    if (existing && existing.marketCap >= marketCap) return;
-    byKey.set(key, {
+    const entry = byKey.get(key) || {
       address,
       chainId,
       chain: chainLabelFor(chainId),
       name: pair.baseToken?.name || '',
       symbol: pair.baseToken?.symbol ? pair.baseToken.symbol.toUpperCase() : '',
-      marketCap,
+      marketCap: 0,
+      volume24h: 0,
+      liquidityUsd: 0,
+      pairCount: 0,
       logoUrl: pair.info?.imageUrl || '',
       // Dexscreener doesn't expose an explicit "verified" flag for search
       // results; a curated profile image is the closest available signal.
       verified: Boolean(pair.info?.imageUrl),
       source: 'dexscreener',
-    });
+    };
+    entry.marketCap = Math.max(entry.marketCap, Number(pair.marketCap || pair.fdv || 0));
+    entry.volume24h += Number(pair.volume?.h24 || 0);
+    entry.liquidityUsd += Number(pair.liquidity?.usd || 0);
+    entry.pairCount += 1;
+    if (!entry.logoUrl && pair.info?.imageUrl) {
+      entry.logoUrl = pair.info.imageUrl;
+      entry.verified = true;
+    }
+    byKey.set(key, entry);
   });
-  return Array.from(byKey.values()).sort((a, b) => b.marketCap - a.marketCap);
+  return Array.from(byKey.values()).sort(compareDexMatchStrength);
 }
 
 // Canonical token resolution (Phase 1): CoinGecko's own listing is checked
@@ -1374,9 +1404,16 @@ async function fetchTokenSearchMatches(term) {
 
   return Array.from(byKey.values())
     .sort((a, b) => {
+      // CoinGecko-verified matches are the canonical "which contract is the real
+      // asset" ground truth, so they always rank above unverified DEX matches,
+      // and among themselves by their (trustworthy) real market cap.
       if (a.source === 'coingecko' && b.source !== 'coingecko') return -1;
       if (b.source === 'coingecko' && a.source !== 'coingecko') return 1;
-      return b.marketCap - a.marketCap;
+      if (a.source === 'coingecko' && b.source === 'coingecko') return (b.marketCap || 0) - (a.marketCap || 0);
+      // Two unverified DEX matches (the case that matters when CoinGecko is rate-
+      // limited/unavailable): rank by real trading strength, NOT the spoofable
+      // marketCap that used to let an impersonator outrank the real token.
+      return compareDexMatchStrength(a, b);
     })
     .slice(0, 8);
 }
@@ -1756,22 +1793,38 @@ async function fetchDexscreenerToken(address, chainId = 'solana') {
   if (!response.ok) throw new Error('Dexscreener lookup failed.');
   const pairs = await response.json();
   if (!Array.isArray(pairs) || !pairs.length) return null;
+  const normalized = address.toLowerCase();
+  const isBaseToken = (pair) => pair.baseToken?.address?.toLowerCase() === normalized;
+  const isQuoteToken = (pair) => pair.quoteToken?.address?.toLowerCase() === normalized;
   const solanaPairs = pairs
     .filter((pair) => pair.chainId === chainId)
-    .filter((pair) => {
-      const normalized = address.toLowerCase();
-      return pair.baseToken?.address?.toLowerCase() === normalized || pair.quoteToken?.address?.toLowerCase() === normalized;
-    });
-  // Primary pair (and therefore the chart/metrics pair) is chosen by
-  // liquidity first, then 24h volume as a tiebreaker for near-equal pools -
-  // never an arbitrary/first-returned pair.
+    .filter((pair) => isBaseToken(pair) || isQuoteToken(pair));
+  // Sorted by liquidity first, then 24h volume as a tiebreaker for near-equal
+  // pools - never an arbitrary/first-returned pair. Used for aggregation.
   const sortedPairs = solanaPairs.sort((a, b) => {
     const liquidityDiff = Number(b?.liquidity?.usd || 0) - Number(a?.liquidity?.usd || 0);
     if (liquidityDiff !== 0) return liquidityDiff;
     return Number(b?.volume?.h24 || 0) - Number(a?.volume?.h24 || 0);
   });
+  // The PRIMARY pair also drives the live chart embed, which needs a pair the
+  // embed can actually load: a real pairAddress and ACTIVE liquidity (a dead
+  // pool renders as a permanent "Loading pair..."). And because the embed shows
+  // the chart from the BASE token's perspective, the token should be the base;
+  // a pair where it is only the quote is used for the chart only as a last
+  // resort (#7). Aggregation still spans every matched pool, so metrics are
+  // unchanged - this only sharpens which single pool the chart points at.
+  const chartCandidates = sortedPairs.filter(
+    (pair) => pair.pairAddress && Number(pair?.liquidity?.usd || 0) > 0
+  );
+  const primaryPair =
+    chartCandidates.find(isBaseToken) ||
+    chartCandidates[0] ||
+    sortedPairs.find((pair) => pair.pairAddress && isBaseToken(pair)) ||
+    sortedPairs.find((pair) => pair.pairAddress) ||
+    sortedPairs[0] ||
+    null;
   return {
-    primaryPair: sortedPairs[0] || null,
+    primaryPair,
     pairs: sortedPairs,
     poolCount: sortedPairs.length,
     totalLiquidityUsd: sortedPairs.reduce((total, pair) => total + Number(pair?.liquidity?.usd || 0), 0),
@@ -6951,7 +7004,7 @@ function LiveMarketChart({ project, data }) {
   const m = t('profileSections.marketChart');
   const hasPair = Boolean(data?.dexChainId && data?.pairAddress);
   const hasCoingeckoFallback = Boolean(data?.coingeckoId);
-  const provider = hasPair ? 'dexscreener' : (hasCoingeckoFallback ? 'coingecko' : 'none');
+  const baseProvider = hasPair ? 'dexscreener' : (hasCoingeckoFallback ? 'coingecko' : 'none');
 
   const sectionRef = useRef(null);
   const timeoutRef = useRef(null);
@@ -6960,6 +7013,27 @@ function LiveMarketChart({ project, data }) {
   const [retryKey, setRetryKey] = useState(0);
   const [widgetReady, setWidgetReady] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  // slowLoad is driven by an INDEPENDENT watchdog that the Dexscreener iframe's
+  // onLoad cannot cancel. That matters because the iframe's onLoad fires when
+  // Dexscreener's app shell loads, even when the embedded chart then hangs
+  // forever on its own internal "Loading pair..." - so onLoad is not proof the
+  // chart rendered. When slowLoad trips, an always-reachable recovery row is
+  // shown so a user can never be permanently stranded on "Loading pair...".
+  const [slowLoad, setSlowLoad] = useState(false);
+  // Lets a user switch to the CoinGecko live fallback in-app if the Dexscreener
+  // embed won't render - still real market data (#13), never mock.
+  const [forceFallback, setForceFallback] = useState(false);
+  const provider = forceFallback && hasCoingeckoFallback ? 'coingecko' : baseProvider;
+
+  // A new token is being charted (different pair/coin): clear any prior stuck
+  // state so a working chart is never suppressed by the previous token's
+  // fallback/slow-load flags.
+  useEffect(() => {
+    setForceFallback(false);
+    setSlowLoad(false);
+    setChartStatus('loading');
+    setRetryKey(0);
+  }, [data?.pairAddress, data?.coingeckoId]);
 
   useEffect(() => {
     if (!fullscreen) return;
@@ -6990,8 +7064,15 @@ function LiveMarketChart({ project, data }) {
   useEffect(() => {
     if (!inView || provider === 'none') return;
     setChartStatus('loading');
+    setSlowLoad(false);
     clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => setChartStatus((status) => (status === 'loaded' ? status : 'timeout')), CHART_LOAD_TIMEOUT_MS);
+    timeoutRef.current = setTimeout(() => {
+      // Fires whether or not the iframe reported onLoad (which it does even for a
+      // stuck embed): reveals the recovery row, and flips to the fallback state
+      // only if no load signal ever arrived.
+      setSlowLoad(true);
+      setChartStatus((status) => (status === 'loaded' ? status : 'timeout'));
+    }, CHART_LOAD_TIMEOUT_MS);
     if (provider === 'coingecko') {
       setWidgetReady(false);
       loadCoingeckoWidgetScript().then((ok) => {
@@ -7039,6 +7120,30 @@ function LiveMarketChart({ project, data }) {
         )}
       </div>
 
+      {/* Always-reachable escape hatch: shown once the watchdog trips, even
+          though the Dexscreener iframe reported onLoad. If its embed is stuck on
+          "Loading pair..." this is the ONLY way out, so a user is never
+          permanently stranded - they can reload, switch to the live CoinGecko
+          fallback in-app, or open the pair on Dexscreener directly. */}
+      {provider === 'dexscreener' && showChart && slowLoad && (
+        <div className="market-chart-recovery">
+          <span className="inline-note">{m.stuckHint}</span>
+          <button type="button" className="ghost-button" onClick={retryChart}>
+            <RefreshCw size={14} /> {m.retry}
+          </button>
+          {hasCoingeckoFallback && (
+            <button type="button" className="ghost-button" onClick={() => setForceFallback(true)}>
+              <LineChart size={14} /> {m.useFallback}
+            </button>
+          )}
+          {data?.pairUrl && (
+            <a className="ghost-button" href={data.pairUrl} target="_blank" rel="noreferrer">
+              <ExternalLink size={14} /> {m.openDexscreener}
+            </a>
+          )}
+        </div>
+      )}
+
       {fullscreen && typeof document !== 'undefined' && createPortal(
         // Rendered via portal directly into document.body, not in place
         // here: .profile-page (an ancestor of this component) has a CSS
@@ -7085,11 +7190,20 @@ function LiveMarketChart({ project, data }) {
         <div className="market-chart-fallback">
           <LineChart size={28} />
           <p>{chartStatus === 'timeout' ? m.timeout : m.fallback}</p>
-          {provider !== 'none' && (
-            <button type="button" className="secondary-button" onClick={retryChart}>
-              <RefreshCw size={15} /> {m.retry}
-            </button>
-          )}
+          <div className="market-chart-recovery">
+            {provider !== 'none' && (
+              <button type="button" className="secondary-button" onClick={retryChart}>
+                <RefreshCw size={15} /> {m.retry}
+              </button>
+            )}
+            {/* If Dexscreener timed out entirely, offer the real CoinGecko live
+                chart in-app rather than leaving only "metrics above". */}
+            {hasCoingeckoFallback && provider !== 'coingecko' && (
+              <button type="button" className="secondary-button" onClick={() => setForceFallback(true)}>
+                <LineChart size={15} /> {m.useFallback}
+              </button>
+            )}
+          </div>
         </div>
       )}
 

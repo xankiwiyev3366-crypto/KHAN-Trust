@@ -17,6 +17,7 @@ import {
   getAssociatedTokenAddress,
 } from '@solana/spl-token';
 import { verifySolanaPayment } from './solanaVerify.js';
+import { planUsdAmount } from './lib/pricing.js';
 
 const PAYMENT_WALLET = import.meta.env.VITE_KHAN_PAYMENT_WALLET || '';
 
@@ -38,10 +39,9 @@ const SPL_TOKEN_CONFIG = {
 const LAMPORTS_PER_SOL = 1_000_000_000;
 const AMOUNT_BUFFER = 1.02; // pay slightly above the USD price to clear the backend's tolerance check
 
-const PLAN_USD_AMOUNT = {
-  premium: 9,
-  early_supporter: 29,
-};
+// Plan → required USD comes from the shared single source of truth
+// (src/lib/pricing.js), the same module the backend verifier reads, so the
+// amount charged here and the amount required there can never drift apart.
 
 const SOL_PRICE_SOURCES = [
   { url: 'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd', extract: (data) => data?.solana?.usd },
@@ -75,7 +75,7 @@ export async function payWithConnectedWallet({ connection, publicKey, sendTransa
     return { ok: false, status: 'no_wallet', message: 'Connect a wallet first' };
   }
 
-  const requiredUsd = PLAN_USD_AMOUNT[plan] || PLAN_USD_AMOUNT.premium;
+  const requiredUsd = planUsdAmount(plan);
   const transaction = new Transaction();
   transaction.feePayer = publicKey;
 

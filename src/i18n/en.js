@@ -547,7 +547,7 @@ export default {
     activeTitle: 'Early Supporter Active',
     activeNote: 'Thank you for backing KHAN Trust early. Your supporter status is permanently linked to this wallet, alongside the Premium tools below.',
     // Early Supporter Badge and Lifetime Recognition are exclusive to this
-    // $29 one-time plan - they must never be listed under premium.items.
+    // $99 one-time plan - they must never be listed under premium.items.
     items: [
       ['Early Supporter Badge', 'A permanent badge shown next to your wallet across the site.', 'active'],
       ['Lifetime Recognition', 'One-time payment, recognition that never expires - tied to your wallet for good.', 'active'],
@@ -689,7 +689,7 @@ export default {
       },
       earlySupporter: {
         name: 'Early Supporter',
-        price: '$29 one-time or 29 USDT one-time',
+        price: '$99 one-time or 99 USDT one-time',
         description: 'One-time recognition as an early KHAN Trust supporter, plus every Premium tool, for life.',
         features: ['Exclusive Early Supporter badge (lifetime)', 'Lifetime recognition', 'All Premium features included, for life', 'No expiry, no recurring payment', 'Not an investment - no profit claims'],
         cta: 'Become Early Supporter',
@@ -735,13 +735,13 @@ export default {
       cryptoTitle: 'Manual crypto payment',
       cryptoDescription: 'Supported networks: Solana / USDC / SOL. Automatic on-chain verification of your transaction hash.',
       premiumPrice: 'Premium: 9 USDT/month',
-      earlySupporterPrice: 'Early Supporter: 29 USDT one-time',
+      earlySupporterPrice: 'Early Supporter: 99 USDT one-time',
       walletLabel: 'Payment wallet',
       copyWallet: 'Copy wallet address',
       cryptoNotConfigured: 'Crypto payments are not configured yet',
       planLabel: 'Plan',
       planPremiumOption: 'Premium - 9 USDT/month',
-      planEarlySupporterOption: 'Early Supporter - 29 USDT one-time',
+      planEarlySupporterOption: 'Early Supporter - 99 USDT one-time',
       transactionHashLabel: 'Transaction hash',
       transactionHashPlaceholder: 'Paste transaction hash after payment',
       verifyPayment: 'Verify payment',

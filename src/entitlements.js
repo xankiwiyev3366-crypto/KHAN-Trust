@@ -49,7 +49,7 @@ export async function fetchAccountEntitlement() {
   }
 }
 
-// Early Supporter is a superset of Premium (one-time $29 includes the same
+// Early Supporter is a superset of Premium (one-time $99 includes the same
 // research tools as the $9/month plan, plus the badge/recognition below) -
 // but it must never be reported as plain 'premium' to the UI, otherwise an
 // Early Supporter never sees their badge. Check isEarlySupporter() first.

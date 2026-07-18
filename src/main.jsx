@@ -177,6 +177,7 @@ import {
 import { isStripeConfigured, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
+import { planUsdAmount } from './lib/pricing.js';
 import { fetchEntitlement, fetchAccountEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
 import { buildAdvancedResearch, buildPremiumAnalysis, buildLocalizedRiskSummary, friendlyMissingFields } from './premiumResearch.js';
 import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction, submitBulkPremiumAction, fetchUserActivity, fetchUserActivityDetail } from './premiumAdmin.js';
@@ -5894,7 +5895,7 @@ function WalletPaymentSection({ onEntitlementChange }) {
   const [message, setMessage] = useState('');
   const walletConfigured = isWalletPaymentConfigured();
 
-  const planPrice = plan === 'early_supporter' ? '29' : '9';
+  const planPrice = String(planUsdAmount(plan));
 
   const payNow = async () => {
     setStatus('paying');

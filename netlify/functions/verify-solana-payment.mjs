@@ -7,7 +7,9 @@
 // _entitlementsStore.mjs) to the wallet that signed/paid for the
 // transaction, keyed by wallet address since there are no user accounts.
 
-import { grantEntitlement, isSignatureUsed, markSignatureUsed } from './_entitlementsStore.mjs';
+import { grantEntitlement, grantAccountEntitlement, accountSubject, isSignatureUsed, markSignatureUsed } from './_entitlementsStore.mjs';
+import { verifyJwt, bearerToken } from './_authStore.mjs';
+import { planUsdAmount } from '../../src/lib/pricing.js';
 
 const RPC_URL = process.env.VITE_SOLANA_RPC_URL || '';
 const PAYMENT_WALLET = process.env.VITE_KHAN_PAYMENT_WALLET || '';
@@ -34,10 +36,12 @@ const FALLBACK_RPC_URLS = ['https://api.mainnet-beta.solana.com'];
 // Premium/Early Supporter entitlement or it doesn't. Launchpad/token creation
 // no longer collects its own separate fee (see src/main.jsx LaunchpadPage);
 // it is gated purely on this same entitlement, granted here.
-const PLAN_USD_AMOUNT = {
-  premium: 9,
-  early_supporter: 29,
-};
+//
+// The required USD per plan comes from the shared single source of truth
+// (src/lib/pricing.js) — the SAME module src/cryptoPayment.js reads to decide
+// how much to charge — so the amount a wallet is asked to pay and the amount
+// required here can never drift apart. Imported across the src/ boundary exactly
+// as _rescanEngine.mjs imports src/lib/trustScore.js.
 
 const SOL_PRICE_SOURCES = [
   {
@@ -51,10 +55,6 @@ const SOL_PRICE_SOURCES = [
     extract: (data) => Number(data?.price),
   },
 ];
-
-function getRequiredUsdAmount(plan) {
-  return PLAN_USD_AMOUNT[plan] || PLAN_USD_AMOUNT.premium;
-}
 
 function getRpcUrlsToTry() {
   return [...new Set([RPC_URL, ...FALLBACK_RPC_URLS].filter(Boolean))];
@@ -177,7 +177,14 @@ function findReceiverWallet(transaction, meta) {
   return null;
 }
 
-async function verifySolanaPayment({ transactionHash, plan }) {
+// `accountUserId` is the verified id of the SIGNED-IN buyer, resolved from their
+// JWT by the handler (never from the request body — a body-supplied id would let
+// anyone grant Premium to a stranger's account). When present, a verified
+// payment grants Premium to that account IN ADDITION to the paying wallet, so a
+// signed-in buyer sees Premium immediately with no "claim wallet" step. When
+// absent (anonymous caller, legacy flow) the behaviour is byte-for-byte the old
+// wallet-only grant.
+async function verifySolanaPayment({ transactionHash, plan, accountUserId = null }) {
   const debug = {
     signatureLength: (transactionHash || '').trim().length,
     rpcUrlUsed: null,
@@ -190,7 +197,8 @@ async function verifySolanaPayment({ transactionHash, plan }) {
     expectedReceiverWallet: PAYMENT_WALLET || null,
     detectedSolAmount: 0,
     detectedUsdValue: 0,
-    requiredUsdAmount: getRequiredUsdAmount(plan),
+    requiredUsdAmount: planUsdAmount(plan),
+    grantedToAccount: false,
     priceSource: null,
     finalDecision: null,
   };
@@ -267,16 +275,28 @@ async function verifySolanaPayment({ transactionHash, plan }) {
   async function grantAndReturn(currency, amountPaid) {
     debug.finalDecision = 'verified';
     await markSignatureUsed(signature, buyerWallet);
+    const record = {
+      plan,
+      currency,
+      amountPaid,
+      transactionHash: signature,
+      verifiedAt: new Date().toISOString(),
+    };
+    // The paying wallet is still granted, unconditionally and exactly as before:
+    // it keeps the wallet-keyed entitlement working everywhere (and is the ONLY
+    // grant for an anonymous buyer). This mirrors premium-claim-wallet's
+    // "copy, never move" rule — nothing here can cost a wallet access it paid for.
     if (buyerWallet) {
-      await grantEntitlement(buyerWallet, {
-        plan,
-        currency,
-        amountPaid,
-        transactionHash: signature,
-        verifiedAt: new Date().toISOString(),
-      });
+      await grantEntitlement(buyerWallet, record);
     }
-    return { status: 'verified', message: 'Payment verified', buyerWallet, debug };
+    // ADDITIONALLY grant to the signed-in account, so Premium is live on the
+    // account immediately — no reconnecting the wallet, no separate claim step.
+    // The wallet is recorded as context on the account's record, never as its key.
+    if (accountUserId) {
+      await grantAccountEntitlement(accountUserId, { ...record, wallet: buyerWallet || null });
+      debug.grantedToAccount = true;
+    }
+    return { status: 'verified', message: 'Payment verified', buyerWallet, accountSubject: accountUserId ? accountSubject(accountUserId) : null, debug };
   }
 
   if (tokenAmount > 0) {
@@ -319,9 +339,19 @@ export async function handler(event) {
     return { statusCode: 400, body: JSON.stringify({ status: 'failed', message: 'Invalid request body' }) };
   }
 
+  // The buyer's account, proven by their OWN JWT (optional). A missing or
+  // invalid token simply yields null and the flow stays wallet-only — signing
+  // in is never a precondition of a crypto payment, so this can never block a
+  // sale. A valid token additionally routes the grant to that account. The id
+  // is taken only from the verified token, never from payload, so the body
+  // cannot redirect a grant to an account the caller does not own.
+  const auth = verifyJwt(bearerToken(event));
+  const accountUserId = auth?.sub || null;
+
   const result = await verifySolanaPayment({
     transactionHash: payload.transactionHash,
     plan: payload.plan,
+    accountUserId,
   });
 
   return {

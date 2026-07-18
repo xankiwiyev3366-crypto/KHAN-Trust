@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import { translate as t } from './i18n/index.js';
 import { historyKeyFor, fetchScoreHistory } from './scoreHistory.js';
-import { diffSnapshots } from './riskHistory.js';
+import { diffSnapshots, validHistory, confidenceRegressed } from './riskHistory.js';
 
 const SCORE_DROP_THRESHOLD = 8;
 const HOLDER_CONCENTRATION_INCREASE_THRESHOLD = 5; // percentage points
@@ -32,14 +32,22 @@ const CATEGORY_ALERT_KEYS = {
 };
 
 export function detectRiskAlerts(history) {
-  if (!Array.isArray(history) || history.length < 2) return [];
-  const sorted = [...history].sort((a, b) => a.date.localeCompare(b.date));
+  // Compare only the two most recent VALID snapshots — a demo/thin snapshot that
+  // slipped into storage must never become the baseline an alert fires against,
+  // or the alert is measuring a data outage, not the token. This is the same
+  // validity gate the on-page timeline uses (see buildRiskHistory).
+  const sorted = validHistory(history);
+  if (sorted.length < 2) return [];
   const latest = sorted[sorted.length - 1];
   const previous = sorted[sorted.length - 2];
   const alerts = [];
 
+  // A score drop that coincides with a materially thinner snapshot is a provider
+  // that went quiet, not a token that got riskier — never alert on it. Same rule
+  // the timeline applies via confidenceRegressed.
+  const dataThinned = confidenceRegressed(previous, latest);
   const scoreDrop = previous.score - latest.score;
-  if (scoreDrop >= SCORE_DROP_THRESHOLD) {
+  if (scoreDrop >= SCORE_DROP_THRESHOLD && !dataThinned) {
     alerts.push({
       type: 'score_drop',
       severity: 'high',
@@ -70,8 +78,12 @@ export function detectRiskAlerts(history) {
   }
 
   // --- Phase 5 additive smart alerts (category, social, risk level) ---
+  // Only known-on-both-sides levels can signal a rise. A null/unknown level
+  // (now stored instead of a fabricated 'Medium') must never be coerced to a
+  // number, or a token with a missing level would fire a phantom risk change.
   const RISK_ORDER = { Low: 0, Medium: 1, High: 2 };
-  if (latest.riskLevel && previous.riskLevel && (RISK_ORDER[latest.riskLevel] ?? 1) > (RISK_ORDER[previous.riskLevel] ?? 1)) {
+  const bothKnown = RISK_ORDER.hasOwnProperty(previous.riskLevel) && RISK_ORDER.hasOwnProperty(latest.riskLevel);
+  if (bothKnown && RISK_ORDER[latest.riskLevel] > RISK_ORDER[previous.riskLevel] && !dataThinned) {
     alerts.push({
       type: 'risk_level_up',
       severity: 'high',

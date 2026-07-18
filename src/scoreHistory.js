@@ -6,7 +6,7 @@
 // localStorage-fallback pattern in userData.js so this also works against a
 // plain `vite dev` server with no Netlify Functions running.
 import { useEffect, useState } from 'react';
-import { snapshotMetrics } from './riskHistory.js';
+import { snapshotMetrics, validHistory } from './riskHistory.js';
 
 const FALLBACK_KEY = 'khan-trust-score-history-fallback-v1';
 const LAST_RECORDED_KEY = 'khan-trust-score-history-lastrecorded-v1';
@@ -64,6 +64,46 @@ export function historyKeyFor(project = {}) {
   return project.id ? `id:${project.id}` : '';
 }
 
+const VALID_RISK_LEVELS = new Set(['Low', 'Medium', 'High']);
+
+// The storage-time data-quality gate. Decides whether a viewed report is a
+// VALID, complete market observation worth committing to permanent history —
+// and how confident we are in it. This is the single most important fix in the
+// Platform Memory system: without it, every low-quality or fabricated report a
+// user happened to open became a permanent history point that a later real scan
+// then "corrected", manufacturing the false back-and-forth swings the timeline
+// was showing.
+//
+// Rejected (never stored):
+//   - no finite score at all;
+//   - MANUAL profiles (no realData) and DEMO/fallback reports — fabricated
+//     numbers, not observations;
+//   - scans that observed NO market (neither market cap nor liquidity present) —
+//     almost always a transient provider outage, whose degraded score must never
+//     be recorded as a real decrease. Native L1 coins lack on-chain holder data
+//     but always carry a market cap, so this admits BTC/ETH/SOL on every chain.
+//
+// Accepted snapshots are stamped with their `confidence` (0-100 completeness,
+// from the scoring engine) so the diff layer can later tell a real decline from
+// a data-thinned one (see confidenceRegressed in riskHistory.js).
+export function assessSnapshot(project = {}, score) {
+  if (typeof score !== 'number' || !Number.isFinite(score)) {
+    return { recordable: false, reason: 'no_score', confidence: null };
+  }
+  const realData = project.realData || null;
+  if (!realData || realData.isDemo) {
+    return { recordable: false, reason: realData ? 'demo' : 'manual', confidence: null };
+  }
+  const marketCap = Number(realData.marketCapUsd || 0);
+  const liquidity = Number(realData.totalLiquidityUsd ?? realData.liquidityUsd ?? 0);
+  if (!(marketCap > 0) && !(liquidity > 0)) {
+    return { recordable: false, reason: 'no_market_observed', confidence: null };
+  }
+  const rawConfidence = Number(project.confidenceScore);
+  const confidence = Number.isFinite(rawConfidence) ? Math.round(rawConfidence) : null;
+  return { recordable: true, reason: 'ok', confidence };
+}
+
 export async function fetchScoreHistory(key) {
   if (!key) return [];
   try {
@@ -84,7 +124,14 @@ export async function fetchScoreHistory(key) {
 // need day-over-day deltas on those, not just the score.
 export async function recordScoreSnapshot(project, score, riskLevel) {
   const key = historyKeyFor(project);
-  if (!key || typeof score !== 'number' || !Number.isFinite(score)) return;
+  if (!key) return;
+
+  // Quality gate FIRST: a non-recordable view never counts against the daily
+  // throttle and never marks the day as recorded, so a real scan later the same
+  // day can still land after the user happened to open a demo/outage report.
+  const assessment = assessSnapshot(project, score);
+  if (!assessment.recordable) return;
+
   const today = todayKey();
   const lastRecorded = readJson(LAST_RECORDED_KEY, {});
   if (lastRecorded[key] === today) return;
@@ -104,7 +151,15 @@ export async function recordScoreSnapshot(project, score, riskLevel) {
   const snapshot = {
     date: today,
     score: Math.round(score),
-    riskLevel: riskLevel || 'Medium',
+    // A missing/invalid level is stored as null, NEVER a fabricated 'Medium' —
+    // a coerced middle value would read as a real Low->Medium or Medium->High
+    // change against a genuine neighbour.
+    riskLevel: VALID_RISK_LEVELS.has(riskLevel) ? riskLevel : null,
+    // Data-quality stamps: how complete this observation was, and that it passed
+    // the gate. The diff/alert layers require both sides `complete` and use
+    // `confidence` to suppress decreases that are really just missing data.
+    confidence: assessment.confidence,
+    complete: true,
     topHolderPercent,
     liquidityUsd,
     categories,
@@ -133,10 +188,14 @@ export async function recordScoreSnapshot(project, score, riskLevel) {
 // have when there isn't a week of history yet. Returns null when there's
 // nothing meaningful to compare against (e.g. only today's snapshot exists).
 export function computeScoreDelta(history, currentScore) {
-  if (!Array.isArray(history) || history.length < 2 || typeof currentScore !== 'number') return null;
-  const byDateDesc = [...history].sort((a, b) => b.date.localeCompare(a.date));
+  if (typeof currentScore !== 'number' || !Number.isFinite(currentScore)) return null;
+  // Only compare against VALID snapshots — a demo/outage point must not become
+  // the "last week" or "since launch" baseline the headline delta reads from.
+  const valid = validHistory(history);
+  if (valid.length < 2) return null;
+  const byDateDesc = [...valid].sort((a, b) => b.date.localeCompare(a.date));
   const now = new Date();
-  const weekEntry = byDateDesc.find((entry) => (now - new Date(entry.date)) / 86400000 >= 6);
+  const weekEntry = byDateDesc.find((entry) => (now - new Date(`${entry.date}T00:00:00`)) / 86400000 >= 6);
   if (weekEntry) {
     return { delta: Math.round(currentScore - weekEntry.score), label: 'thisWeek' };
   }

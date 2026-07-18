@@ -131,7 +131,7 @@ import { historyKeyFor, fetchScoreHistory, computeScoreDelta, useScoreHistory } 
 import { useCorpusRecord } from './tokenCorpus.js';
 import { ANALYST_QUESTIONS, answerQuestion, translateSignalKeys, translatedCategory } from './khanAnalyst.js';
 import { detectRiskAlerts, useWatchlistAlertCount } from './riskAlerts.js';
-import { TRUST_CATEGORIES, buildRiskHistory } from './riskHistory.js';
+import { TRUST_CATEGORIES, buildRiskHistory, validHistory } from './riskHistory.js';
 import { computePeerBenchmark, peerLabelFor } from './peerBenchmark.js';
 import { I18nProvider, useTranslation } from './i18n/I18nContext.jsx';
 import { translate, getLanguage } from './i18n/index.js';
@@ -10338,8 +10338,11 @@ function ScoreCircle({ score, size = 'normal' }) {
 // analyst below, rather than each component fetching its own copy.
 function ScoreHistoryStrip({ project, history }) {
   const { t } = useTranslation();
-  const delta = computeScoreDelta(history, project.trustScore);
-  const sparkData = history?.length >= 2 ? history.map((entry) => ({ count: entry.score })) : null;
+  // The sparkline and delta plot only VALID snapshots — a demo/outage point
+  // would otherwise draw a phantom dip the numbers below never explain.
+  const valid = useMemo(() => validHistory(history), [history]);
+  const delta = computeScoreDelta(valid, project.trustScore);
+  const sparkData = valid.length >= 2 ? valid.map((entry) => ({ count: entry.score })) : null;
 
   if (!sparkData && !delta) return null;
 
@@ -10368,9 +10371,10 @@ function RiskHistoryTimeline({ history }) {
   const events = useMemo(() => buildRiskHistory(history, language), [history, language]);
 
   // Nothing meaningful to show yet - render the section with a gentle empty
-  // state only if we at least have some history being tracked; otherwise stay
-  // fully silent so brand-new tokens don't show a hollow module.
-  const hasAnyHistory = Array.isArray(history) && history.length >= 1;
+  // state only if we at least have one VALID observation being tracked;
+  // otherwise stay fully silent so a token with only demo/thin snapshots (or a
+  // brand-new one) doesn't show a hollow module.
+  const hasAnyHistory = validHistory(history).length >= 1;
   if (!hasAnyHistory) return null;
 
   return (

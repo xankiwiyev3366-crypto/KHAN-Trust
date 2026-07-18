@@ -52,7 +52,20 @@ export async function handler(event) {
     if (!DATE_PATTERN.test(date)) {
       return jsonResponse(400, { message: 'snapshot.date must be in YYYY-MM-DD format' });
     }
-    const riskLevel = VALID_RISK_LEVELS.has(snapshot.riskLevel) ? snapshot.riskLevel : 'Medium';
+
+    // Server-side data-quality check (defence in depth). The client already gates
+    // on completeness (assessSnapshot in src/scoreHistory.js), but this endpoint
+    // is public, so a snapshot the caller itself marks incomplete is refused
+    // storage here too — never silently, and never as an error the UI must
+    // handle: it is a valid, successful "nothing to record" outcome.
+    if (snapshot.complete === false || snapshot.demo === true) {
+      return jsonResponse(200, { ok: true, skipped: true, reason: 'incomplete_snapshot' });
+    }
+
+    // A missing/invalid level is stored as null, NEVER a fabricated 'Medium'.
+    // Coercing unknown to a middle value manufactured phantom Low<->Medium<->High
+    // transitions in the timeline — the exact bug this system had.
+    const riskLevel = VALID_RISK_LEVELS.has(snapshot.riskLevel) ? snapshot.riskLevel : null;
 
     // Optional (Phase 3): top-holder concentration + liquidity alongside the
     // score, so risk-change alerts can compare day-over-day on those too.
@@ -76,10 +89,19 @@ export async function handler(event) {
     const assetCategory = String(snapshot.assetCategory == null ? '' : snapshot.assetCategory)
       .replace(/<[^>]*>/g, '').trim().slice(0, 60);
 
+    // Data-quality stamps (Platform Memory repair): `confidence` (0-100 data
+    // completeness) lets the diff layer tell a real decline from a data-thinned
+    // one; `complete: true` marks this as a comparable observation. Persisted so
+    // the distinction survives across sessions and devices, not just in the tab
+    // that recorded it.
+    const confidence = clampScoreOrNull(snapshot.confidence);
+
     const history = await appendSnapshot(key, {
       date,
       score: Math.round(score),
       riskLevel,
+      confidence,
+      complete: true,
       topHolderPercent,
       liquidityUsd,
       categories,

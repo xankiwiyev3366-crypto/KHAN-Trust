@@ -9579,3 +9579,82 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
 @media (max-width: 380px) {
   .retention-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Free Scanner Strategy (Step 4) ─────────────────────────────────────────
+   The inline "X of 3 free scans remaining" meter under the hero search, and
+   the daily-limit block modal. */
+.scan-quota-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.scan-quota-meter svg { color: var(--gold); flex-shrink: 0; }
+.scan-quota-meter.reached {
+  border-color: var(--border);
+  background: var(--gold-soft);
+  color: var(--text);
+}
+.scan-quota-upgrade {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--gold-bright);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.scan-quota-upgrade:hover { text-decoration: underline; }
+
+.scan-limit-modal {
+  max-width: 460px;
+  text-align: center;
+  padding: 34px 30px 28px;
+}
+.scan-limit-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  background: var(--gold-soft);
+  color: var(--gold-bright);
+}
+.scan-limit-modal h2 { margin: 0 0 10px; }
+.scan-limit-modal p { color: var(--muted); margin: 0 auto 12px; max-width: 40ch; }
+.scan-limit-reset { color: var(--gold); font-weight: 600; }
+.scan-limit-perks {
+  list-style: none;
+  margin: 18px auto 22px;
+  padding: 0;
+  max-width: 34ch;
+  text-align: left;
+  display: grid;
+  gap: 10px;
+}
+.scan-limit-perks li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.scan-limit-perks svg { color: var(--success); flex-shrink: 0; }
+.scan-limit-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+}
+.scan-limit-actions .primary-button { justify-content: center; }

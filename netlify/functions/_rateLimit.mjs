@@ -98,6 +98,12 @@ export const RATE_POLICIES = {
   // per-IP rather than per-user so a shared office NAT is not the unit being
   // limited. Fails open like every other policy here.
   retention_sync_ip: { max: 120, windowMs: 5 * MINUTE },
+  // Free scan quota (Step 4) is enforced per-identity by _scanQuotaStore, not
+  // here. This is only a defence-in-depth runaway guard on the quota endpoint
+  // itself, per-IP, well above any legitimate use: a free user makes at most a
+  // handful of scan checks a day, so a client hammering it is buggy or hostile.
+  // Fails open like every policy here — a limiter outage must not block scans.
+  scan_quota_ip: { max: 300, windowMs: 5 * MINUTE },
 };
 
 // Convenience wrapper: enforce one named policy for one identifier.

@@ -373,6 +373,21 @@ export default {
     errorNone: 'No live Solana token data was found.',
     verified: 'Verified',
   },
+  scanLimit: {
+    meterRemaining: '{{remaining}} of {{limit}} free scans remaining today',
+    meterReached: 'You have used all your free scans for today',
+    title: 'Daily free scan limit reached',
+    body: 'Free accounts get {{limit}} token scans per day. You have used all of them for today — upgrade to Premium for unlimited scans, or come back tomorrow when your free scans reset.',
+    resetsIn: 'Your free scans reset in about {{hours}}h.',
+    perks: [
+      'Unlimited token scans, every day',
+      'Advanced AI research and deeper risk breakdowns',
+      'Synced watchlist and real-time risk alerts',
+    ],
+    upgradeCta: 'Upgrade to Premium',
+    dismiss: 'Maybe later',
+    inlineBlocked: 'Daily free scan limit reached. Upgrade to Premium for unlimited scans.',
+  },
   khanAi: {
     name: 'KHAN AI',
     hero: {

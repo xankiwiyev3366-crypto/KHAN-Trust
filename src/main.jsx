@@ -144,6 +144,7 @@ import { lamportsToSol } from './approvals/solanaLane.js';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { RetentionProvider, useRetention } from './RetentionContext.jsx';
 import { contextFromProject } from './retention.js';
+import { peekScanQuota, consumeScanQuota, hoursUntilReset, FREE_DAILY_SCAN_LIMIT } from './scanQuota.js';
 import { AuthModal } from './auth/AuthModal.jsx';
 // Early Stage Projects - additive, lazy-loaded feature. React.lazy keeps this
 // entire module (and its earlyStage.js client) out of the initial bundle; it
@@ -3185,6 +3186,12 @@ function App() {
   const { hasPremium, wallet: entitledWallet } = usePremiumEntitlement();
   const { recordContext, touch: retentionTouch } = useRetention();
 
+  // Free Scanner Strategy (Step 4): the last server-authoritative view of the
+  // caller's daily scan quota, and whether the daily limit modal is open. Null
+  // until the first peek lands (or for premium users, who are never counted).
+  const [scanQuota, setScanQuota] = useState(null);
+  const [scanLimitOpen, setScanLimitOpen] = useState(false);
+
   // Synced Watchlist (Premium/Early Supporter only): merge in whatever the
   // account has saved server-side so the watchlist follows the user across
   // browsers/devices, on top of the existing free local-only watchlist. Works
@@ -3199,6 +3206,23 @@ function App() {
       setWatchlist((items) => [...new Set([...items, ...serverWatchlist])]);
     });
   }, [hasPremium, entitledWallet]);
+
+  // Paint the "X of 3 free scans remaining" counter. Premium users have no
+  // limit, so we neither peek nor show a counter for them. Re-runs when premium
+  // status settles or the account changes, so a fresh sign-in shows that
+  // account's real remaining count rather than the anonymous one. Peek writes
+  // nothing server-side, so this costs no scan.
+  useEffect(() => {
+    if (hasPremium) {
+      setScanQuota(null);
+      return;
+    }
+    let cancelled = false;
+    peekScanQuota({ wallet: entitledWallet }).then((view) => {
+      if (!cancelled && view && !view.premium) setScanQuota(view);
+    });
+    return () => { cancelled = true; };
+  }, [hasPremium, entitledWallet, user?.id]);
 
   const refreshVerificationMap = async () => {
     const statuses = await fetchVerificationStatuses();
@@ -3306,6 +3330,32 @@ function App() {
     return createScanReporter(setScanProgress);
   };
 
+  // Free Scanner Strategy gate. Called at the start of every path that produces
+  // a real report (the three scan executors below), BEFORE any lookup runs, so a
+  // free user's fourth scan of the day is stopped rather than merely un-shown.
+  // Returns true to proceed, false to block.
+  //
+  //   - Premium (merged client view) → always proceeds, and never even calls the
+  //     server: a paying customer must not be gated by a network round-trip, and
+  //     the server enforces the free tier independently, so this short-circuit is
+  //     not a bypass — it is the "never strand a paying user" rule the whole app
+  //     follows for Premium.
+  //   - Free → the server reserves one scan. allowed:false opens the limit modal.
+  //   - A null response (endpoint down) fails OPEN: scanning a token must not
+  //     depend on the quota service being up.
+  const guardScan = async () => {
+    if (hasPremium) return true;
+    const view = await consumeScanQuota({ wallet: entitledWallet });
+    if (!view) return true; // fail open — never block on a quota outage
+    if (view.premium) return true; // server also sees premium (e.g. proven wallet)
+    setScanQuota(view);
+    if (!view.allowed) {
+      setScanLimitOpen(true);
+      return false;
+    }
+    return true;
+  };
+
   // The AI Trust Engine stages. These wrap the genuine scoring work
   // (normalizeProject runs the scoring engine in scoringEngine.js), so 'engine'
   // completes once scoring has actually run and 'score' once a real trustScore
@@ -3385,6 +3435,10 @@ function App() {
   };
 
   const resolveSearchMatch = async (match) => {
+    if (!(await guardScan())) {
+      setSearchState({ status: 'idle', message: '' });
+      return;
+    }
     const report = beginScan();
     setSearchState({ status: 'loading', message: t('search.fetching') });
     trackTokenScanStarted(match.address);
@@ -3415,6 +3469,10 @@ function App() {
     }
 
     if (looksLikeSolanaAddress(term)) {
+      if (!(await guardScan())) {
+        setSearchState({ status: 'idle', message: '' });
+        return;
+      }
       const report = beginScan();
       setSearchState({ status: 'loading', message: t('search.fetching') });
       trackTokenScanStarted(term);
@@ -3478,6 +3536,12 @@ function App() {
     }
     if (!looksLikeSolanaAddress(term)) {
       return { status: 'error', message: t('checkToken.errorInvalid') };
+    }
+
+    // Same daily gate as the hero search. On block, open the limit modal and
+    // return a short inline message so the token-check card also reflects it.
+    if (!(await guardScan())) {
+      return { status: 'error', message: t('scanLimit.inlineBlocked') };
     }
 
     try {
@@ -3569,6 +3633,7 @@ function App() {
             openMethodology={() => setMethodologyOpen(true)}
             watchlist={watchlist}
             alertCount={alertCount}
+            scanQuota={scanQuota}
           />
         )}
         {page === 'explore' && (
@@ -3667,6 +3732,13 @@ function App() {
         />
       )}
       {methodologyOpen && <MethodologyModal onClose={() => setMethodologyOpen(false)} />}
+      {scanLimitOpen && (
+        <ScanLimitModal
+          quota={scanQuota}
+          onClose={() => setScanLimitOpen(false)}
+          navigate={(target) => { setScanLimitOpen(false); navigate(target); }}
+        />
+      )}
       {requestingVerification && (
         <VerificationRequestModal
           project={requestingVerification}
@@ -4188,7 +4260,71 @@ function RetentionDashboard({ projects, watchlist, navigate, alertCount }) {
   );
 }
 
-function HomePage({ projects, query, setQuery, searchState, scanProgress, onSearch, onSelectMatch, onTokenCheck, navigate, openMethodology, watchlist, alertCount }) {
+// Free Scanner Strategy — the inline "2 of 3 free scans remaining today" line
+// under the hero search box. Renders nothing for premium users (quota is null)
+// and nothing until the first server view lands, so it never flashes a wrong
+// number. At zero it flips to a compact upgrade nudge — the same message the
+// block modal leads with, kept short for the inline slot.
+function ScanQuotaMeter({ quota, navigate }) {
+  const { t } = useTranslation();
+  if (!quota || quota.premium || quota.unlimited) return null;
+  const limit = quota.limit || FREE_DAILY_SCAN_LIMIT;
+  const remaining = Math.max(0, Number(quota.remaining) || 0);
+
+  if (remaining <= 0) {
+    return (
+      <div className="scan-quota-meter reached" role="status">
+        <Lock size={14} />
+        <span>{t('scanLimit.meterReached')}</span>
+        <button type="button" className="scan-quota-upgrade" onClick={() => navigate('pricing')}>
+          {t('scanLimit.upgradeCta')} <ArrowRight size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="scan-quota-meter" role="status">
+      <Search size={14} />
+      <span>{t('scanLimit.meterRemaining', { remaining, limit })}</span>
+    </div>
+  );
+}
+
+// The hard block after the third daily scan. Explains that the free limit is
+// reached, when it resets, and leads with the Premium upgrade CTA. Premium is
+// the way out of the wall, so it is the primary button.
+function ScanLimitModal({ quota, onClose, navigate }) {
+  const { t } = useTranslation();
+  const limit = quota?.limit || FREE_DAILY_SCAN_LIMIT;
+  const hours = hoursUntilReset(quota?.resetsAt);
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={t('scanLimit.title')}>
+      <div className="modal-panel scan-limit-modal">
+        <button className="close-button" onClick={onClose} aria-label={t('common.close')}><X size={20} /></button>
+        <div className="scan-limit-icon"><Lock size={26} /></div>
+        <h2>{t('scanLimit.title')}</h2>
+        <p>{t('scanLimit.body', { limit })}</p>
+        {hours != null && <p className="scan-limit-reset">{t('scanLimit.resetsIn', { hours })}</p>}
+        <ul className="scan-limit-perks">
+          {t('scanLimit.perks').map((perk) => (
+            <li key={perk}><CheckCircle2 size={16} /> {perk}</li>
+          ))}
+        </ul>
+        <div className="scan-limit-actions">
+          <button className="primary-button" type="button" onClick={() => navigate('pricing')}>
+            {t('scanLimit.upgradeCta')} <ArrowRight size={16} />
+          </button>
+          <button className="ghost-button" type="button" onClick={onClose}>
+            {t('scanLimit.dismiss')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HomePage({ projects, query, setQuery, searchState, scanProgress, onSearch, onSelectMatch, onTokenCheck, navigate, openMethodology, watchlist, alertCount, scanQuota }) {
   const { t } = useTranslation();
   const featured = projects.slice(0, 4);
   const heroProject = featured[0];
@@ -4203,6 +4339,7 @@ function HomePage({ projects, query, setQuery, searchState, scanProgress, onSear
             <p className="hero-subtitle">{t('home.subtitle')}</p>
             <p className="hero-explainer">{t('home.explainer')}</p>
             <SearchBox value={query} onChange={setQuery} onSubmit={onSearch} loading={searchState.status === 'loading'} />
+            <ScanQuotaMeter quota={scanQuota} navigate={navigate} />
             {/* KHAN AI takes over the scan's loading and error reporting; the
                 plain one-line status stays for the quieter states (success,
                 multiple matches) so nothing is said twice. */}

@@ -56,6 +56,7 @@ export default {
     pricing: 'Qiymətlər',
     compare: 'Müqayisə',
     watchlist: 'İzləmə Siyahısı',
+    referral: 'Dəvət et & Qazan',
     add: 'Layihə əlavə et',
     launchpad: 'Launchpad',
     whitepaper: 'Ağ kitab',

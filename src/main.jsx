@@ -671,6 +671,10 @@ const navItems = [
   { id: 'pricing', label: 'Pricing', icon: WalletCards },
   { id: 'compare', label: 'Compare', icon: Scale },
   { id: 'watchlist', label: 'Watchlist', icon: Bell },
+  // Also in SIDEBAR_ITEMS for desktop; listed here too so it reaches the mobile
+  // bottom nav and the desktop top-nav (the sidebar is desktop-only). Gated like
+  // watchlist/add — navTo() shows the sign-in gate for signed-out users.
+  { id: 'referral', label: 'Refer & Earn', icon: Gift },
   { id: 'add', label: 'Add Project', icon: Plus },
   { id: 'launchpad', label: 'Launchpad', icon: Sparkles },
   { id: 'whitepaper', label: 'Whitepaper', icon: BookOpen },

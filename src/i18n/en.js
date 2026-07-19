@@ -56,6 +56,7 @@ export default {
     pricing: 'Pricing',
     compare: 'Compare',
     watchlist: 'Watchlist',
+    referral: 'Refer & Earn',
     add: 'Add Project',
     launchpad: 'Launchpad',
     whitepaper: 'Whitepaper',

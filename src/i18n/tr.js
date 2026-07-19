@@ -56,6 +56,7 @@ export default {
     pricing: 'Fiyatlandırma',
     compare: 'Karşılaştır',
     watchlist: 'İzleme Listesi',
+    referral: 'Davet Et & Kazan',
     add: 'Proje Ekle',
     launchpad: 'Launchpad',
     whitepaper: 'Teknik Doküman',

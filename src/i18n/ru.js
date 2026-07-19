@@ -56,6 +56,7 @@ export default {
     pricing: 'Тарифы',
     compare: 'Сравнить',
     watchlist: 'Список наблюдения',
+    referral: 'Пригласить и заработать',
     add: 'Добавить проект',
     launchpad: 'Launchpad',
     whitepaper: 'White Paper',

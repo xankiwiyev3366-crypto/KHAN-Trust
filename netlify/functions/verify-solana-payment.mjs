@@ -9,6 +9,7 @@
 
 import { grantEntitlement, grantAccountEntitlement, accountSubject, isSignatureUsed, markSignatureUsed } from './_entitlementsStore.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
+import { markMilestone } from './_referralStore.mjs';
 import { planUsdAmount } from '../../src/lib/pricing.js';
 
 const RPC_URL = process.env.VITE_SOLANA_RPC_URL || '';
@@ -295,6 +296,11 @@ async function verifySolanaPayment({ transactionHash, plan, accountUserId = null
     if (accountUserId) {
       await grantAccountEntitlement(accountUserId, { ...record, wallet: buyerWallet || null });
       debug.grantedToAccount = true;
+      // Referral funnel: a paid account grant advances this account's edge to
+      // premium (or lifetime for Early Supporter / Founding Member). Only fires
+      // when the buyer is signed in (accountUserId proven from their own JWT),
+      // idempotent, best-effort — never affects the payment result.
+      await markMilestone(accountUserId, plan === 'early_supporter' ? 'lifetime' : 'premium').catch(() => {});
     }
     return { status: 'verified', message: 'Payment verified', buyerWallet, accountSubject: accountUserId ? accountSubject(accountUserId) : null, debug };
   }

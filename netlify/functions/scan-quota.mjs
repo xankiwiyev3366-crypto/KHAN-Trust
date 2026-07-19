@@ -31,6 +31,7 @@ import { resolveVerifiedPremiumAccess } from './_premiumAccess.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
 import { peekQuota, consumeQuota, FREE_DAILY_SCAN_LIMIT, nextResetIso } from './_scanQuotaStore.mjs';
+import { markMilestone } from './_referralStore.mjs';
 
 // A premium caller has no limit, so there is nothing to count and nothing to
 // store. Shaped like the free view (same keys) so the client reads one contract.
@@ -86,6 +87,14 @@ export async function handler(event) {
     const result = consume
       ? await consumeQuota(identityKey, { now })
       : await peekQuota(identityKey, { now });
+
+    // Referral funnel: a signed-in user actually running a scan is an "active
+    // user" signal that (unlike auth-login) fires even for someone who stays
+    // logged in for weeks. Only on a real consume by a JWT-identified account;
+    // idempotent and best-effort, so it never affects the quota decision.
+    if (consume && payload?.sub) {
+      markMilestone(payload.sub, 'active').catch(() => {});
+    }
 
     // 200 even when the scan is blocked: this is a normal, expected answer the
     // client renders as an upgrade prompt, not an error. `allowed` carries the

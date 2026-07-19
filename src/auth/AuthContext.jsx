@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { AuthGateModal } from './AuthGateModal.jsx';
 import { getGrowthContext } from '../growth.js';
+import { getStoredReferralCode, clearStoredReferralCode } from '../referral.js';
 
 const TOKEN_KEY = 'khan-trust-auth-token-v1';
 
@@ -66,12 +67,22 @@ export function AuthProvider({ children }) {
   };
 
   const register = useCallback(async ({ name, email, password }) => {
+    // `referralCode` is the write-once code captured from ?ref= at first touch
+    // (see referral.js). Sending it here is the one moment an anonymous visitor
+    // who arrived via an invite link becomes a real account that can be credited
+    // to the inviter. Absent/invalid codes are ignored server-side, so this can
+    // never affect a normal sign-up.
+    const referralCode = getStoredReferralCode();
     const data = await apiFetch('auth-register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password, ...growthFields() }),
+      body: JSON.stringify({ name, email, password, ...growthFields(), ...(referralCode ? { referralCode } : {}) }),
     });
     persist(data.user, data.token);
+    // The relationship is now permanently recorded server-side; the local code
+    // has done its job and is cleared so a future different sign-up on this
+    // browser is not mis-attributed to the same inviter.
+    clearStoredReferralCode();
     return data.user;
   }, [persist]);
 

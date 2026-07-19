@@ -1,4 +1,5 @@
 import { consumeVerifyToken, getUserByEmail, updateUser, issueToken, jsonResponse } from './_authStore.mjs';
+import { markMilestone } from './_referralStore.mjs';
 
 export async function handler(event) {
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
@@ -16,6 +17,11 @@ export async function handler(event) {
   if (!user) return jsonResponse(404, { message: 'User not found' });
 
   const updated = await updateUser(user.id, { emailVerified: true });
+
+  // Referral funnel: advance this account's edge to "verified" if it was
+  // referred. Idempotent and best-effort — a no-op for non-referred users.
+  await markMilestone(user.id, 'verified').catch(() => {});
+
   const { passwordHash, ...publicUser } = updated;
 
   return jsonResponse(200, { user: publicUser, token: issueToken(updated) });

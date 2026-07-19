@@ -4,6 +4,7 @@ import { sendVerificationEmail } from './_email.mjs';
 import { appendEvent } from './_analyticsStore.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
 import { recordRegistration } from './_growthRecord.mjs';
+import { attachReferral } from './_referralStore.mjs';
 
 export async function handler(event) {
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
@@ -78,6 +79,14 @@ export async function handler(event) {
     attribution: body.attribution,
     device: body.device,
   });
+
+  // Referral & Invite System: bind this new account to its inviter, if it
+  // arrived through a referral link (`referralCode` is the code the client
+  // captured from ?ref= at first touch). Every guard inside attachReferral is a
+  // silent no-op — self-referral, an unknown code, an already-referred user, a
+  // loop — so a referral can never block or fail a sign-up. Fully isolated:
+  // failure here must not affect account creation.
+  await attachReferral({ referredUserId: id, code: body.referralCode }).catch(() => {});
 
   const { passwordHash, ...publicUser } = user;
   const token = issueToken(user);

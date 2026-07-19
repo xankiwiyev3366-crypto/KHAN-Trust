@@ -13,6 +13,7 @@ import {
   getGrant, setGrant, appendAudit, computeExpiry, effectivePlan,
   PLANS, SOURCES, REASONS, DURATIONS,
 } from './_premiumStore.mjs';
+import { markMilestone } from './_referralStore.mjs';
 
 function sanitize(value, maxLength) {
   return String(value || '').replace(/<[^>]*>/g, '').trim().slice(0, maxLength);
@@ -89,6 +90,15 @@ export async function handler(event) {
     }
 
     await setGrant(userId, record);
+
+    // Referral funnel: an admin granting Premium/Founding Member advances the
+    // user's referral edge, so manual grants are counted the same as paid ones.
+    // Idempotent, best-effort, and only on an ACTIVE upgrade — a revoke or a
+    // downgrade to free never regresses the funnel (it measures furthest stage
+    // ever reached, not current state). Never touches the paid-entitlement path.
+    if (record.status === 'active' && (newPlan === 'premium' || newPlan === 'early_supporter')) {
+      await markMilestone(userId, newPlan === 'early_supporter' ? 'lifetime' : 'premium').catch(() => {});
+    }
 
     await appendAudit({
       id: `pa-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,

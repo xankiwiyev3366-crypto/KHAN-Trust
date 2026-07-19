@@ -104,6 +104,12 @@ export const RATE_POLICIES = {
   // handful of scan checks a day, so a client hammering it is buggy or hostile.
   // Fails open like every policy here — a limiter outage must not block scans.
   scan_quota_ip: { max: 300, windowMs: 5 * MINUTE },
+  // Referral click tracking is a public, unauthenticated top-of-funnel counter.
+  // This caps how fast one IP can inflate a promoter's click count (click
+  // fraud / write amplification) while staying far above a real human opening a
+  // link a few times. Fails open — a broken counter must never block the
+  // sign-up page the link points at.
+  referral_click_ip: { max: 30, windowMs: 5 * MINUTE },
 };
 
 // Convenience wrapper: enforce one named policy for one identifier.

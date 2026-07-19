@@ -2,6 +2,7 @@ import { getUserByEmail, verifyPassword, issueToken, jsonResponse } from './_aut
 import { appendEvent } from './_analyticsStore.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
 import { recordLogin } from './_growthRecord.mjs';
+import { markMilestone } from './_referralStore.mjs';
 
 function tooManyRequests(retryAfterMs) {
   return {
@@ -49,6 +50,12 @@ export async function handler(event) {
     attribution: body.attribution,
     device: body.device,
   });
+
+  // Referral funnel: a returning sign-in is the clearest "active user" signal we
+  // have server-side (registration auto-issues a token without a login call, so
+  // this only fires on a genuine return). Idempotent; a no-op for non-referred
+  // users and after the first time.
+  await markMilestone(user.id, 'active').catch(() => {});
 
   const { passwordHash, ...publicUser } = user;
   const token = issueToken(user);

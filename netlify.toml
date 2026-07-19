@@ -120,3 +120,14 @@
   from = "/badge/:projectId"
   to = "/.netlify/functions/verify-badge?projectId=:projectId"
   status = 200
+
+# Referral & Invite System: the public invite link is /signup?ref=<CODE>.
+# /signup is not a real file, so without this it 404s. A transparent rewrite
+# (status 200, query string preserved by Netlify) serves the hash-routed SPA,
+# whose client reads ?ref= from window.location.search on load, stores the
+# first-touch code, and opens the sign-up modal. Additive and path-specific -
+# still no catch-all, so the SPA at "/" stays untouched.
+[[redirects]]
+  from = "/signup"
+  to = "/index.html"
+  status = 200

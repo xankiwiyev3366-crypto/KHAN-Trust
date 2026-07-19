@@ -49,10 +49,15 @@ import {
   FileText,
   FileWarning,
   Flag,
+  Gift,
   Github,
   Globe2,
   History,
   Home,
+  Link2,
+  MousePointerClick,
+  QrCode,
+  Share2,
   Inbox,
   Info,
   Layers3,
@@ -249,6 +254,16 @@ import {
 // This one is additive and independently verifiable; the legacy paths retire
 // once the console fully replaces the old dashboard.
 import { initGrowth, setGrowthUserId, growth } from './growth.js';
+// Referral & Invite System. Client half: capture ?ref= at boot, and the
+// user/admin data calls for the Referral dashboard and Referral Analytics.
+import {
+  initReferral,
+  fetchMyReferral,
+  regenerateMyReferralCode,
+  fetchReferralAnalytics,
+  fetchReferralDetail,
+} from './referral.js';
+import { qrToSvg } from './lib/qrcode.js';
 import {
   fetchHolders,
   fetchTransactions,
@@ -3234,7 +3249,7 @@ function applyHolderGrowth(project, existing) {
 
 // Pages that require authentication before the user can enter.
 // Clicking these in the nav shows the gate modal rather than navigating.
-const GATED_PAGES = new Set(['watchlist', 'alerts', 'add', 'launchpad', 'profile']);
+const GATED_PAGES = new Set(['watchlist', 'alerts', 'add', 'launchpad', 'profile', 'referral']);
 
 function App() {
   const { t } = useTranslation();
@@ -3322,6 +3337,18 @@ function App() {
     // first-touch channel from the landing URL's UTM/referrer, which are gone
     // after the first client-side navigation.
     initGrowth();
+    // Referral capture: freeze the ?ref= code (write-once) and count the click
+    // before any client-side navigation strips the query string. Returns the
+    // active code so we can greet a referred visitor with the sign-up modal.
+    const refCode = initReferral();
+    // Landing on the public invite link (/signup?ref=CODE) means "create an
+    // account". If nobody is signed in, open the sign-up modal so the referred
+    // visitor is dropped straight into registration. Guarded to the /signup
+    // path so a returning signed-out user who merely has a stored code is not
+    // nagged on every visit.
+    let arrivedOnSignup = false;
+    try { arrivedOnSignup = window.location.pathname.replace(/\/+$/, '') === '/signup'; } catch { arrivedOnSignup = false; }
+    if (refCode && arrivedOnSignup && !user) setAuthModalMode('register');
   }, []);
 
   useEffect(() => {
@@ -3791,6 +3818,8 @@ function App() {
         {page === 'admin-report' && <AdminReportPage />}
         {page === 'admin-holders' && <AdminHolderAnalyticsPage />}
         {page === 'admin-premium' && <AdminPremiumPage />}
+        {page === 'admin-referral' && <AdminReferralPage />}
+        {page === 'referral' && pageAuthReady && <ReferralPage navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />}
         {page === 'profile' && pageAuthReady && <UserProfilePage navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />}
         {page.startsWith('verify-email/') && <EmailVerifyPage token={page.split('/')[1]} navigate={navigate} />}
         {page.startsWith('reset-password/') && <ResetPasswordPage token={page.split('/')[1]} navigate={navigate} />}
@@ -4099,6 +4128,7 @@ const SIDEBAR_ITEMS = [
   { id: 'compare', labelKey: 'sidebar.comparison', icon: Scale },
   { id: 'top-projects', labelKey: 'sidebar.topProjects', icon: Trophy },
   { id: 'categories', labelKey: 'sidebar.categories', icon: Tags },
+  { id: 'referral', labelKey: 'sidebar.referral', icon: Gift },
 ];
 
 // Exact route matching for the sidebar only - intentionally separate from
@@ -9634,6 +9664,9 @@ function AdminAnalyticsPage() {
         <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-premium'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
           <Crown size={16} /> {t('adminPremium.title')}
         </button>
+        <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-referral'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+          <Gift size={16} /> {t('adminReferral.title')}
+        </button>
         <button className="ghost-button" type="button" onClick={logout}>{t('common.signOut')}</button>
       </div>
       <p className="analytics-meta">{t('adminAnalytics.generated', { date: new Date(summary.generatedAt).toLocaleString(), count: summary.eventCount })}</p>
@@ -11977,6 +12010,578 @@ function PremiumProfilePanel({ entitlement }) {
   );
 }
 
+// ── Referral & Invite Page (signed-in users) ──────────────────────────────────
+//
+// Every registered user gets a permanent invite link the moment they open this
+// page (the server mints a code on first read). The funnel counts come straight
+// from the referral edges the auth/verify/login/payment hooks stamp, so nothing
+// here is fabricated — an empty state is a real zero, never a placeholder.
+const REFERRAL_FUNNEL_STAGES = [
+  { key: 'clicks', icon: MousePointerClick },
+  { key: 'signups', icon: UserPlus },
+  { key: 'verified', icon: CheckCircle2 },
+  { key: 'active', icon: Activity },
+  { key: 'premium', icon: Crown },
+  { key: 'lifetime', icon: Star },
+];
+
+const REFERRAL_STATUS_TONE = {
+  registered: 'neutral',
+  verified: 'info',
+  active: 'info',
+  premium: 'gold',
+  lifetime: 'gold',
+};
+
+function ReferralStatusBadge({ status }) {
+  const { t } = useTranslation();
+  const tone = REFERRAL_STATUS_TONE[status] || 'neutral';
+  return <span className={`referral-status referral-status-${tone}`}>{t(`referral.statusLabels.${status}`)}</span>;
+}
+
+function ReferralPage({ navigate, onOpenAuth }) {
+  const { user } = useAuth();
+  const { t, language } = useTranslation();
+  const dateLocale = PDF_LOCALE_MAP[language] || 'en-US';
+  const [data, setData] = useState(null);
+  const [loadState, setLoadState] = useState({ status: 'idle', message: '' });
+  const [copied, setCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+
+  const load = async () => {
+    setLoadState({ status: 'loading', message: '' });
+    try {
+      const view = await fetchMyReferral();
+      setData(view);
+      setLoadState({ status: 'idle', message: '' });
+    } catch (error) {
+      setLoadState({ status: 'error', message: error.message || t('referral.loadError') });
+    }
+  };
+
+  useEffect(() => {
+    if (!user) return;
+    load();
+  }, [user?.id]);
+
+  // Always trust the browser's own origin for the copyable link, so what the
+  // user shares matches the domain they are on; fall back to the server value.
+  const link = useMemo(() => {
+    if (!data?.code) return data?.link || '';
+    try {
+      return `${window.location.origin}/signup?ref=${encodeURIComponent(data.code)}`;
+    } catch {
+      return data.link || '';
+    }
+  }, [data?.code, data?.link]);
+
+  const qrSvg = useMemo(() => {
+    if (!showQr || !link) return '';
+    try {
+      return qrToSvg(link, { ecc: 'M', border: 2, scale: 6 });
+    } catch {
+      return '';
+    }
+  }, [showQr, link]);
+
+  if (!user) {
+    return (
+      <section className="page-section">
+        <SectionTitle icon={Gift} eyebrow={t('referral.eyebrow')} title={t('referral.title')} />
+        <p className="lookup-message">{t('referral.notSignedIn')}</p>
+        <button className="primary-button" onClick={onOpenAuth}>{t('common.signIn')}</button>
+      </section>
+    );
+  }
+
+  const copy = async () => {
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // Clipboard blocked (insecure context / permissions): select-friendly
+      // fallback so the user can still copy manually.
+      setCopied(false);
+    }
+  };
+
+  const share = async () => {
+    if (!link) return;
+    const shareData = { title: t('referral.shareTitle'), text: t('referral.shareText'), url: link };
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        return;
+      }
+    } catch {
+      // user cancelled or share failed — fall through to copy
+    }
+    copy();
+  };
+
+  const regenerate = async () => {
+    if (regenerating) return;
+    if (!window.confirm(t('referral.regenerateConfirm'))) return;
+    setRegenerating(true);
+    try {
+      const res = await regenerateMyReferralCode();
+      setData((prev) => (prev ? { ...prev, code: res.code, link: res.link } : prev));
+      setShowQr(false);
+    } catch {
+      // leave the current code in place on failure
+    }
+    setRegenerating(false);
+  };
+
+  const stats = data?.stats || {};
+  const funnelMax = Math.max(1, stats.clicks || 0, stats.signups || 0);
+
+  return (
+    <section className="page-section referral-page">
+      <SectionTitle icon={Gift} eyebrow={t('referral.eyebrow')} title={t('referral.title')} />
+      <p className="referral-intro">{t('referral.subtitle')}</p>
+
+      {loadState.status === 'error' && (
+        <div className="referral-error">
+          <p className="lookup-message error">{loadState.message}</p>
+          <button className="secondary-button" type="button" onClick={load}>{t('common.retry')}</button>
+        </div>
+      )}
+
+      {loadState.status === 'loading' && !data && (
+        <div className="skeleton-stat-grid" aria-hidden="true">
+          {Array.from({ length: 6 }).map((_, i) => <div className="skeleton-block" key={i} />)}
+        </div>
+      )}
+
+      {data && (
+        <>
+          <div className="referral-link-card">
+            <div className="referral-link-main">
+              <span className="referral-card-label"><Link2 size={15} /> {t('referral.linkLabel')}</span>
+              <div className="referral-link-row">
+                <input className="referral-link-input" type="text" value={link} readOnly onFocus={(e) => e.target.select()} aria-label={t('referral.linkLabel')} />
+                <button className="primary-button referral-copy-btn" type="button" onClick={copy}>
+                  <Copy size={16} /> {copied ? t('common.copied') : t('common.copy')}
+                </button>
+              </div>
+              <div className="referral-actions-row">
+                <button className="secondary-button" type="button" onClick={share}><Share2 size={16} /> {t('referral.share')}</button>
+                <button className="secondary-button" type="button" onClick={() => setShowQr((v) => !v)}>
+                  <QrCode size={16} /> {showQr ? t('referral.qrHide') : t('referral.qrShow')}
+                </button>
+                <button className="ghost-button" type="button" onClick={regenerate} disabled={regenerating}>
+                  <RefreshCw size={16} /> {regenerating ? t('referral.regenerating') : t('referral.regenerate')}
+                </button>
+              </div>
+              <p className="referral-code-note">{t('referral.codeLabel')}: <strong>{data.code}</strong></p>
+            </div>
+            {showQr && qrSvg && (
+              <div className="referral-qr" aria-label={t('referral.qrAlt')} dangerouslySetInnerHTML={{ __html: qrSvg }} />
+            )}
+          </div>
+
+          <div className="referral-stat-grid">
+            <ReferralStatTile icon={MousePointerClick} value={stats.clicks || 0} label={t('referral.stats.clicks')} />
+            <ReferralStatTile icon={UserPlus} value={stats.signups || 0} label={t('referral.stats.signups')} />
+            <ReferralStatTile icon={CheckCircle2} value={stats.verified || 0} label={t('referral.stats.verified')} />
+            <ReferralStatTile icon={Activity} value={stats.active || 0} label={t('referral.stats.active')} />
+            <ReferralStatTile icon={Crown} value={stats.premium || 0} label={t('referral.stats.premium')} />
+            <ReferralStatTile icon={Star} value={stats.lifetime || 0} label={t('referral.stats.lifetime')} />
+            <ReferralStatTile icon={TrendingUp} value={`${stats.signupConversion || 0}%`} label={t('referral.stats.conversion')} />
+            <ReferralStatTile
+              icon={CalendarClock}
+              value={stats.lastSignupAt ? new Date(stats.lastSignupAt).toLocaleDateString(dateLocale) : t('referral.stats.never')}
+              label={t('referral.stats.lastSignup')}
+            />
+          </div>
+
+          <div className="referral-funnel">
+            <h3>{t('referral.funnelTitle')}</h3>
+            <div className="referral-funnel-bars">
+              {REFERRAL_FUNNEL_STAGES.map((stage) => {
+                const value = stats[stage.key] || 0;
+                const pct = Math.round((value / funnelMax) * 100);
+                const StageIcon = stage.icon;
+                return (
+                  <div className="referral-funnel-row" key={stage.key}>
+                    <span className="referral-funnel-label"><StageIcon size={15} /> {t(`referral.funnelStages.${stage.key}`)}</span>
+                    <div className="referral-funnel-track">
+                      <div className="referral-funnel-fill" style={{ width: `${Math.max(pct, value > 0 ? 6 : 0)}%` }} />
+                    </div>
+                    <span className="referral-funnel-value">{value}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="referral-history">
+            <h3>{t('referral.historyTitle')}</h3>
+            {(!data.referrals || data.referrals.length === 0) && (
+              <p className="lookup-message">{t('referral.historyEmpty')}</p>
+            )}
+            {data.referrals && data.referrals.length > 0 && (
+              <div className="scan-history-table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>{t('referral.historyColumns.user')}</th>
+                      <th>{t('referral.historyColumns.status')}</th>
+                      <th>{t('referral.historyColumns.joined')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...data.referrals]
+                      .sort((a, b) => Date.parse(b.registeredAt || 0) - Date.parse(a.registeredAt || 0))
+                      .map((ref, i) => (
+                        <tr key={ref.referredUserId || i}>
+                          {/* Privacy: a promoter sees THAT they referred someone
+                              and how far they got — never the referred person's
+                              identity. */}
+                          <td>{t('referral.anonUser', { n: data.referrals.length - i })}</td>
+                          <td><ReferralStatusBadge status={ref.status} /></td>
+                          <td>{ref.registeredAt ? new Date(ref.registeredAt).toLocaleDateString(dateLocale) : '—'}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="referral-how">
+            <h3>{t('referral.howToTitle')}</h3>
+            <ol className="referral-steps">
+              <li>{t('referral.howToStep1')}</li>
+              <li>{t('referral.howToStep2')}</li>
+              <li>{t('referral.howToStep3')}</li>
+            </ol>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function ReferralStatTile({ icon: Icon, value, label }) {
+  return (
+    <div className="referral-stat-tile">
+      <Icon size={18} className="referral-stat-icon" />
+      <span className="referral-stat-value">{value}</span>
+      <small className="referral-stat-label">{label}</small>
+    </div>
+  );
+}
+
+// ── Admin: Referral Analytics ─────────────────────────────────────────────────
+//
+// Same shared-passcode admin gate as every other admin page. Read-only view of
+// every promoter, searchable/sortable/exportable, with a drill-down into one
+// promoter's full referral history.
+const REFERRAL_ADMIN_SORTS = ['signups', 'clicks', 'premium', 'conversion', 'recent'];
+
+function referralRowsToCsv(rows, headers) {
+  const esc = (v) => {
+    const s = v == null ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const head = headers.map((h) => esc(h.label)).join(',');
+  const body = rows.map((r) => headers.map((h) => esc(h.get(r))).join(',')).join('\n');
+  return `${head}\n${body}`;
+}
+
+function AdminReferralPage() {
+  const { t, language } = useTranslation();
+  const dateLocale = PDF_LOCALE_MAP[language] || 'en-US';
+  const [token, setToken] = useState(() => getStoredAdminToken());
+  const [passcode, setPasscode] = useState('');
+  const [authState, setAuthState] = useState({ status: 'idle', message: '' });
+  const [payload, setPayload] = useState(null);
+  const [loadState, setLoadState] = useState({ status: 'idle', message: '' });
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState('signups');
+  const [detail, setDetail] = useState(null); // { loading, data, error, userId }
+
+  const loadData = async (activeToken) => {
+    setLoadState({ status: 'loading', message: t('adminReferral.loading') });
+    try {
+      const data = await fetchReferralAnalytics(activeToken);
+      setPayload(data);
+      setLoadState({ status: 'idle', message: '' });
+    } catch (error) {
+      setLoadState({ status: 'error', message: error.message || t('adminReferral.loadFailed') });
+    }
+  };
+
+  useEffect(() => {
+    if (!token) return undefined;
+    loadData(token);
+    const interval = setInterval(() => loadData(token), 30000);
+    return () => clearInterval(interval);
+  }, [token]);
+
+  const login = async (event) => {
+    event.preventDefault();
+    setAuthState({ status: 'loading', message: t('adminVerify.checkingPasscode') });
+    try {
+      const newToken = await adminLogin(passcode);
+      setToken(newToken);
+      setAuthState({ status: 'idle', message: '' });
+    } catch (error) {
+      setAuthState({ status: 'error', message: error.message || t('adminVerify.loginFailed') });
+    }
+  };
+
+  const logout = () => {
+    clearAdminToken();
+    setToken('');
+    setPayload(null);
+  };
+
+  const goto = (route) => { window.location.hash = `/${route}`; window.dispatchEvent(new HashChangeEvent('hashchange')); };
+
+  const promoters = payload?.promoters || [];
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let rows = promoters;
+    if (q) {
+      rows = rows.filter((r) =>
+        [r.name, r.username, r.email, r.code].some((v) => String(v || '').toLowerCase().includes(q))
+      );
+    }
+    const sorted = [...rows];
+    sorted.sort((a, b) => {
+      switch (sort) {
+        case 'clicks': return b.clicks - a.clicks;
+        case 'premium': return b.premium - a.premium;
+        case 'conversion': return (b.signupConversion || 0) - (a.signupConversion || 0);
+        case 'recent': return Date.parse(b.lastActivityAt || 0) - Date.parse(a.lastActivityAt || 0);
+        case 'signups':
+        default: return (b.signups - a.signups) || (b.clicks - a.clicks);
+      }
+    });
+    return sorted;
+  }, [promoters, search, sort]);
+
+  const exportCsv = () => {
+    const headers = [
+      { label: 'User', get: (r) => r.name || r.email || r.userId },
+      { label: 'Email', get: (r) => r.email },
+      { label: 'Code', get: (r) => r.code },
+      { label: 'Link', get: (r) => r.link },
+      { label: 'Clicks', get: (r) => r.clicks },
+      { label: 'Registrations', get: (r) => r.signups },
+      { label: 'Verified', get: (r) => r.verified },
+      { label: 'Active', get: (r) => r.active },
+      { label: 'Premium', get: (r) => r.premium },
+      { label: 'Lifetime', get: (r) => r.lifetime },
+      { label: 'Conversion %', get: (r) => r.signupConversion },
+      { label: 'Last Activity', get: (r) => r.lastActivityAt || '' },
+    ];
+    downloadAsFile(`khan-trust-referrals-${Date.now()}.csv`, referralRowsToCsv(filtered, headers), 'text/csv');
+  };
+
+  const openDetail = async (userId) => {
+    setDetail({ loading: true, data: null, error: '', userId });
+    try {
+      const data = await fetchReferralDetail(token, userId);
+      setDetail({ loading: false, data, error: '', userId });
+    } catch (error) {
+      setDetail({ loading: false, data: null, error: error.message || t('adminReferral.loadFailed'), userId });
+    }
+  };
+
+  if (!token) {
+    return (
+      <section className="page-section">
+        <SectionTitle icon={Lock} eyebrow={t('adminVerify.eyebrow')} title={t('adminReferral.title')} />
+        <form className="add-form admin-login-form" onSubmit={login}>
+          <FormField label={t('adminVerify.passcodeLabel')} type="password" value={passcode} onChange={setPasscode} required />
+          <button className="primary-button wide-button" type="submit" disabled={authState.status === 'loading'}>
+            {t('common.signIn')} <ArrowRight size={18} />
+          </button>
+          {authState.message && <p className="lookup-message error">{authState.message}</p>}
+        </form>
+      </section>
+    );
+  }
+
+  const totals = payload?.totals || {};
+  const c = t('adminReferral.columns');
+
+  return (
+    <section className="page-section analytics-dashboard">
+      <SectionTitle icon={Gift} eyebrow={t('adminVerify.eyebrow')} title={t('adminReferral.title')} />
+      <div className="analytics-toolbar">
+        <button className="secondary-button" type="button" onClick={() => loadData(token)}>{t('common.refresh')}</button>
+        <button className="secondary-button" type="button" onClick={exportCsv}><Download size={16} /> {t('adminReferral.exportCsv')}</button>
+        <button className="secondary-button admin-cross-link" type="button" onClick={() => goto('admin-analytics')}>
+          <BarChart3 size={16} /> {t('adminAnalytics.title')}
+        </button>
+        <button className="secondary-button admin-cross-link" type="button" onClick={() => goto('admin-premium')}>
+          <Crown size={16} /> {t('adminPremium.title')}
+        </button>
+        <button className="ghost-button" type="button" onClick={logout}>{t('common.signOut')}</button>
+      </div>
+
+      {payload && (
+        <div className="analytics-stat-grid referral-admin-totals">
+          <ReferralStatTile icon={Users} value={totals.promoters || 0} label={t('adminReferral.totals.promoters')} />
+          <ReferralStatTile icon={MousePointerClick} value={totals.clicks || 0} label={t('adminReferral.totals.clicks')} />
+          <ReferralStatTile icon={UserPlus} value={totals.signups || 0} label={t('adminReferral.totals.signups')} />
+          <ReferralStatTile icon={CheckCircle2} value={totals.verified || 0} label={t('adminReferral.totals.verified')} />
+          <ReferralStatTile icon={Activity} value={totals.active || 0} label={t('adminReferral.totals.active')} />
+          <ReferralStatTile icon={Crown} value={totals.premium || 0} label={t('adminReferral.totals.premium')} />
+          <ReferralStatTile icon={Star} value={totals.lifetime || 0} label={t('adminReferral.totals.lifetime')} />
+        </div>
+      )}
+
+      <div className="referral-admin-controls">
+        <div className="referral-search">
+          <Search size={16} />
+          <input type="text" value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t('adminReferral.searchPlaceholder')} />
+        </div>
+        <label className="referral-sort">
+          <ListFilter size={16} />
+          <select value={sort} onChange={(e) => setSort(e.target.value)}>
+            {REFERRAL_ADMIN_SORTS.map((key) => (
+              <option key={key} value={key}>{t(`adminReferral.sortOptions.${key}`)}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {loadState.status === 'loading' && !payload && (
+        <div className="skeleton-stat-grid" aria-hidden="true">
+          {Array.from({ length: 8 }).map((_, i) => <div className="skeleton-block" key={i} />)}
+        </div>
+      )}
+      {loadState.status === 'error' && !payload && (
+        <p className="lookup-message error">{loadState.message}</p>
+      )}
+
+      {payload && filtered.length === 0 && <p className="lookup-message">{t('adminReferral.empty')}</p>}
+
+      {payload && filtered.length > 0 && (
+        <div className="scan-history-table-wrap">
+          <table className="data-table referral-admin-table">
+            <thead>
+              <tr>
+                <th>{c.user}</th>
+                <th>{c.code}</th>
+                <th className="num">{c.clicks}</th>
+                <th className="num">{c.registrations}</th>
+                <th className="num">{c.verified}</th>
+                <th className="num">{c.active}</th>
+                <th className="num">{c.premium}</th>
+                <th className="num">{c.lifetime}</th>
+                <th className="num">{c.conversion}</th>
+                <th>{c.lastActivity}</th>
+                <th>{c.actions}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r) => (
+                <tr key={r.userId}>
+                  <td>
+                    <div className="referral-admin-user">
+                      <strong>{r.name || t('adminReferral.unnamed')}</strong>
+                      {r.email && <small>{r.email}</small>}
+                    </div>
+                  </td>
+                  <td><code className="referral-admin-code">{r.code || '—'}</code></td>
+                  <td className="num">{r.clicks}</td>
+                  <td className="num">{r.signups}</td>
+                  <td className="num">{r.verified}</td>
+                  <td className="num">{r.active}</td>
+                  <td className="num">{r.premium}</td>
+                  <td className="num">{r.lifetime}</td>
+                  <td className="num">{r.signupConversion || 0}%</td>
+                  <td>{r.lastActivityAt ? new Date(r.lastActivityAt).toLocaleDateString(dateLocale) : '—'}</td>
+                  <td>
+                    <button className="ghost-button referral-detail-btn" type="button" onClick={() => openDetail(r.userId)}>
+                      <History size={14} /> {t('adminReferral.viewDetail')}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {detail && (
+        <ReferralDetailModal detail={detail} dateLocale={dateLocale} onClose={() => setDetail(null)} />
+      )}
+    </section>
+  );
+}
+
+function ReferralDetailModal({ detail, dateLocale, onClose }) {
+  const { t } = useTranslation();
+  const d = detail.data;
+  return (
+    <AdminModalShell onClose={onClose}>
+      <div className="modal-panel referral-detail-modal">
+        <button className="modal-close-btn" type="button" onClick={onClose} aria-label={t('common.close')}><X size={18} /></button>
+        <SectionTitle icon={History} eyebrow={t('adminReferral.eyebrow')} title={t('adminReferral.detailTitle')} />
+        {detail.loading && <p className="lookup-message">{t('adminReferral.loading')}</p>}
+        {detail.error && <p className="lookup-message error">{detail.error}</p>}
+        {d && (
+          <div className="referral-detail-body">
+            <div className="referral-detail-head">
+              <strong>{d.promoter?.name || t('adminReferral.unnamed')}</strong>
+              {d.promoter?.email && <small>{d.promoter.email}</small>}
+              <span className="referral-detail-code">{t('referral.codeLabel')}: <code>{d.code || '—'}</code></span>
+            </div>
+            <div className="referral-detail-stats">
+              <span>{t('adminReferral.totals.clicks')}: <strong>{d.stats?.clicks || 0}</strong></span>
+              <span>{t('adminReferral.totals.signups')}: <strong>{d.stats?.signups || 0}</strong></span>
+              <span>{t('adminReferral.totals.premium')}: <strong>{d.stats?.premium || 0}</strong></span>
+              <span>{t('referral.stats.conversion')}: <strong>{d.stats?.signupConversion || 0}%</strong></span>
+            </div>
+            {(!d.referrals || d.referrals.length === 0) && <p className="lookup-message">{t('adminReferral.detailEmpty')}</p>}
+            {d.referrals && d.referrals.length > 0 && (
+              <div className="scan-history-table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>{t('adminReferral.detailColumns.user')}</th>
+                      <th>{t('adminReferral.detailColumns.status')}</th>
+                      <th>{t('adminReferral.detailColumns.registered')}</th>
+                      <th>{t('adminReferral.detailColumns.premium')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {d.referrals.map((ref) => (
+                      <tr key={ref.referredUserId}>
+                        <td>
+                          <div className="referral-admin-user">
+                            <strong>{ref.name || t('adminReferral.unnamed')}</strong>
+                            {ref.email && <small>{ref.email}</small>}
+                          </div>
+                        </td>
+                        <td><ReferralStatusBadge status={ref.status} /></td>
+                        <td>{ref.registeredAt ? new Date(ref.registeredAt).toLocaleDateString(dateLocale) : '—'}</td>
+                        <td>{ref.premiumAt ? new Date(ref.premiumAt).toLocaleDateString(dateLocale) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </AdminModalShell>
+  );
+}
+
 // ── User Profile Page ─────────────────────────────────────────────────────────
 function UserProfilePage({ navigate, onOpenAuth }) {
   const { user, logout, updateProfile, fetchUserScans } = useAuth();
@@ -12089,6 +12694,15 @@ function UserProfilePage({ navigate, onOpenAuth }) {
           <div className="profile-stat"><span>{scansThisMonth}</span><small>{t('userProfile.stats.thisMonth')}</small></div>
         </div>
       </div>
+
+      <button type="button" className="profile-referral-cta" onClick={() => navigate('referral')}>
+        <span className="profile-referral-cta-icon"><Gift size={20} /></span>
+        <span className="profile-referral-cta-text">
+          <strong>{t('userProfile.referralCta.title')}</strong>
+          <small>{t('userProfile.referralCta.text')}</small>
+        </span>
+        <ArrowRight size={18} />
+      </button>
 
       <div className="profile-edit-section">
         <h3>{t('userProfile.editTitle')}</h3>

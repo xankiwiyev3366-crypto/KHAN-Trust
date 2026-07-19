@@ -278,7 +278,7 @@ const CRYPTO_PAYMENT_WALLET = import.meta.env.VITE_KHAN_PAYMENT_WALLET || '';
 const WALLET_DOWNLOAD_URLS = { Phantom: 'https://phantom.com/download', Solflare: 'https://solflare.com/download' };
 const OFFICIAL_KHAN_LINKS = {
   website: 'https://khantrust.net',
-  x: 'https://x.com/KXankiwiyev3366',
+  x: 'https://x.com/KhanPortall',
   telegram: 'https://t.me/+RXCuwpSNwikzNTE0',
 };
 // Token creation has no fee of its own - it is a Premium feature (see
@@ -10835,7 +10835,7 @@ function ContactPage() {
   const channels = [
     { icon: Mail, label: t('contact.emailLabel'), value: t('contact.emailValue'), href: 'mailto:Xankiwiyev3366@gmail.com' },
     { icon: MessageCircle, label: t('contact.telegramLabel'), value: t('contact.telegramValue'), href: 'https://t.me/+RXCuwpSNwikzNTE0' },
-    { icon: X, label: t('contact.xLabel'), value: t('contact.xValue'), href: 'https://x.com/KXankiwiyev3366' },
+    { icon: X, label: t('contact.xLabel'), value: t('contact.xValue'), href: 'https://x.com/KhanPortall' },
     { icon: Github, label: t('contact.githubLabel'), value: t('contact.githubValue'), href: `https://${t('contact.githubValue').replace(/^https?:\/\//, '')}` },
   ];
   return (

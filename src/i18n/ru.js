@@ -2217,7 +2217,7 @@ export default {
     telegramLabel: 'Telegram',
     telegramValue: 'Join KHAN Trust Telegram',
     xLabel: 'X (Twitter)',
-    xValue: '@KXankiwiyev3366',
+    xValue: '@KhanPortall',
     githubLabel: 'GitHub',
     githubValue: 'github.com/khantrust',
     partnership: 'Интересуетесь партнёрством или верификацией проекта? Свяжитесь с командой KHAN Trust.',

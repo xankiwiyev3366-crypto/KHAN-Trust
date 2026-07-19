@@ -157,7 +157,7 @@ const CURATED_PROJECTS = [
     chain: 'Solana',
     category: 'Infrastructure',
     website: 'https://khantrust.net',
-    twitter: 'https://x.com/KXankiwiyev3366',
+    twitter: 'https://x.com/KhanPortall',
     telegram: 'https://t.me/+RXCuwpSNwikzNTE0',
     discord: '',
     github: 'https://github.com/khantrust',

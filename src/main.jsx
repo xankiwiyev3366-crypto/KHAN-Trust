@@ -36,6 +36,7 @@ import {
   CalendarClock,
   CalendarDays,
   Camera,
+  Check,
   CheckCircle2,
   ChevronDown,
   Brain,
@@ -77,6 +78,7 @@ import {
   Scale,
   Send,
   Shield,
+  ShieldCheck,
   Sparkles,
   Star,
   Tags,
@@ -137,6 +139,7 @@ import { useCorpusRecord } from './tokenCorpus.js';
 import { ANALYST_QUESTIONS, answerQuestion, translateSignalKeys, translatedCategory } from './khanAnalyst.js';
 import { detectRiskAlerts, useWatchlistAlertCount } from './riskAlerts.js';
 import { TRUST_CATEGORIES, buildRiskHistory, validHistory } from './riskHistory.js';
+import { useWatchtowerReport, describeReason, MONITORED_DIMENSIONS, STATUS_TONE } from './watchtower.js';
 import { computePeerBenchmark, peerLabelFor } from './peerBenchmark.js';
 import { I18nProvider, useTranslation } from './i18n/I18nContext.jsx';
 import { translate, getLanguage } from './i18n/index.js';
@@ -3823,6 +3826,7 @@ function App() {
         {page === 'admin-holders' && <AdminHolderAnalyticsPage />}
         {page === 'admin-premium' && <AdminPremiumPage />}
         {page === 'admin-referral' && <AdminReferralPage />}
+        {page === 'watchtower' && pageAuthReady && <WatchtowerPage navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />}
         {page === 'referral' && pageAuthReady && <ReferralPage navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />}
         {page === 'profile' && pageAuthReady && <UserProfilePage navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />}
         {page.startsWith('verify-email/') && <EmailVerifyPage token={page.split('/')[1]} navigate={navigate} />}
@@ -4128,6 +4132,10 @@ const SIDEBAR_ITEMS = [
   { id: 'early-stage', labelKey: 'sidebar.earlyStage', icon: Rocket },
   { id: 'watchlist', labelKey: 'sidebar.watchlist', icon: Eye },
   { id: 'alerts', labelKey: 'sidebar.alerts', icon: Bell, badgeFrom: 'alertCount' },
+  // Sits directly after Alerts: an alert is a single event, the Watchtower
+  // Report is the period view over the same monitoring. Adjacent so the
+  // relationship is obvious without explanation.
+  { id: 'watchtower', labelKey: 'sidebar.watchtower', icon: ShieldCheck },
   { id: 'approvals', labelKey: 'sidebar.approvals', icon: Shield },
   { id: 'compare', labelKey: 'sidebar.comparison', icon: Scale },
   { id: 'top-projects', labelKey: 'sidebar.topProjects', icon: Trophy },
@@ -12041,6 +12049,245 @@ function ReferralStatusBadge({ status }) {
   const { t } = useTranslation();
   const tone = REFERRAL_STATUS_TONE[status] || 'neutral';
   return <span className={`referral-status referral-status-${tone}`}>{t(`referral.statusLabels.${status}`)}</span>;
+}
+
+// ── Watchtower Report ────────────────────────────────────────────────────────
+//
+// The premium monitoring surface: what the re-scan worker observed across the
+// user's watched projects while they were away.
+//
+// THE FREE/PREMIUM SPLIT IS "SHOW THE WORK, GATE THE FINDINGS".
+//
+// Everyone sees the coverage panel — the eight dimensions checked, the number of
+// observation cycles run — and the COUNT of changes detected. Premium unlocks
+// which project changed, what moved, and why. That is deliberate: a free user
+// who watches the monitoring happen and is told "1 important change was
+// detected" has experienced the value before being asked to pay for it. Gating
+// the coverage panel too would leave nothing to sell.
+//
+// EVERY DIMENSION IN THE COVERAGE PANEL IS REAL. The list comes from
+// MONITORED_DIMENSIONS in src/watchtower.js, which may only contain signals
+// _volatileSignals.mjs actually fetches. A decorative checkmark next to
+// something never checked would make this panel a lie, on the one page whose
+// entire job is to prove the product does what it promises.
+function WatchtowerCoveragePanel({ coverage }) {
+  const { t } = useTranslation();
+  return (
+    <div className="watchtower-coverage">
+      <h3>{t('watchtower.coverageTitle')}</h3>
+      <ul className="watchtower-dimensions">
+        {MONITORED_DIMENSIONS.map(({ key }) => (
+          <li key={key}>
+            <Check size={14} aria-hidden="true" />
+            <span>{t(`watchtower.dimensions.${key}`)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="watchtower-coverage-line">
+        {/* Absence of ledger data is reported as unknown, never as zero cycles —
+            claiming "0 observations" would defame a worker that was running. */}
+        {coverage?.known
+          ? t('watchtower.coverageLine', {
+              cycles: formatNumber(coverage.cycles),
+              observations: formatNumber(coverage.observations),
+            })
+          : t('watchtower.coverageUnknown')}
+      </p>
+      {coverage?.known && coverage.declined > 0 && (
+        <p className="watchtower-coverage-note">
+          {t('watchtower.coverageDeclined', { declined: formatNumber(coverage.declined) })}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function WatchtowerTokenRow({ entry, navigate }) {
+  const { t, language } = useTranslation();
+  const tone = STATUS_TONE[entry.status] || 'neutral';
+  const hint = t(`watchtower.statusHint.${entry.status}`);
+  // statusHint only exists for the three states that need explaining; t()
+  // returns the key itself when unmapped, which must not render as text.
+  const hintText = hint.startsWith('watchtower.') ? '' : hint;
+
+  return (
+    <li className={`watchtower-row watchtower-row-${tone}`}>
+      <div className="watchtower-row-head">
+        <button
+          type="button"
+          className="watchtower-row-name"
+          onClick={() => navigate(`project/${encodeURIComponent(entry.identity)}`)}
+        >
+          {entry.name}
+          {entry.ticker && <span className="watchtower-row-ticker">{entry.ticker}</span>}
+        </button>
+        <span className={`watchtower-status watchtower-status-${tone}`}>
+          {t(`watchtower.status.${entry.status}`)}
+        </span>
+      </div>
+
+      {entry.score !== null && (
+        <p className="watchtower-row-score">
+          {t('watchtower.scoreLine', {
+            score: entry.score,
+            risk: t(`common.${String(entry.riskLevel || 'medium').toLowerCase()}`),
+          })}
+          {typeof entry.previousScore === 'number' && entry.previousScore !== entry.score && (
+            <span className="watchtower-row-prev"> · {t('watchtower.scoreFrom', { score: entry.previousScore })}</span>
+          )}
+        </p>
+      )}
+
+      {entry.reasons?.length > 0 && (
+        <ul className="watchtower-reasons">
+          {entry.reasons.map((reason, index) => (
+            <li key={`${reason.code}-${index}`}>{describeReason(reason, language)}</li>
+          ))}
+        </ul>
+      )}
+
+      {hintText && <p className="watchtower-row-hint">{hintText}</p>}
+    </li>
+  );
+}
+
+// The Premium teaser. Shown to free users INSTEAD of the token list, never
+// instead of the coverage panel. It states the true number of detected changes
+// and withholds only which and why — an honest cliffhanger rather than a
+// manufactured one.
+function WatchtowerPremiumLock({ changeCount, navigate }) {
+  const { t } = useTranslation();
+  const items = t('watchtower.lockItems');
+  return (
+    <div className="watchtower-lock">
+      <div className="watchtower-lock-head">
+        <Lock size={16} aria-hidden="true" />
+        <h3>{t('watchtower.lockTitle')}</h3>
+      </div>
+      <p className="watchtower-lock-text">
+        {changeCount > 0
+          ? t(changeCount === 1 ? 'watchtower.lockText' : 'watchtower.lockText_plural', { count: changeCount })
+          : t('watchtower.lockTextClear')}
+      </p>
+      <ul className="watchtower-lock-items">
+        {(Array.isArray(items) ? items : []).map((item) => (
+          <li key={item}><Check size={13} aria-hidden="true" /> {item}</li>
+        ))}
+      </ul>
+      <button type="button" className="btn-primary" onClick={() => navigate('pricing')}>
+        {t('watchtower.lockCta')}
+      </button>
+    </div>
+  );
+}
+
+function WatchtowerPage({ navigate, onOpenAuth }) {
+  const { user } = useAuth();
+  const { t, language } = useTranslation();
+  const { hasPremium } = usePremiumEntitlement();
+  const { loading, report, reason, reload } = useWatchtowerReport(Boolean(user));
+  const dateLocale = PDF_LOCALE_MAP[language] || 'en-US';
+
+  const formatDay = (iso) => {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleDateString(dateLocale, { month: 'short', day: 'numeric' });
+    } catch {
+      return '';
+    }
+  };
+
+  if (!user) {
+    return (
+      <section className="page-section">
+        <SectionTitle icon={ShieldCheck} eyebrow={t('watchtower.eyebrow')} title={t('watchtower.title')} />
+        <div className="watchtower-panel">
+          <h3>{t('watchtower.signedOutTitle')}</h3>
+          <p>{t('watchtower.signedOutText')}</p>
+          <button type="button" className="btn-primary" onClick={onOpenAuth}>{t('common.signIn')}</button>
+        </div>
+      </section>
+    );
+  }
+
+  const summary = report?.summary;
+  // The count the free teaser advertises. Critical + worsened + improved is
+  // every token whose state actually MOVED — the honest answer to "how much
+  // happened", not an inflated one.
+  const changeCount = summary
+    ? summary.needsAttention + summary.improved
+    : 0;
+
+  return (
+    <section className="page-section watchtower-page">
+      <SectionTitle icon={ShieldCheck} eyebrow={t('watchtower.eyebrow')} title={t('watchtower.title')} />
+      <p className="watchtower-subtitle">{t('watchtower.subtitle')}</p>
+
+      {loading && <div className="watchtower-panel"><p>{t('common.loading')}</p></div>}
+
+      {!loading && reason === 'unavailable' && (
+        <div className="watchtower-panel">
+          <h3>{t('watchtower.errorTitle')}</h3>
+          {/* Says explicitly that monitoring is unaffected: a blank report must
+              never be mistaken for "all clear", nor for monitoring having stopped. */}
+          <p>{t('watchtower.errorText')}</p>
+          <button type="button" className="btn-secondary" onClick={reload}>{t('watchtower.retry')}</button>
+        </div>
+      )}
+
+      {!loading && report && (
+        <>
+          <div className="watchtower-header">
+            <p className="watchtower-period">
+              {t('watchtower.periodLabel')}: {formatDay(report.period.start)} – {formatDay(report.period.end)}
+            </p>
+            <button type="button" className="btn-secondary btn-small" onClick={reload}>
+              {t('watchtower.refresh')}
+            </button>
+          </div>
+
+          <p className={`watchtower-headline watchtower-headline-${summary.headlineKey}`}>
+            {t(
+              summary.headlineKey === 'critical' || summary.headlineKey === 'attention'
+                ? (summary.needsAttention === 1 ? `watchtower.headline.${summary.headlineKey}` : `watchtower.headline.${summary.headlineKey}_plural`)
+                : summary.headlineKey === 'improved'
+                  ? (summary.improved === 1 ? 'watchtower.headline.improved' : 'watchtower.headline.improved_plural')
+                  : summary.headlineKey === 'partial'
+                    ? (summary.unobserved === 1 ? 'watchtower.headline.partial' : 'watchtower.headline.partial_plural')
+                    : `watchtower.headline.${summary.headlineKey}`,
+              {
+                count: summary.headlineKey === 'improved'
+                  ? summary.improved
+                  : summary.headlineKey === 'partial'
+                    ? summary.unobserved
+                    : summary.needsAttention,
+              }
+            )}
+          </p>
+
+          <WatchtowerCoveragePanel coverage={report.coverage} />
+
+          {report.tokens.length === 0 ? (
+            <div className="watchtower-panel">
+              <h3>{t('watchtower.emptyTitle')}</h3>
+              <p>{t('watchtower.emptyText')}</p>
+              <button type="button" className="btn-primary" onClick={() => navigate('watchlist')}>
+                {t('watchtower.emptyCta')}
+              </button>
+            </div>
+          ) : hasPremium ? (
+            <ul className="watchtower-list">
+              {report.tokens.map((entry) => (
+                <WatchtowerTokenRow key={entry.identity} entry={entry} navigate={navigate} />
+              ))}
+            </ul>
+          ) : (
+            <WatchtowerPremiumLock changeCount={changeCount} navigate={navigate} />
+          )}
+        </>
+      )}
+    </section>
+  );
 }
 
 function ReferralPage({ navigate, onOpenAuth }) {

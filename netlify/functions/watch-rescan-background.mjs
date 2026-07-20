@@ -23,6 +23,7 @@ import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { listSubscriptions } from './_alertsStore.mjs';
 import { putWatchSnapshot } from './_watchSnapshotStore.mjs';
 import { distinctWatchedTokens, rescanAll } from './_rescanEngine.mjs';
+import { recordRun } from './_watchtowerStore.mjs';
 
 export async function handler(event) {
   // Same posture as growth-analyze-background: this does real network work and
@@ -44,6 +45,11 @@ export async function handler(event) {
       console.log('[watch-rescan] no watched tokens; nothing to observe.');
       return { statusCode: 200 };
     }
+
+    // A run with tokens to observe is a run the Watchtower Report can account
+    // for, so the ledger entry is written even if every observation below
+    // declines — "we ran, and could not see anything" is a materially different
+    // report from "we did not run", and only the ledger can tell them apart.
 
     const { results, observed, declined } = await rescanAll(tokens);
 
@@ -73,6 +79,16 @@ export async function handler(event) {
         reasons[r.reason] = (reasons[r.reason] || 0) + 1;
       }
       console.warn(`[watch-rescan] declined ${declined}/${tokens.length}: ${JSON.stringify(reasons)}`);
+    }
+
+    // Coverage ledger for the Watchtower Report. Best-effort and LAST, after
+    // every snapshot is durably stored: this is reporting metadata, not a
+    // precondition for observing. Losing a ledger row costs one line of prose in
+    // a report; letting it fail the run would cost an alert.
+    try {
+      await recordRun({ tokens: tokens.length, observed, declined });
+    } catch (error) {
+      console.warn(`[watch-rescan] coverage ledger write failed: ${error.message}`);
     }
 
     console.log(

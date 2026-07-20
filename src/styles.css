@@ -9944,3 +9944,299 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
   .referral-funnel-label { flex-basis: 110px; font-size: 12px; }
   .referral-copy-btn { flex: 1 1 auto; justify-content: center; }
 }
+
+/* ── Watchtower Report ──────────────────────────────────────────────────────
+   The premium monitoring surface. Uses only the existing black/gold custom
+   properties - no new colours - so it reads as part of the platform rather
+   than a bolted-on module. Every layout rule below is written mobile-first
+   and collapses to a single column under 640px; the token rows are the piece
+   that would otherwise overflow, so they wrap rather than scroll. */
+
+.watchtower-subtitle {
+  color: var(--muted);
+  margin: -4px 0 18px;
+  max-width: 62ch;
+  line-height: 1.55;
+}
+
+.watchtower-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.watchtower-period {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* The one-line verdict. Tone is carried by colour AND by the wording itself,
+   never by colour alone - a red sentence that reads neutrally to a
+   colour-blind user would be a monitoring product failing its whole purpose. */
+.watchtower-headline {
+  font-size: 1.05rem;
+  line-height: 1.5;
+  margin: 0 0 18px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-soft);
+  background: var(--panel-2);
+}
+
+.watchtower-headline-critical {
+  border-color: rgba(255, 117, 110, 0.4);
+  color: var(--danger);
+}
+
+.watchtower-headline-attention {
+  border-color: rgba(247, 190, 82, 0.38);
+  color: var(--warning);
+}
+
+.watchtower-headline-partial {
+  border-color: rgba(247, 190, 82, 0.28);
+  color: var(--text);
+}
+
+.watchtower-headline-improved,
+.watchtower-headline-steady {
+  border-color: rgba(103, 211, 156, 0.32);
+  color: var(--success);
+}
+
+/* Coverage panel - the "here is the work we did" proof. Shown to free and
+   premium users alike; it is what makes a quiet period feel like a service
+   rather than an absence. */
+.watchtower-coverage {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-bottom: 18px;
+  box-shadow: var(--shadow-card);
+}
+
+.watchtower-coverage h3 {
+  margin: 0 0 14px;
+  font-size: 0.95rem;
+  color: var(--gold-bright);
+}
+
+.watchtower-dimensions {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: grid;
+  /* Two columns on desktop, one on narrow screens - auto-fit rather than a
+     media query so it also handles the sidebar-collapsed tablet width. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 18px;
+}
+
+.watchtower-dimensions li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.watchtower-dimensions svg {
+  color: var(--success);
+  flex-shrink: 0;
+}
+
+.watchtower-coverage-line {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.watchtower-coverage-note {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+/* Token rows */
+
+.watchtower-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.watchtower-row {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+.watchtower-row-critical { border-left-color: var(--danger); }
+.watchtower-row-worse    { border-left-color: var(--warning); }
+.watchtower-row-better   { border-left-color: var(--success); }
+.watchtower-row-unknown  { border-left-color: var(--muted); }
+
+.watchtower-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.watchtower-row-name {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 0.98rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  text-align: left;
+}
+
+.watchtower-row-name:hover { color: var(--gold-bright); }
+
+.watchtower-row-ticker {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.watchtower-status {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-soft);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.watchtower-status-critical { color: var(--danger);  border-color: rgba(255, 117, 110, 0.4); }
+.watchtower-status-worse    { color: var(--warning); border-color: rgba(247, 190, 82, 0.4); }
+.watchtower-status-better   { color: var(--success); border-color: rgba(103, 211, 156, 0.4); }
+
+.watchtower-row-score {
+  margin: 8px 0 0;
+  font-size: 0.86rem;
+  color: var(--text);
+}
+
+.watchtower-row-prev { color: var(--muted); }
+
+.watchtower-reasons {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.watchtower-row-hint {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+/* Premium lock - shown INSTEAD of the token list, never instead of the
+   coverage panel. The free user still sees the work; only the findings are
+   gated. */
+.watchtower-lock {
+  background: linear-gradient(145deg, var(--gold-soft), rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.watchtower-lock-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+
+.watchtower-lock-head svg { color: var(--gold-bright); flex-shrink: 0; }
+
+.watchtower-lock-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--gold-bright);
+}
+
+.watchtower-lock-text {
+  margin: 0 0 14px;
+  color: var(--text);
+  line-height: 1.55;
+  max-width: 62ch;
+}
+
+.watchtower-lock-items {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.watchtower-lock-items li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.87rem;
+  color: var(--muted);
+}
+
+.watchtower-lock-items svg { color: var(--gold); flex-shrink: 0; }
+
+/* Shared panel for signed-out / empty / error states. */
+.watchtower-panel {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 22px;
+  text-align: center;
+}
+
+.watchtower-panel h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.watchtower-panel p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  line-height: 1.55;
+  max-width: 52ch;
+  margin-inline: auto;
+}
+
+@media (max-width: 640px) {
+  .watchtower-coverage,
+  .watchtower-lock { padding: 15px; }
+
+  .watchtower-headline { font-size: 0.97rem; padding: 12px 13px; }
+
+  /* Status chip drops below the name rather than squeezing it. */
+  .watchtower-row-head { flex-direction: column; align-items: flex-start; }
+}

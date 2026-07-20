@@ -34,6 +34,14 @@ import { getWatchSnapshot } from './_watchSnapshotStore.mjs';
 import { RESCAN_ENGINE_VERSION } from './_rescanEngine.mjs';
 import { sendEmail, isEmailConfigured } from './_email.mjs';
 import { addNotifications, riskAlertId } from './_notificationStore.mjs';
+import { changeReasonCodes, hasCriticalReason } from './_watchSignals.mjs';
+import { isComparableBaseline } from './_watchtowerBaseline.mjs';
+
+// Detection now lives in _watchSignals.mjs so the Watchtower Report applies the
+// IDENTICAL rules — two surfaces describing the same token must never disagree.
+// Re-exported here because this module's export surface is public API to
+// tests/alertsRun.test.mjs and to any future caller.
+export { changeReasonCodes } from './_watchSignals.mjs';
 
 // Runs hourly at :30, deliberately NOT at :00 where watch-rescan-cron fires.
 //
@@ -50,16 +58,11 @@ const SCORE_DROP_THRESHOLD = 10;
 
 // Is this stored baseline comparable to a snapshot the current engine produced?
 //
-// A baseline is only comparable if it came from the same lane AND the same
-// engine version. Legacy baselines (written when this function read the corpus)
-// carry no `source`, so they are correctly rejected here — which is what stops
-// the switch-over from emailing every existing subscriber a rug alert that is
-// really just a change of methodology.
-export function isComparableBaseline(prev) {
-  if (!prev) return false;
-  if (prev.source !== 'server_rescan') return false;
-  return prev.engineVersion === RESCAN_ENGINE_VERSION;
-}
+// The rule now lives in _watchtowerBaseline.mjs so the Watchtower Report applies
+// the identical one — see that module for why lane + engine version are the two
+// axes that matter. Re-exported because this module's surface is public API to
+// tests/alertsRun.test.mjs.
+export { isComparableBaseline } from './_watchtowerBaseline.mjs';
 
 // Pure and exported for unit testing. "Worsened" = the risk LEVEL went up, or
 // the score dropped by at least the threshold, versus the previous snapshot.
@@ -90,66 +93,10 @@ export function riskWorsened(prev, current) {
 //     engine cannot retroactively rewrite why we told someone their money was
 //     at risk.
 //
-// Server-local and dependency-free on purpose: the client's riskHistory.js
-// pulls in the i18n bundle, which doesn't belong in a Netlify Function, and the
-// email is English-only.
-function num(value) {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-// The reason detection itself, as structured CODES rather than sentences:
-// [{ code, params }]. Two consumers render these, and they must never disagree
-// about what happened:
+// The email stays English because an email is delivered once, at write time,
+// with no reader context — the in-app bell and the Watchtower Report have both,
+// so they get the localized treatment via the same structured codes.
 //
-//   - the email digest, in English, via changeReasons() below;
-//   - the in-app notification center, in the reader's own language, by passing
-//     the code to the client's i18n at RENDER time (see _notificationStore.mjs).
-//
-// Splitting detection from wording is what makes the second one possible. A
-// sentence built here is frozen in English forever; a code is late-bound. The
-// email stays English because an email is delivered once, at write time, with no
-// reader context - the in-app bell has both, so it gets the better treatment.
-export function changeReasonCodes(prev, current) {
-  const codes = [];
-  const before = prev?.signals;
-  const after = current?.signals;
-  if (!before || !after) return codes;
-
-  const prevLiq = num(before.totalLiquidityUsd);
-  const currLiq = num(after.totalLiquidityUsd);
-  if (prevLiq !== null && currLiq !== null && prevLiq > 0) {
-    const ratio = (currLiq - prevLiq) / prevLiq;
-    // A total drain is the headline event, named as what it is rather than as
-    // "liquidity dropped 100%".
-    if (currLiq === 0) codes.push({ code: 'liquidityRemoved', params: {} });
-    else if (ratio <= -0.1) codes.push({ code: 'liquidityDropped', params: { percent: Math.round(Math.abs(ratio) * 100) } });
-  }
-
-  const prevHolder = num(before.topHolderPercent);
-  const currHolder = num(after.topHolderPercent);
-  if (prevHolder !== null && currHolder !== null && currHolder - prevHolder >= 3) {
-    codes.push({ code: 'topHolderGrew', params: { from: prevHolder, to: currHolder } });
-  }
-
-  // An authority flipping back on is a categorical change, not a gradual one:
-  // someone can now mint or freeze supply that they previously could not.
-  if (before.mintAuthorityEnabled === false && after.mintAuthorityEnabled === true) {
-    codes.push({ code: 'mintReenabled', params: {} });
-  }
-  if (before.freezeAuthorityEnabled === false && after.freezeAuthorityEnabled === true) {
-    codes.push({ code: 'freezeReenabled', params: {} });
-  }
-
-  const prevHolders = num(before.holderCount);
-  const currHolders = num(after.holderCount);
-  if (prevHolders !== null && currHolders !== null && prevHolders > 0) {
-    const ratio = (currHolders - prevHolders) / prevHolders;
-    if (ratio <= -0.2) codes.push({ code: 'holdersFell', params: { percent: Math.round(Math.abs(ratio) * 100) } });
-  }
-
-  return codes;
-}
-
 // English renderings for the email digest. The wording is unchanged from when
 // this function did the detecting itself - the email is a delivered artefact and
 // its exact text is pinned by tests/alertsRun.test.mjs.
@@ -190,9 +137,7 @@ function toNotification(change) {
   const { token, current, prev, codes } = change;
   // High severity for the categorical events - an authority re-enabled or the
   // liquidity gone are not "your score moved", they are "act now".
-  const isCritical =
-    current.riskLevel === 'High' ||
-    codes.some(({ code }) => code === 'liquidityRemoved' || code === 'mintReenabled' || code === 'freezeReenabled');
+  const isCritical = current.riskLevel === 'High' || hasCriticalReason(codes);
 
   return {
     id: riskAlertId(token.identity, current.observedAt),

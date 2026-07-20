@@ -1,0 +1,137 @@
+// GET /.netlify/functions/watchtower-report
+//
+// The caller's current Watchtower Report. Generated ON READ, from the watch-lane
+// snapshots the re-scan worker has already stored, then persisted along with the
+// baseline it was generated against.
+//
+// WHY GENERATE ON READ RATHER THAN ON A CRON
+//
+// A cron would have to pick a moment for every user in the world — 06:00 UTC is
+// the middle of someone's night, and a report generated while they sleep is
+// stale by the time they read it. Generating on read means the period is always
+// "since you last saw a report", which is the only period that is actually
+// meaningful to the reader, and it costs nothing extra: the observation work is
+// already done by watch-rescan-background, and this only reads and diffs.
+//
+// It also means an inactive user costs zero. A cron generating weekly reports
+// for every account that ever signed up would burn work on people who will never
+// open them.
+//
+// THE PERIOD IS A HIGH-WATER MARK, NOT A WINDOW
+//
+// Report N covers [when report N-1 was generated -> now]. No gap, no overlap, no
+// drift. This is why the baseline lives in _watchtowerStore and NOT in
+// sub.lastNotified, which alerts-run re-baselines hourly (see that module's
+// header): reading the alert baseline would silently reduce every report to
+// "what changed in the last hour" while looking entirely correct.
+//
+// MIN_PERIOD_SECONDS stops a refresh-happy user from re-baselining themselves
+// into an empty report: two reads a minute apart would leave the second one with
+// a 60-second period in which, correctly, nothing happened. Inside that window
+// the STORED report is returned unchanged.
+import { verifyJwt, bearerToken } from './_authStore.mjs';
+import { getSubscription } from './_alertsStore.mjs';
+import { getWatchSnapshots } from './_watchSnapshotStore.mjs';
+import {
+  getReportState,
+  saveReportState,
+  listRuns,
+  coverageBetween,
+  toBaselineEntry,
+} from './_watchtowerStore.mjs';
+import { buildWatchtowerReport } from './_watchtowerReport.mjs';
+import { jsonResponse } from './_blobsClient.mjs';
+
+// Below this, a re-read returns the stored report instead of generating a new
+// one. Fifteen minutes is comfortably shorter than the hourly observation
+// cadence (so a user can never be shown a stale report after new data landed)
+// and long enough that normal navigation never re-baselines.
+const MIN_PERIOD_SECONDS = 15 * 60;
+
+// The period for a user who has never had a report. Seven days matches the
+// weekly rhythm the report is written for, and bounds the coverage lookup on a
+// brand-new account to something meaningful rather than "all time".
+const FIRST_PERIOD_DAYS = 7;
+
+export async function handler(event) {
+  try {
+    if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
+
+    const payload = verifyJwt(bearerToken(event));
+    if (!payload?.sub) return jsonResponse(401, { message: 'Unauthorized' });
+
+    const userId = payload.sub;
+    const now = new Date();
+    const state = await getReportState(userId);
+
+    // Serve the stored report inside the debounce window. `fresh: false` lets the
+    // client show "generated 4 minutes ago" rather than implying it just ran.
+    const lastAt = state.lastReportAt ? Date.parse(state.lastReportAt) : null;
+    if (state.lastReport && Number.isFinite(lastAt) && (now.getTime() - lastAt) < MIN_PERIOD_SECONDS * 1000) {
+      return jsonResponse(200, { ok: true, fresh: false, report: state.lastReport });
+    }
+
+    const subscription = await getSubscription(userId);
+    const tokens = Array.isArray(subscription?.tokens) ? subscription.tokens : [];
+
+    // Read every watched token's latest server observation in one pass. Misses
+    // resolve to null (see _watchSnapshotStore) — a token the worker has not
+    // managed to observe is reported as UNOBSERVED, never quietly dropped.
+    const snapshots = tokens.length
+      ? await getWatchSnapshots(tokens.map((token) => token.identity))
+      : {};
+
+    const periodStart = state.lastReportAt
+      || new Date(now.getTime() - FIRST_PERIOD_DAYS * 86400_000).toISOString();
+    const periodEnd = now.toISOString();
+
+    // Coverage is best-effort: an unreadable ledger must not fail the report, it
+    // just makes coverage unknown — which the report renders honestly rather
+    // than as zero. See coverageBetween().
+    let coverage;
+    try {
+      coverage = coverageBetween(await listRuns(), periodStart, periodEnd);
+    } catch {
+      coverage = { known: false, cycles: 0, observations: 0, declined: 0 };
+    }
+
+    const report = buildWatchtowerReport({
+      tokens,
+      snapshots,
+      baseline: state.baseline || {},
+      coverage,
+      period: { start: periodStart, end: periodEnd },
+    });
+
+    // Re-baseline to what we just observed, so the NEXT report covers exactly
+    // from here. Only tokens we actually observed are re-baselined: an
+    // unobserved token keeps its previous baseline, so when the worker next
+    // manages to see it, the comparison is still against a real past observation
+    // rather than against a hole.
+    const baseline = { ...(state.baseline || {}) };
+    for (const token of tokens) {
+      const current = snapshots[token.identity];
+      if (!current) continue;
+      baseline[token.identity] = toBaselineEntry(current);
+    }
+
+    // Drop baselines for tokens no longer watched, so the blob cannot grow
+    // without bound as a user churns through a watchlist.
+    const watched = new Set(tokens.map((token) => token.identity));
+    for (const identity of Object.keys(baseline)) {
+      if (!watched.has(identity)) delete baseline[identity];
+    }
+
+    await saveReportState({
+      userId,
+      baseline,
+      baselineAt: periodEnd,
+      lastReport: report,
+      lastReportAt: periodEnd,
+    });
+
+    return jsonResponse(200, { ok: true, fresh: true, report });
+  } catch (error) {
+    return jsonResponse(500, { message: `watchtower-report crashed: ${error.message}` });
+  }
+}

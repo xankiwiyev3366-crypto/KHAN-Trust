@@ -139,6 +139,10 @@ export async function rescanToken(token, options = {}) {
         mintAuthorityEnabled: signals.value.mintAuthorityEnabled,
         freezeAuthorityEnabled: signals.value.freezeAuthorityEnabled,
         upgradeable: signals.value.upgradeable,
+        // Developer-wallet observation. Recorded but NOT scored — see the note
+        // in _volatileSignals.mjs on why this needed no engine-version bump.
+        // Diffed on its own terms by _watchSignals.mjs.
+        devWallet: signals.value.devWallet || null,
       },
       source: 'server_rescan',
       engineVersion: RESCAN_ENGINE_VERSION,

@@ -168,6 +168,84 @@ function parseGoPlusHolders(result) {
   };
 }
 
+// ── Developer wallet observation ─────────────────────────────────────────────
+//
+// Extracted from the SAME GoPlus response the worker already fetches — these
+// fields were previously parsed away. No new provider, no new key, no added
+// latency, no change to the two-calls-per-token economics.
+//
+// THE TWO CHAINS EXPOSE GENUINELY DIFFERENT THINGS, AND WE RECORD ONLY WHAT
+// EACH ACTUALLY GIVES:
+//
+//   EVM     creator_address / creator_percent  — the deployer's remaining stake.
+//           owner_address / owner_percent      — the privileged owner's stake.
+//           A deployer's stake SHRINKING is the earliest honest rug signal
+//           there is: it precedes the liquidity pull rather than following it.
+//
+//   Solana  has no creator balance at all. What it does expose is the SET OF
+//           AUTHORITY ADDRESSES (mint, freeze, balance-mutable, metadata
+//           upgrade) plus the declared creators. A change in WHO holds an
+//           authority is the Solana-equivalent high-signal event: the same
+//           powers, in a different wallet, is a transfer of control the holder
+//           was never told about.
+//
+// Verified against live responses for both chains before this was written —
+// guessing at field names would have produced a monitor that silently reported
+// null forever, which is worse than not shipping it.
+//
+// Every field is null when GoPlus omits it. Null means "not observed" and can
+// never be diffed into a change (see _watchSignals.mjs) — an absent value must
+// never read as "the developer sold".
+function num(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function addressList(value) {
+  if (!Array.isArray(value)) return null;
+  const addresses = value
+    .map((entry) => (typeof entry === 'string' ? entry : entry?.address))
+    .filter((address) => typeof address === 'string' && address.length > 0);
+  // Sorted so the comparison is order-insensitive: GoPlus does not promise a
+  // stable ordering, and an array reshuffle must never read as a control change.
+  return addresses.sort();
+}
+
+function parseDevWallet(entry, chain) {
+  if (chain === 'solana') {
+    return {
+      // Who currently holds each privileged authority. Empty array is a REAL
+      // observation ("renounced — nobody holds it"), distinct from null
+      // ("GoPlus did not tell us").
+      mintAuthorities: addressList(entry.mintable?.authority),
+      freezeAuthorities: addressList(entry.freezable?.authority),
+      balanceAuthorities: addressList(entry.balance_mutable_authority?.authority),
+      metadataAuthorities: addressList(entry.metadata_mutable?.metadata_upgrade_authority),
+      creators: addressList(entry.creators),
+      // Not available on Solana. Recorded as null rather than omitted so the
+      // shape is uniform across chains and a consumer never has to ask which
+      // chain it is looking at to know whether a field is meaningful.
+      creatorAddress: null,
+      creatorPercent: null,
+      ownerAddress: null,
+      ownerPercent: null,
+    };
+  }
+
+  return {
+    mintAuthorities: null,
+    freezeAuthorities: null,
+    balanceAuthorities: null,
+    metadataAuthorities: null,
+    creators: null,
+    creatorAddress: typeof entry.creator_address === 'string' ? entry.creator_address : null,
+    creatorPercent: num(entry.creator_percent),
+    ownerAddress: typeof entry.owner_address === 'string' ? entry.owner_address : null,
+    ownerPercent: num(entry.owner_percent),
+  };
+}
+
 export async function fetchTokenSecurity(address, chain, opts) {
   const url = chain === 'solana'
     ? `${GOPLUS_API_BASE}/solana/token_security?contract_addresses=${address}`
@@ -189,6 +267,9 @@ export async function fetchTokenSecurity(address, chain, opts) {
     ok: true,
     value: {
       ...holders,
+      // Observed alongside the scored signals, never scored. See the note on
+      // `devWallet` in fetchVolatileSignals().
+      devWallet: parseDevWallet(entry, chain),
       // Solana exposes these directly; EVM exposes analogous flags. An absent
       // flag stays null so scoreSecurity() reports "unknown" rather than "safe".
       mintAuthorityEnabled: chain === 'solana'
@@ -244,6 +325,17 @@ export async function fetchVolatileSignals({ contract, chain = 'solana' }, optio
   return {
     ok: true,
     // Shaped to slot straight into calculateLiveScores(project, data) as `data`.
+    //
+    // `devWallet` RIDES ALONG BUT IS NEVER SCORED. calculateLiveScores reads
+    // only the fields it knows; an extra key is inert to it. That is the whole
+    // reason developer-wallet monitoring could be added without bumping
+    // RESCAN_ENGINE_VERSION: the SCORE's input set is byte-for-byte what it was,
+    // so every snapshot written before this change stays comparable to every one
+    // written after, and no existing subscriber goes blind for a period while
+    // baselines re-establish.
+    //
+    // The new dimension is diffed on its own terms in _watchSignals.mjs. Old
+    // snapshots simply lack the key, and an absent side is never a change.
     value: {
       totalLiquidityUsd: liquidity.value.totalLiquidityUsd,
       liquidityUsd: liquidity.value.totalLiquidityUsd,
@@ -256,6 +348,7 @@ export async function fetchVolatileSignals({ contract, chain = 'solana' }, optio
       mintAuthorityEnabled: security.value.mintAuthorityEnabled,
       freezeAuthorityEnabled: security.value.freezeAuthorityEnabled,
       upgradeable: security.value.upgradeable,
+      devWallet: security.value.devWallet,
     },
     sources: ['dexscreener', 'goplus'],
   };

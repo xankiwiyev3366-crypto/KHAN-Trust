@@ -58,7 +58,7 @@ mock.module('../netlify/functions/_email.mjs', {
 });
 
 const { handler } = await import('../netlify/functions/alerts-run.mjs');
-const { saveSubscription } = await import('../netlify/functions/_alertsStore.mjs');
+const { saveSubscription, getSubscription } = await import('../netlify/functions/_alertsStore.mjs');
 const { putWatchSnapshot } = await import('../netlify/functions/_watchSnapshotStore.mjs');
 const { RESCAN_ENGINE_VERSION } = await import('../netlify/functions/_rescanEngine.mjs');
 
@@ -112,6 +112,20 @@ async function subscribe(lastNotified = {}) {
     tokens: [{ identity: IDENTITY, contract: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263', chain: 'Solana', name: 'Bonk', ticker: 'BONK' }],
     lastNotified,
   });
+}
+
+// Simulates the notification interval elapsing between two runs.
+//
+// alerts-run now ticks every 30 minutes (the fastest tier) but notifies each
+// subscriber on THEIR plan's cadence, so a second handler() call in the same
+// millisecond is correctly skipped for a free-tier user. Tests that exercise
+// run-over-run behaviour must advance that clock, exactly as real time would.
+// This is a clock, not a bypass: the notify gate itself is tested in
+// tests/watchTiers.test.mjs.
+async function advanceNotifyClock() {
+  const sub = await getSubscription('u1');
+  sub.lastNotifyAt = null;
+  await saveSubscription(sub);
 }
 
 // ── THE fix ───────────────────────────────────────────────────────────────────
@@ -187,7 +201,8 @@ test('after a legacy baseline is replaced, the next real drop DOES alert', async
   await handler();
   assert.equal(sent.length, 0, 'run 1 re-baselines without alerting');
 
-  // Run 2: the token genuinely collapses.
+  // Run 2: the token genuinely collapses, 12h later (see advanceNotifyClock).
+  await advanceNotifyClock();
   await putWatchSnapshot(IDENTITY, snapshot({ trustScore: 30, riskLevel: 'High', liquidity: 0 }));
   await handler();
   assert.equal(sent.length, 1, 'run 2 must alert — the loop is live, not muted');
@@ -288,4 +303,55 @@ test('every watcher of a collapsing token is notified', async () => {
 
   assert.equal(sent.length, 3, 'one re-scan, three notifications');
   assert.deepEqual(sent.map((m) => m.to).sort(), ['u1@example.com', 'u2@example.com', 'u3@example.com']);
+});
+
+// ── Tiered notification cadence ───────────────────────────────────────────────
+
+test('a worsening during a not-yet-due window is DELAYED, never dropped', async () => {
+  // THE load-bearing property of tiered notification.
+  //
+  // A free user is not notified on every 30-minute tick. The dangerous way to
+  // implement that is to compare, re-baseline, and withhold the message: the
+  // worsening would be folded into the new baseline and never reported at all.
+  // The user would silently lose an alert about their money, and no test that
+  // only counts emails would notice.
+  //
+  // So a not-due user is skipped ENTIRELY, baseline untouched, and the next due
+  // run compares against the older baseline and still catches the collapse.
+  reset();
+  await subscribe({ [IDENTITY]: baseline({ score: 85, riskLevel: 'Low' }) });
+
+  // Tick 1: the token collapses, but the free user was notified moments ago.
+  await saveSubscription({
+    ...(await getSubscription('u1')),
+    lastNotifyAt: new Date().toISOString(),
+  });
+  await putWatchSnapshot(IDENTITY, snapshot({ trustScore: 25, riskLevel: 'High', liquidity: 0 }));
+  await handler();
+  assert.equal(sent.length, 0, 'not due yet — nothing sent');
+
+  // The baseline must still be the ORIGINAL healthy one. If this run had
+  // re-baselined to 25/High, the collapse would now look like the normal state
+  // and could never be reported.
+  const after = await getSubscription('u1');
+  assert.equal(after.lastNotified[IDENTITY].score, 85, 'baseline must NOT advance while muted');
+
+  // Tick 2: the interval has elapsed. The collapse is still news.
+  await advanceNotifyClock();
+  await handler();
+  assert.equal(sent.length, 1, 'the delayed alert must still fire');
+});
+
+test('a run the user was due for stamps the clock even when nothing changed', async () => {
+  // Otherwise a user whose tokens are all healthy stays permanently due and is
+  // re-evaluated on every single tick — the exact cost the cadence exists to
+  // control.
+  reset();
+  await subscribe({ [IDENTITY]: baseline({ score: 80, riskLevel: 'Low' }) });
+  await putWatchSnapshot(IDENTITY, snapshot({ trustScore: 80, riskLevel: 'Low' }));
+
+  await handler();
+  assert.equal(sent.length, 0, 'nothing changed, nothing sent');
+  const after = await getSubscription('u1');
+  assert.ok(after.lastNotifyAt, 'the notification cycle completed and must be stamped');
 });

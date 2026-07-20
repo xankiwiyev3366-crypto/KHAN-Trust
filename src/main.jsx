@@ -139,7 +139,7 @@ import { useCorpusRecord } from './tokenCorpus.js';
 import { ANALYST_QUESTIONS, answerQuestion, translateSignalKeys, translatedCategory } from './khanAnalyst.js';
 import { detectRiskAlerts, useWatchlistAlertCount } from './riskAlerts.js';
 import { TRUST_CATEGORIES, buildRiskHistory, validHistory } from './riskHistory.js';
-import { useWatchtowerReport, describeReason, MONITORED_DIMENSIONS, STATUS_TONE } from './watchtower.js';
+import { useWatchtowerReport, describeReason, describeCadence, MONITORED_DIMENSIONS, STATUS_TONE } from './watchtower.js';
 import { computePeerBenchmark, peerLabelFor } from './peerBenchmark.js';
 import { I18nProvider, useTranslation } from './i18n/I18nContext.jsx';
 import { translate, getLanguage } from './i18n/index.js';
@@ -5202,6 +5202,10 @@ function TokenAlertToggle({ project }) {
   const { user, gate, toggleTokenAlert, fetchAlertTokens } = useAuth();
   const [subscribed, setSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Set when the server refuses an ADD because the plan's watch limit is
+  // reached. Surfaced rather than swallowed: a toggle that silently does
+  // nothing reads as a broken button, not as a reason to upgrade.
+  const [limitReached, setLimitReached] = useState(null);
   const identity = historyKeyFor(project);
 
   useEffect(() => {
@@ -5232,7 +5236,17 @@ function TokenAlertToggle({ project }) {
           name: project.name || '',
           ticker: project.ticker || '',
         });
-        setSubscribed(Boolean(result?.subscribed));
+        // The cap is a successful 200 carrying `limitReached`, not an error —
+        // the request was understood and correctly refused. Only that specific
+        // signal shows the upgrade prompt; a genuine failure below stays silent
+        // as before.
+        if (result?.limitReached) {
+          setLimitReached(result.limit || null);
+          setSubscribed(false);
+        } else {
+          setLimitReached(null);
+          setSubscribed(Boolean(result?.subscribed));
+        }
       } catch {
         // best-effort - a failed toggle must not disrupt the report
       }
@@ -5241,15 +5255,20 @@ function TokenAlertToggle({ project }) {
   };
 
   return (
-    <button
-      className={subscribed ? 'secondary-button token-alert-on' : 'secondary-button'}
-      type="button"
-      onClick={onClick}
-      disabled={busy}
-      title={t('alerts.hint')}
-    >
-      <Bell size={18} /> {subscribed ? t('alerts.enabled') : t('alerts.enable')}
-    </button>
+    <div className="token-alert-toggle">
+      <button
+        className={subscribed ? 'secondary-button token-alert-on' : 'secondary-button'}
+        type="button"
+        onClick={onClick}
+        disabled={busy}
+        title={t('alerts.hint')}
+      >
+        <Bell size={18} /> {subscribed ? t('alerts.enabled') : t('alerts.enable')}
+      </button>
+      {limitReached && (
+        <p className="token-alert-limit">{t('alerts.limitReached', { limit: limitReached })}</p>
+      )}
+    </div>
   );
 }
 
@@ -12070,8 +12089,12 @@ function ReferralStatusBadge({ status }) {
 // _volatileSignals.mjs actually fetches. A decorative checkmark next to
 // something never checked would make this panel a lie, on the one page whose
 // entire job is to prove the product does what it promises.
-function WatchtowerCoveragePanel({ coverage }) {
+function WatchtowerCoveragePanel({ coverage, plan }) {
   const { t } = useTranslation();
+  // The cadence line is what makes the tier concrete: "checked every 30
+  // minutes" is a fact about this account, where "continuous monitoring" is
+  // marketing. A free reader also sees what Premium would change.
+  const cadence = describeCadence(plan?.observeIntervalMs);
   return (
     <div className="watchtower-coverage">
       <h3>{t('watchtower.coverageTitle')}</h3>
@@ -12083,6 +12106,14 @@ function WatchtowerCoveragePanel({ coverage }) {
           </li>
         ))}
       </ul>
+      {cadence && (
+        <p className="watchtower-cadence">
+          {t('watchtower.cadence', { count: cadence.count, unit: t('watchtower.units.' + cadence.unit, { count: cadence.count }) })}
+          {plan?.tier === 'free' && (
+            <span className="watchtower-cadence-upsell"> {t('watchtower.cadenceUpsell')}</span>
+          )}
+        </p>
+      )}
       <p className="watchtower-coverage-line">
         {/* Absence of ledger data is reported as unknown, never as zero cycles —
             claiming "0 observations" would defame a worker that was running. */}
@@ -12185,7 +12216,7 @@ function WatchtowerPage({ navigate, onOpenAuth }) {
   const { user } = useAuth();
   const { t, language } = useTranslation();
   const { hasPremium } = usePremiumEntitlement();
-  const { loading, report, reason, reload } = useWatchtowerReport(Boolean(user));
+  const { loading, report, plan, reason, reload } = useWatchtowerReport(Boolean(user));
   const dateLocale = PDF_LOCALE_MAP[language] || 'en-US';
 
   const formatDay = (iso) => {
@@ -12265,7 +12296,7 @@ function WatchtowerPage({ navigate, onOpenAuth }) {
             )}
           </p>
 
-          <WatchtowerCoveragePanel coverage={report.coverage} />
+          <WatchtowerCoveragePanel coverage={report.coverage} plan={plan} />
 
           {report.tokens.length === 0 ? (
             <div className="watchtower-panel">

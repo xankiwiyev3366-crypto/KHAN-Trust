@@ -46,32 +46,44 @@ export async function fetchWatchtowerReport() {
     if (!response.ok) return { ok: false, reason: 'unavailable' };
     const data = await response.json();
     if (!data?.report) return { ok: false, reason: 'unavailable' };
-    return { ok: true, report: data.report, fresh: Boolean(data.fresh) };
+    return { ok: true, report: data.report, plan: data.plan || null, fresh: Boolean(data.fresh) };
   } catch {
     return { ok: false, reason: 'unavailable' };
   }
 }
 
 export function useWatchtowerReport(enabled) {
-  const [state, setState] = useState({ loading: Boolean(enabled), report: null, reason: null });
+  const [state, setState] = useState({ loading: Boolean(enabled), report: null, plan: null, reason: null });
 
   const load = useCallback(async () => {
     setState((prev) => ({ ...prev, loading: true }));
     const result = await fetchWatchtowerReport();
     setState(result.ok
-      ? { loading: false, report: result.report, reason: null }
-      : { loading: false, report: null, reason: result.reason });
+      ? { loading: false, report: result.report, plan: result.plan, reason: null }
+      : { loading: false, report: null, plan: null, reason: result.reason });
   }, []);
 
   useEffect(() => {
     if (!enabled) {
-      setState({ loading: false, report: null, reason: 'signed_out' });
+      setState({ loading: false, report: null, plan: null, reason: 'signed_out' });
       return;
     }
     load();
   }, [enabled, load]);
 
   return { ...state, reload: load };
+}
+
+// Turns a cadence in milliseconds into the { count, unit } a translation needs.
+// Minutes below an hour, then hours — the two units this product's cadences
+// actually use. Returns null for an unknown interval rather than rendering
+// "every NaN minutes".
+export function describeCadence(intervalMs) {
+  const ms = Number(intervalMs);
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 60) return { count: minutes, unit: 'minutes' };
+  return { count: Math.round(minutes / 60), unit: 'hours' };
 }
 
 // ── Rendering helpers ────────────────────────────────────────────────────────

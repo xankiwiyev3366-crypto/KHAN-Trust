@@ -8,15 +8,30 @@
 // Which is exactly the class of failure this whole workstream exists to end.
 // So this fires watch-rescan-background (15-minute limit) and returns.
 //
-// Runs hourly at :00. alerts-run is pinned to :30 for this reason: the two are
-// a pipeline (observe, then notify), so they must not share a cron minute. At
-// the same minute they would race and alerts would read snapshots up to an hour
-// stale — for a liquidity drain, the difference between a warning and a
-// post-mortem. The half-hour gap sits comfortably inside the background
-// function's 15-minute cap.
+// Runs every 30 minutes, at :00 and :30 — the Premium observation cadence (see
+// OBSERVE_INTERVAL_MS in _watchTiers.mjs). This is the tick rate, NOT the rate
+// any given token is observed at: the worker selects only the tokens actually
+// due, so a free-tier token still gets looked at every 12 hours while a
+// Premium-watched one gets every tick.
+//
+// alerts-run is pinned to :15 and :45 for this reason: the two are a pipeline
+// (observe, then notify), so they must not share a cron minute. At the same
+// minute they would race and alerts would read stale snapshots — for a
+// liquidity drain, the difference between a warning and a post-mortem.
+//
+// THE GAP SHRANK FROM 30 MINUTES TO 15, AND THAT IS THE ONE THING TO WATCH.
+// The background worker has a 15-minute cap, so a run that uses its full budget
+// could in principle still be writing when alerts-run fires. That is safe
+// rather than merely unlikely: alerts-run compares whatever snapshot IS stored,
+// and a token whose fresh snapshot has not landed yet is compared against its
+// previous one — the same like-for-like comparison it would have made anyway.
+// It is never compared against a half-written or partial observation, because
+// _rescanEngine only ever emits a snapshot from a COMPLETE fetch. The worst
+// case is that one token's alert arrives one tick later, which is exactly the
+// trade the per-run cap is tuned to avoid in the first place.
 import { issueToken } from './_adminAuth.mjs';
 
-export const config = { schedule: '0 * * * *' };
+export const config = { schedule: '0,30 * * * *' };
 
 export async function handler() {
   const siteUrl = process.env.URL || process.env.DEPLOY_PRIME_URL;

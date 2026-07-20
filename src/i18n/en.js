@@ -221,6 +221,7 @@ export default {
   },
   // Retention trust alerts (Direction 3) - opt-in on the token report.
   alerts: {
+    limitReached: 'Alert limit reached ({{limit}} projects). Upgrade to Premium to watch up to 100.',
     enable: 'Alert me if risk rises',
     enabled: 'Alerts on',
     hint: 'Get an email if this token’s KHAN Trust risk increases.',
@@ -1139,6 +1140,12 @@ export default {
   // product's promise about what it checks, so nothing may be added here that
   // _volatileSignals.mjs does not actually fetch.
   watchtower: {
+    cadence: 'Your projects are checked every {{count}} {{unit}}.',
+    cadenceUpsell: 'Premium checks every 30 minutes.',
+    units: {
+      minutes: 'minutes',
+      hours: 'hours',
+    },
     eyebrow: 'Continuous monitoring',
     title: 'Watchtower Report',
     subtitle: 'What we observed across your watched projects while you were away.',

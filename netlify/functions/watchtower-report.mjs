@@ -40,6 +40,7 @@ import {
   toBaselineEntry,
 } from './_watchtowerStore.mjs';
 import { buildWatchtowerReport } from './_watchtowerReport.mjs';
+import { resolveUserTier, OBSERVE_INTERVAL_MS, MAX_WATCHED_TOKENS } from './_watchTiers.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
 
 // Below this, a re-read returns the stored report instead of generating a new
@@ -62,13 +63,25 @@ export async function handler(event) {
 
     const userId = payload.sub;
     const now = new Date();
+
+    // The caller's monitoring plan, so the report can state its OWN cadence
+    // ("checked every 30 minutes") rather than describing monitoring in the
+    // abstract. This is the number that makes the tier concrete, and it is
+    // resolved server-side from the account — never taken from the request.
+    const tier = await resolveUserTier(userId);
+    const plan = {
+      tier,
+      observeIntervalMs: OBSERVE_INTERVAL_MS[tier],
+      maxTokens: MAX_WATCHED_TOKENS[tier],
+    };
+
     const state = await getReportState(userId);
 
     // Serve the stored report inside the debounce window. `fresh: false` lets the
     // client show "generated 4 minutes ago" rather than implying it just ran.
     const lastAt = state.lastReportAt ? Date.parse(state.lastReportAt) : null;
     if (state.lastReport && Number.isFinite(lastAt) && (now.getTime() - lastAt) < MIN_PERIOD_SECONDS * 1000) {
-      return jsonResponse(200, { ok: true, fresh: false, report: state.lastReport });
+      return jsonResponse(200, { ok: true, fresh: false, plan, report: state.lastReport });
     }
 
     const subscription = await getSubscription(userId);
@@ -130,7 +143,7 @@ export async function handler(event) {
       lastReportAt: periodEnd,
     });
 
-    return jsonResponse(200, { ok: true, fresh: true, report });
+    return jsonResponse(200, { ok: true, fresh: true, plan, report });
   } catch (error) {
     return jsonResponse(500, { message: `watchtower-report crashed: ${error.message}` });
   }

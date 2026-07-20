@@ -220,6 +220,7 @@ export default {
     goHome: 'Ana sayfaya git',
   },
   alerts: {
+    limitReached: "Uyarı sınırına ulaşıldı ({{limit}} proje). 100 projeye kadar izlemek için Premium'a geçin.",
     enable: 'Risk artarsa beni uyar',
     enabled: 'Uyarılar açık',
     hint: 'Bu tokenin KHAN Trust riski artarsa e-posta al.',
@@ -1054,6 +1055,12 @@ export default {
     },
   },
   watchtower: {
+    cadence: 'Projeleriniz her {{count}} {{unit}} bir kontrol ediliyor.',
+    cadenceUpsell: 'Premium her 30 dakikada bir kontrol eder.',
+    units: {
+      minutes: 'dakikada',
+      hours: 'saatte',
+    },
     eyebrow: 'Sürekli izleme',
     title: 'Watchtower Raporu',
     subtitle: 'Siz yokken izlediğiniz projelerde gözlemlediklerimiz.',

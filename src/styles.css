@@ -10240,3 +10240,33 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
   /* Status chip drops below the name rather than squeezing it. */
   .watchtower-row-head { flex-direction: column; align-items: flex-start; }
 }
+
+/* Continuous Watch: the cadence line makes the tier concrete ("checked every
+   30 minutes") rather than describing monitoring in the abstract. */
+.watchtower-cadence {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.watchtower-cadence-upsell {
+  color: var(--gold-bright);
+}
+
+.token-alert-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+/* Shown only when the server refuses an ADD at the plan's watch limit. A
+   toggle that silently does nothing reads as a broken button, not a reason
+   to upgrade. */
+.token-alert-limit {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--gold-bright);
+  max-width: 34ch;
+}

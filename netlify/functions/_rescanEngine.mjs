@@ -42,6 +42,7 @@
 // threshold. A missed hour costs nothing. A false rug alert costs the user.
 import { fetchVolatileSignals, SUPPORTED_CHAINS } from './_volatileSignals.mjs';
 import { calculateLiveScores, scoreToRisk } from '../../src/lib/trustScore.js';
+import { TIER, isDue } from './_watchTiers.mjs';
 
 // The engine version. Stamped on every snapshot so that if the volatile input
 // set ever changes, alerts-run can refuse to compare snapshots produced by
@@ -155,17 +156,85 @@ export async function rescanToken(token, options = {}) {
 // observe. Ten users watching BONK is one re-scan, not ten — the work scales
 // with tokens watched, not with users, which is what lets this stay affordable
 // as the user base grows.
-export function distinctWatchedTokens(subscriptions) {
+export function distinctWatchedTokens(subscriptions, tierByUser = null) {
   const byIdentity = new Map();
   for (const sub of subscriptions) {
     if (!sub || !Array.isArray(sub.tokens)) continue;
+    // The watcher's tier decides how fast THIS token must be observed. A token
+    // is observed on the fastest cadence of anyone watching it, so Premium
+    // always wins — see bestTier() in _watchTiers.mjs for why observation is a
+    // property of the token while notification is a property of the user.
+    const watcherTier = tierByUser ? (tierByUser[sub.userId] || TIER.FREE) : null;
     for (const token of sub.tokens) {
-      if (!token?.identity || byIdentity.has(token.identity)) continue;
-      byIdentity.set(token.identity, token);
+      if (!token?.identity) continue;
+      const existing = byIdentity.get(token.identity);
+      if (!existing) {
+        byIdentity.set(token.identity, watcherTier ? { ...token, tier: watcherTier } : { ...token });
+        continue;
+      }
+      // Already seen from another subscriber: keep the record, upgrade the tier.
+      if (watcherTier === TIER.PREMIUM) existing.tier = TIER.PREMIUM;
     }
   }
   return Array.from(byIdentity.values());
 }
+
+// Which of the watched tokens are actually DUE for observation this run.
+//
+// WHY THIS EXISTS
+//
+// Before tiering, every watched token was re-scanned on every run. That was
+// correct when there was one cadence, and it is exactly what must not happen
+// now: a free-tier token observed every 30 minutes would cost twenty-four times
+// its budget and hand away the thing Premium is paying for.
+//
+// `snapshots` is the existing watch lane — a token's last observation time is
+// already recorded there as `observedAt`, so no new store is needed to answer
+// "when did we last look at this?". Reading N blobs to skip N HTTP fetches is a
+// clear net win, and the reads are cheap next to two provider calls each.
+//
+// THE CAP IS A SAFETY VALVE, NOT A BUDGET
+//
+// Free-tier tokens all become due at roughly the same time if they were first
+// observed together, which would stampede two free keyless APIs and get us
+// rate-limited — and being rate-limited causes DECLINED observations, which is
+// a monitoring failure, not merely a slowdown. So the most-overdue are served
+// first and the run is capped; anything left over is picked up next run, still
+// in overdue order. Nothing is dropped, only deferred.
+export function selectDueTokens(tokens, snapshots = {}, options = {}) {
+  const now = options.now || Date.now();
+  const max = options.maxPerRun || MAX_TOKENS_PER_RUN;
+
+  const due = tokens
+    .map((token) => {
+      const observedAt = snapshots[token.identity]?.observedAt || null;
+      return {
+        token,
+        observedAt,
+        // Never-observed sorts first: Number.NEGATIVE_INFINITY is genuinely
+        // "longest ago", which is what a token we have never looked at is.
+        lastMs: observedAt ? Date.parse(observedAt) : Number.NEGATIVE_INFINITY,
+      };
+    })
+    .filter((entry) => isDue(entry.observedAt, entry.token.tier || TIER.FREE, now))
+    .sort((a, b) => {
+      const aMs = Number.isFinite(a.lastMs) ? a.lastMs : Number.NEGATIVE_INFINITY;
+      const bMs = Number.isFinite(b.lastMs) ? b.lastMs : Number.NEGATIVE_INFINITY;
+      return aMs - bMs; // most overdue first
+    });
+
+  return {
+    dueTokens: due.slice(0, max).map((entry) => entry.token),
+    deferred: Math.max(0, due.length - max),
+    skipped: tokens.length - due.length,
+  };
+}
+
+// Ceiling on tokens observed per run. Sized against the background function's
+// 15-minute cap at concurrency 4 with an 8s provider timeout: the worst case
+// (every call timing out) is well inside the budget, and the realistic case
+// finishes in a fraction of it.
+export const MAX_TOKENS_PER_RUN = 400;
 
 // Runs the tokens in bounded-concurrency batches. Netlify caps a scheduled
 // function at 30s, so this is called from a *-background function (15min cap)

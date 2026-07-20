@@ -21,9 +21,10 @@
 // share one function.
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { listSubscriptions } from './_alertsStore.mjs';
-import { putWatchSnapshot } from './_watchSnapshotStore.mjs';
-import { distinctWatchedTokens, rescanAll } from './_rescanEngine.mjs';
+import { putWatchSnapshot, getWatchSnapshots } from './_watchSnapshotStore.mjs';
+import { distinctWatchedTokens, rescanAll, selectDueTokens } from './_rescanEngine.mjs';
 import { recordRun } from './_watchtowerStore.mjs';
+import { resolveTiers, TIER } from './_watchTiers.mjs';
 
 export async function handler(event) {
   // Same posture as growth-analyze-background: this does real network work and
@@ -37,12 +38,31 @@ export async function handler(event) {
   const startedAt = Date.now();
   try {
     const subscriptions = await listSubscriptions();
+
+    // Every subscriber's plan, resolved once per run. Premium buys OBSERVATION
+    // cadence, so a token's cadence is the fastest tier among its watchers —
+    // see _watchTiers.mjs for why observation is a token property while
+    // notification is a user property.
+    const tierByUser = await resolveTiers(subscriptions.map((sub) => sub?.userId));
+
     // Ten users watching BONK is ONE re-scan. Work scales with tokens watched,
-    // not users watching — which is what keeps this affordable as we grow.
-    const tokens = distinctWatchedTokens(subscriptions);
+    // not users watching — which is what keeps this affordable as we grow, and
+    // is why the tier is folded into the token rather than kept per-user here.
+    const tokens = distinctWatchedTokens(subscriptions, tierByUser);
 
     if (!tokens.length) {
       console.log('[watch-rescan] no watched tokens; nothing to observe.');
+      return { statusCode: 200 };
+    }
+
+    // A token's last observation time already lives on its snapshot, so due-ness
+    // needs no new store. These reads also serve the run itself: a token that is
+    // not due costs one cheap blob read instead of two provider calls.
+    const existing = await getWatchSnapshots(tokens.map((token) => token.identity));
+    const { dueTokens, deferred, skipped } = selectDueTokens(tokens, existing);
+
+    if (!dueTokens.length) {
+      console.log(`[watch-rescan] ${tokens.length} watched, none due this run.`);
       return { statusCode: 200 };
     }
 
@@ -51,7 +71,7 @@ export async function handler(event) {
     // declines — "we ran, and could not see anything" is a materially different
     // report from "we did not run", and only the ledger can tell them apart.
 
-    const { results, observed, declined } = await rescanAll(tokens);
+    const { results, observed, declined } = await rescanAll(dueTokens);
 
     // Persist only genuine observations. A declined token keeps its previous
     // snapshot, so the next comparison is still like-for-like against a real
@@ -78,15 +98,33 @@ export async function handler(event) {
       for (const r of results.filter((x) => !x.ok)) {
         reasons[r.reason] = (reasons[r.reason] || 0) + 1;
       }
-      console.warn(`[watch-rescan] declined ${declined}/${tokens.length}: ${JSON.stringify(reasons)}`);
+      console.warn(`[watch-rescan] declined ${declined}/${dueTokens.length}: ${JSON.stringify(reasons)}`);
     }
+
+    // Deferred work is logged loudly. A run that is persistently capped means
+    // the watchlist has outgrown one cycle, and the symptom — monitoring
+    // quietly running slower than advertised — is invisible from the outside.
+    if (deferred) {
+      console.warn(`[watch-rescan] ${deferred} due tokens deferred to the next run (per-run cap reached).`);
+    }
+
+    // The legacy-wallet gap made visible (see resolveUserTier in _watchTiers).
+    // A subscriber whose Premium lives only in a wallet-keyed entitlement they
+    // never claimed resolves to FREE and is monitored slowly while paying. This
+    // cannot be detected from a userId, so it is COUNTED rather than guessed at:
+    // if this is ever non-zero, those users should be prompted to claim.
+    const premiumUsers = Object.values(tierByUser).filter((tier) => tier === TIER.PREMIUM).length;
+    console.log(
+      `[watch-rescan] ${subscriptions.length} subscribers (${premiumUsers} premium), `
+      + `${tokens.length} watched, ${dueTokens.length} due, ${skipped} not yet due.`
+    );
 
     // Coverage ledger for the Watchtower Report. Best-effort and LAST, after
     // every snapshot is durably stored: this is reporting metadata, not a
     // precondition for observing. Losing a ledger row costs one line of prose in
     // a report; letting it fail the run would cost an alert.
     try {
-      await recordRun({ tokens: tokens.length, observed, declined });
+      await recordRun({ tokens: dueTokens.length, observed, declined });
     } catch (error) {
       console.warn(`[watch-rescan] coverage ledger write failed: ${error.message}`);
     }

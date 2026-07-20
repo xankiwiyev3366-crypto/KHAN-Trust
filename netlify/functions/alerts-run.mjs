@@ -36,6 +36,7 @@ import { sendEmail, isEmailConfigured } from './_email.mjs';
 import { addNotifications, riskAlertId } from './_notificationStore.mjs';
 import { changeReasonCodes, hasCriticalReason } from './_watchSignals.mjs';
 import { isComparableBaseline } from './_watchtowerBaseline.mjs';
+import { resolveUserTier, isNotifyDue, TIER } from './_watchTiers.mjs';
 
 // Detection now lives in _watchSignals.mjs so the Watchtower Report applies the
 // IDENTICAL rules — two surfaces describing the same token must never disagree.
@@ -43,15 +44,17 @@ import { isComparableBaseline } from './_watchtowerBaseline.mjs';
 // tests/alertsRun.test.mjs and to any future caller.
 export { changeReasonCodes } from './_watchSignals.mjs';
 
-// Runs hourly at :30, deliberately NOT at :00 where watch-rescan-cron fires.
+// Runs at :15 and :45, deliberately NOT at :00/:30 where watch-rescan-cron
+// fires. The two are a pipeline: the worker observes, then this reads what it
+// observed. At the same cron minute they would race and this would read stale
+// snapshots.
 //
-// The two are a pipeline: the worker observes, then this reads what it
-// observed. At the same cron minute they would race, and this would read
-// snapshots up to an hour stale — the loop would still work but every alert
-// would arrive an hour late, which for a liquidity drain is the difference
-// between a warning and a post-mortem. :30 gives the background worker (15min
-// cap) a full half-hour to finish.
-export const config = { schedule: '30 * * * *' };
+// The tick rate matches the fastest tier (Premium, 30 minutes). It is NOT the
+// rate at which any given user is emailed — each subscriber is notified on
+// THEIR plan's cadence (see isNotifyDue / NOTIFY_INTERVAL_MS in
+// _watchTiers.mjs). A free user's tokens may be observed promptly because a
+// Premium user also watches them; being TOLD promptly is the thing Premium buys.
+export const config = { schedule: '15,45 * * * *' };
 
 const RISK_ORDER = { Low: 0, Medium: 1, High: 2 };
 const SCORE_DROP_THRESHOLD = 10;
@@ -177,11 +180,32 @@ export async function handler() {
     const subscriptions = await listSubscriptions();
     let notified = 0;
     let inApp = 0;
+    let skippedByCadence = 0;
 
     for (const sub of subscriptions) {
       // userId, not email, is the requirement now - the bell is addressed by
       // account. An address is only needed by the email channel below.
       if (!sub?.userId || !Array.isArray(sub.tokens) || !sub.tokens.length) continue;
+
+      // Notification cadence is a property of the USER, not the token. A free
+      // user's tokens may well have been observed on this tick — because a
+      // Premium user watches the same token — but being TOLD promptly is what
+      // Premium buys, so a free subscriber is skipped until their own interval
+      // has elapsed.
+      //
+      // SKIPPING MEANS SKIPPING THE WHOLE USER, INCLUDING THE RE-BASELINE.
+      // This is the load-bearing detail. If we compared and re-baselined but
+      // withheld the message, the worsening would be folded into the new
+      // baseline and NEVER reported — a paying-or-not user would silently lose
+      // an alert about their money. By leaving the baseline untouched, the next
+      // due run compares against the older baseline and catches everything that
+      // accumulated in between. Delayed, never dropped.
+      const tier = await resolveUserTier(sub.userId);
+      if (!isNotifyDue(sub.lastNotifyAt, tier)) {
+        skippedByCadence += 1;
+        continue;
+      }
+
       const lastNotified = sub.lastNotified || {};
       const changes = [];
 
@@ -238,12 +262,18 @@ export async function handler() {
       }
 
       sub.lastNotified = lastNotified;
+      // Stamped on every run this user was DUE for, whether or not anything had
+      // changed. The stamp records "we completed a notification cycle for you",
+      // not "we sent you something" — otherwise a user whose tokens are healthy
+      // would stay permanently due and be re-evaluated on every single tick,
+      // which is the cost the cadence exists to control.
+      sub.lastNotifyAt = new Date().toISOString();
       await saveSubscription(sub);
     }
 
     return {
       statusCode: 200,
-      body: `alerts-run: processed ${subscriptions.length} subscriptions, notified ${notified}, in-app ${inApp}`,
+      body: `alerts-run: processed ${subscriptions.length} subscriptions, notified ${notified}, in-app ${inApp}, deferred-by-cadence ${skippedByCadence}`,
     };
   } catch (error) {
     return { statusCode: 500, body: `alerts-run crashed: ${error.message}` };

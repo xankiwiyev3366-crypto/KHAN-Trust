@@ -6,6 +6,7 @@
 // existing endpoint or behavior changes.
 import { verifyJwt, getUserById, bearerToken } from './_authStore.mjs';
 import { toggleToken, jsonResponse } from './_alertsStore.mjs';
+import { resolveUserTier, MAX_WATCHED_TOKENS } from './_watchTiers.mjs';
 
 const IDENTITY_PATTERN = /^(c:[a-z0-9]{6,90}|id:[a-z0-9-]{3,80})$/i;
 
@@ -36,8 +37,16 @@ export async function handler(event) {
       ticker: cleanStr(body.ticker, 40),
     };
 
-    const result = await toggleToken(user.id, user.email, token);
-    return jsonResponse(200, { ok: true, ...result });
+    // How many tokens this plan may watch. Resolved server-side from the
+    // caller's own account — never from the request — so the cap cannot be
+    // raised by editing a payload.
+    const tier = await resolveUserTier(user.id);
+    const result = await toggleToken(user.id, user.email, token, MAX_WATCHED_TOKENS[tier]);
+
+    // The cap is a 200 with `limitReached`, not an error: the request was
+    // understood and correctly refused, and the client needs the limit and the
+    // current list to render the upgrade prompt.
+    return jsonResponse(200, { ok: true, tier, ...result });
   } catch (error) {
     return jsonResponse(500, { message: `alerts-subscribe crashed: ${error.message}` });
   }

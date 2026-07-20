@@ -1,4 +1,4 @@
-import { getUserByEmail, verifyPassword, issueToken, jsonResponse } from './_authStore.mjs';
+import { getUserByEmail, verifyPassword, issueToken, recordSuccessfulAuth, AUTH_METHOD, jsonResponse } from './_authStore.mjs';
 import { appendEvent } from './_analyticsStore.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
 import { recordLogin } from './_growthRecord.mjs';
@@ -34,8 +34,18 @@ export async function handler(event) {
 
   const user = await getUserByEmail(email);
   if (!user || !verifyPassword(password, user.passwordHash)) {
+    // FAILED. Returns here, BEFORE any login state is written — so a failed
+    // attempt can never set hasLoggedIn, move firstLoginAt/lastLoginAt, or
+    // mark the account active. Note this branch is also taken for an unknown
+    // email, where there is no account to write to at all.
     return jsonResponse(401, { message: 'Invalid email or password' });
   }
+
+  // SUCCESS. Durable login state on the user record — the authoritative source
+  // for the admin dashboard's Logged In / Never Logged In / Active cards. This
+  // is written FIRST because it is the fact that matters; the analytics event
+  // below is telemetry and lives in a capped, evicting log.
+  await recordSuccessfulAuth(user.id, { method: AUTH_METHOD.PASSWORD });
 
   await appendEvent({
     type: 'user_login',

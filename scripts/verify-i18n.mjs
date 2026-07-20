@@ -40,22 +40,17 @@ function leafPaths(node, prefix = '') {
   );
 }
 
-// ── Intentionally English-only ───────────────────────────────────────────────
+// ── No exemptions ────────────────────────────────────────────────────────────
 //
-// The admin console is internal tooling behind a shared passcode, not part of
-// the public product, and it has always been en.js-only by decision — the other
-// languages fall back to English on purpose. Translating ~230 admin strings
-// nobody outside the team will read is not a good use of anyone's time.
+// The admin console used to be exempted here on the grounds that it is
+// internal tooling behind a shared passcode. That exemption is gone: the admin
+// dashboard is now fully translated too, so EVERY key in en.js must exist in
+// every language, with nothing carved out.
 //
-// These are EXEMPTED rather than deleted from the check so the decision stays
-// visible and reversible: the exemption is one line, and removing it turns the
-// requirement back on. An undocumented gap looks identical to an oversight,
-// which is how the Pricing table shipped English in the first place.
-const ENGLISH_ONLY_NAMESPACES = ['adminPremium', 'adminSupport', 'adminReferral'];
-
-const isExempt = (path) => ENGLISH_ONLY_NAMESPACES.some((ns) => path === ns || path.startsWith(`${ns}.`));
-
-const enPaths = leafPaths(en).filter((path) => !isExempt(path));
+// If a namespace ever genuinely needs to stay English-only, add it back as an
+// explicit list rather than deleting keys from this check — an undocumented
+// gap is indistinguishable from an oversight.
+const enPaths = leafPaths(en);
 const languages = [['az', az], ['tr', tr], ['ru', ru]];
 
 let failed = false;

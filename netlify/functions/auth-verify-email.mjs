@@ -1,4 +1,4 @@
-import { consumeVerifyToken, getUserByEmail, updateUser, issueToken, jsonResponse } from './_authStore.mjs';
+import { consumeVerifyToken, getUserByEmail, updateUser, issueToken, recordSuccessfulAuth, AUTH_METHOD, jsonResponse } from './_authStore.mjs';
 import { markMilestone } from './_referralStore.mjs';
 
 export async function handler(event) {
@@ -21,6 +21,18 @@ export async function handler(event) {
   // Referral funnel: advance this account's edge to "verified" if it was
   // referred. Idempotent and best-effort — a no-op for non-referred users.
   await markMilestone(user.id, 'verified').catch(() => {});
+
+  // Consuming a single-use emailed token and being handed a session token is a
+  // successful authentication, so it counts as a login. Recorded only after
+  // consumeVerifyToken() succeeded above — an invalid or expired link returns
+  // early and writes nothing.
+  //
+  // Note: email verification ALONE is not evidence of a login (see the
+  // migration note in _loginBackfill.mjs — `emailVerified` is deliberately not
+  // used as backfill evidence). It counts here because this specific flow also
+  // issues a session token; a user who verified through some path that did not
+  // sign them in would not reach this line.
+  await recordSuccessfulAuth(user.id, { method: AUTH_METHOD.EMAIL_VERIFY });
 
   const { passwordHash, ...publicUser } = updated;
 

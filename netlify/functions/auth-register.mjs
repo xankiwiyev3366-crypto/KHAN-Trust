@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { getUserByEmail, saveUser, issueToken, createVerifyToken, hashPassword, jsonResponse } from './_authStore.mjs';
+import { getUserByEmail, saveUser, issueToken, createVerifyToken, hashPassword, recordSuccessfulAuth, AUTH_METHOD, jsonResponse } from './_authStore.mjs';
 import { sendVerificationEmail } from './_email.mjs';
 import { appendEvent } from './_analyticsStore.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
@@ -90,6 +90,13 @@ export async function handler(event) {
 
   const { passwordHash, ...publicUser } = user;
   const token = issueToken(user);
+
+  // Registration AUTO-LOGS-IN: a token is issued here and the user lands
+  // signed in without ever calling auth-login. That is a genuine successful
+  // authentication and was previously recorded nowhere, so a user who
+  // registered and simply stayed signed in showed as "Never Logged In"
+  // forever. This was the single largest contributor to that count.
+  await recordSuccessfulAuth(id, { method: AUTH_METHOD.REGISTRATION });
 
   return jsonResponse(201, { user: publicUser, token });
 }

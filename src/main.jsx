@@ -8940,7 +8940,12 @@ function matchesPremiumFilter(user, filter, now, today) {
     case 'unverified': return !user.emailVerified;
     case 'active_today': return (user.lastActivity || '').slice(0, 10) === today;
     case 'active_week': return isActiveWithin(user.lastActivity, 7, now);
-    case 'never_logged_in': return (user.loginCount || 0) === 0;
+    // MUST use the same durable field as the "Never Logged In" card, not
+    // loginCount. loginCount counts surviving `user_login` EVENTS from the
+    // capped analytics log — a different question with a different answer, so
+    // filtering by it would return a set whose size disagreed with the card
+    // sitting directly above it.
+    case 'never_logged_in': return user.hasLoggedIn !== true;
     case 'never_scanned': return (user.scanCount || 0) === 0;
     case 'wallet': return Boolean(user.walletConnected);
     case 'no_wallet': return !user.walletConnected;
@@ -8961,7 +8966,10 @@ const BULK_PREFILTERS = [
   { key: 'min_3_scans', test: (u) => (u.scanCount || 0) >= 3 },
   { key: 'logged_in_30d', test: (u, now) => isActiveWithin(u.lastLogin, 30, now) },
   { key: 'wallet_connected', test: (u) => Boolean(u.walletConnected) },
-  { key: 'exclude_never_logged_in', test: (u) => (u.loginCount || 0) > 0 },
+  // Same durable field as the card and the filter above — see the note there.
+  // This one gates who receives a bulk Premium grant, so a wrong answer here
+  // hands paid access to accounts the admin explicitly excluded.
+  { key: 'exclude_never_logged_in', test: (u) => u.hasLoggedIn === true },
 ];
 
 // Small display helpers for the activity columns.
@@ -9215,15 +9223,19 @@ function AdminPremiumPage() {
 
       {data && (
         <div className="analytics-stat-grid">
-          <StatCard icon={Users} label={t('adminPremium.statRegistered')} numericValue={data.totalRegistered} />
-          <StatCard icon={Crown} label={t('adminPremium.statActivePremium')} numericValue={data.premiumCount} />
-          {dashboard && <StatCard icon={BadgeCheck} label={t('adminPremium.dashboard.verified')} numericValue={dashboard.verified} />}
-          {dashboard && <StatCard icon={Activity} label={t('adminPremium.dashboard.activeToday')} numericValue={dashboard.activeToday} />}
-          {dashboard && <StatCard icon={CalendarClock} label={t('adminPremium.dashboard.activeThisWeek')} numericValue={dashboard.activeThisWeek} />}
-          {dashboard && <StatCard icon={Search} label={t('adminPremium.dashboard.withScans')} numericValue={dashboard.withScans} />}
-          {dashboard && <StatCard icon={X} label={t('adminPremium.dashboard.zeroScans')} numericValue={dashboard.zeroScans} />}
-          {dashboard && <StatCard icon={Lock} label={t('adminPremium.dashboard.neverLoggedIn')} numericValue={dashboard.neverLoggedIn} />}
-          {dashboard && <StatCard icon={WalletCards} label={t('adminPremium.dashboard.walletConnected')} numericValue={dashboard.walletConnected} />}
+          {/* These read the same durable user-record fields as the Analytics
+              dashboard, so the two admin pages can no longer show different
+              numbers for the same question. */}
+          <StatCard icon={Users} label={t('adminPremium.statRegistered')} numericValue={data.totalRegistered} tooltip={t('adminAnalytics.tooltips.registeredUsers')} />
+          <StatCard icon={Crown} label={t('adminPremium.statActivePremium')} numericValue={data.premiumCount} tooltip={t('adminPremium.dashboard.tooltips.activePremium')} />
+          {dashboard && <StatCard icon={BadgeCheck} label={t('adminPremium.dashboard.verified')} numericValue={dashboard.verified} tooltip={t('adminPremium.dashboard.tooltips.verified')} />}
+          {dashboard && <StatCard icon={Users} label={t('adminPremium.dashboard.loggedIn')} numericValue={dashboard.loggedIn} tooltip={t('adminAnalytics.tooltips.loggedInUsers')} />}
+          {dashboard && <StatCard icon={Lock} label={t('adminPremium.dashboard.neverLoggedIn')} numericValue={dashboard.neverLoggedIn} tooltip={t('adminAnalytics.tooltips.neverLoggedInUsers')} />}
+          {dashboard && <StatCard icon={Activity} label={t('adminPremium.dashboard.activeToday')} numericValue={dashboard.activeToday} tooltip={t('adminAnalytics.tooltips.activeToday')} />}
+          {dashboard && <StatCard icon={CalendarClock} label={t('adminPremium.dashboard.activeThisWeek')} numericValue={dashboard.activeThisWeek} tooltip={t('adminAnalytics.tooltips.activeLast7Days')} />}
+          {dashboard && <StatCard icon={Search} label={t('adminPremium.dashboard.withScans')} numericValue={dashboard.withScans} tooltip={t('adminPremium.dashboard.tooltips.withScans')} />}
+          {dashboard && <StatCard icon={X} label={t('adminPremium.dashboard.zeroScans')} numericValue={dashboard.zeroScans} tooltip={t('adminPremium.dashboard.tooltips.zeroScans')} />}
+          {dashboard && <StatCard icon={WalletCards} label={t('adminPremium.dashboard.walletConnected')} numericValue={dashboard.walletConnected} tooltip={t('adminPremium.dashboard.tooltips.walletConnected')} />}
         </div>
       )}
 
@@ -9739,12 +9751,25 @@ function DonutChart({ data, size = 140 }) {
   );
 }
 
-function StatCard({ icon: Icon, label, value, numericValue, sublabel }) {
+// `tooltip` explains precisely what the number counts. These metrics are easy
+// to misread — "logged in" vs "visited", "today" vs "last 24 hours", "unique
+// users" vs "sessions" — and an administrator acting on a misread number is
+// the failure this dashboard exists to prevent. The definition is rendered
+// as a real focusable element with an accessible name, not a bare `title`
+// attribute, so it is reachable by keyboard and screen readers too.
+function StatCard({ icon: Icon, label, value, numericValue, sublabel, tooltip }) {
   return (
     <div className="analytics-stat-card">
       <Icon size={20} />
       <strong>{numericValue !== undefined ? <AnimatedNumber value={numericValue} format={(n) => n.toLocaleString('en-US')} /> : value}</strong>
-      <span>{label}</span>
+      <span>
+        {label}
+        {tooltip && (
+          <button type="button" className="metric-info" title={tooltip} aria-label={tooltip}>
+            <Info size={12} aria-hidden="true" />
+          </button>
+        )}
+      </span>
       {sublabel && <small>{sublabel}</small>}
     </div>
   );
@@ -9936,14 +9961,83 @@ function AdminAnalyticsPage() {
       {summary.userAnalytics && (
         <>
           <h3 className="analytics-section-heading">{t('adminAnalytics.userAnalyticsHeading')}</h3>
+          {/* Every card below binds to the AUTHORITATIVE backend field. None of
+              them is derived in the browser — in particular "Never Logged In"
+              is read from the API, not computed as registered − loggedIn here.
+              The frontend recomputing a complementary metric is how a UI ends
+              up disagreeing with its own API: the two formulas drift, and the
+              screen shows a number no endpoint ever returned. The server
+              already guarantees the invariant and refuses to serve if it
+              breaks, so the browser's job is to display, not to arithmetic. */}
           <div className="analytics-stat-grid">
-            <StatCard icon={UserPlus} label={t('adminAnalytics.registeredUsers')} numericValue={summary.userAnalytics.registeredTotal} />
-            <StatCard icon={User} label={t('adminAnalytics.newRegistrationsToday')} numericValue={summary.userAnalytics.registeredToday} />
-            <StatCard icon={Activity} label={t('adminAnalytics.activeUsersToday')} numericValue={summary.userAnalytics.activeUsersToday} />
-            <StatCard icon={Users} label={t('adminAnalytics.returningUsers')} numericValue={summary.userAnalytics.returningUsers} sublabel={t('adminAnalytics.returningUsersSub')} />
-            <StatCard icon={Users} label={t('adminAnalytics.loggedInVisitors')} numericValue={summary.userAnalytics.loggedInVisitors} sublabel={t('adminAnalytics.loggedInVisitorsSub')} />
-            <StatCard icon={BarChart3} label={t('adminAnalytics.avgScansPerUser')} numericValue={summary.userAnalytics.avgScansPerUser} sublabel={t('adminAnalytics.avgScansPerUserSub')} />
+            <StatCard
+              icon={UserPlus}
+              label={t('adminAnalytics.registeredUsers')}
+              numericValue={summary.userAnalytics.registeredUsers}
+              tooltip={t('adminAnalytics.tooltips.registeredUsers')}
+            />
+            <StatCard
+              icon={User}
+              label={t('adminAnalytics.newRegistrationsToday')}
+              numericValue={summary.userAnalytics.registeredToday}
+              tooltip={t('adminAnalytics.tooltips.newRegistrationsToday')}
+            />
+            {/* Renamed from "Logged In Visitors": the old label collided with a
+                completely different metric further down this page (unique
+                page-view sessions flagged as signed-in), so the same words
+                showed two different numbers on one screen. */}
+            <StatCard
+              icon={Users}
+              label={t('adminAnalytics.loggedInUsers')}
+              numericValue={summary.userAnalytics.loggedInUsers}
+              sublabel={t('adminAnalytics.loggedInUsersSub')}
+              tooltip={t('adminAnalytics.tooltips.loggedInUsers')}
+            />
+            <StatCard
+              icon={Lock}
+              label={t('adminAnalytics.neverLoggedInUsers')}
+              numericValue={summary.userAnalytics.neverLoggedInUsers}
+              sublabel={t('adminAnalytics.neverLoggedInUsersSub')}
+              tooltip={t('adminAnalytics.tooltips.neverLoggedInUsers')}
+            />
+            <StatCard
+              icon={Activity}
+              label={t('adminAnalytics.activeToday')}
+              numericValue={summary.userAnalytics.activeToday}
+              tooltip={t('adminAnalytics.tooltips.activeToday')}
+            />
+            <StatCard
+              icon={CalendarClock}
+              label={t('adminAnalytics.activeLast7Days')}
+              numericValue={summary.userAnalytics.activeLast7Days}
+              tooltip={t('adminAnalytics.tooltips.activeLast7Days')}
+            />
+            <StatCard
+              icon={Users}
+              label={t('adminAnalytics.returningUsers')}
+              numericValue={summary.userAnalytics.returningUsers}
+              sublabel={t('adminAnalytics.returningUsersSub')}
+              tooltip={t('adminAnalytics.tooltips.returningUsers')}
+            />
+            <StatCard
+              icon={BarChart3}
+              label={t('adminAnalytics.avgScansPerUser')}
+              numericValue={summary.userAnalytics.avgScansPerUser}
+              sublabel={t('adminAnalytics.avgScansPerUserSub')}
+              tooltip={t('adminAnalytics.tooltips.avgScansPerUser')}
+            />
           </div>
+          {/* States the invariant on screen. An administrator should be able to
+              check the arithmetic without opening devtools — and if these ever
+              stop adding up, the person looking at the dashboard is the one who
+              needs to know first. */}
+          <p className="analytics-invariant-note">
+            {t('adminAnalytics.invariantNote', {
+              registered: summary.userAnalytics.registeredUsers,
+              loggedIn: summary.userAnalytics.loggedInUsers,
+              never: summary.userAnalytics.neverLoggedInUsers,
+            })}
+          </p>
         </>
       )}
 
@@ -10020,7 +10114,13 @@ function AdminAnalyticsPage() {
             <span><strong>{summary.visitorAnalytics.uniqueVisitors}</strong> {t('adminAnalytics.uniqueVisitors')}</span>
             <span>{t('adminAnalytics.newVisitors')} <strong>{summary.visitorAnalytics.newVisitors}</strong></span>
             <span>{t('adminAnalytics.returningVisitors')} <strong>{summary.visitorAnalytics.returningVisitors}</strong></span>
-            <span>{t('adminAnalytics.loggedInVisitors')} <strong>{summary.visitorAnalytics.loggedInVisitors ?? 0}</strong></span>
+            {/* A DIFFERENT metric from "Logged In Users" above, despite the
+                old shared label. This one counts unique browser VISITORS
+                (keyed by visitorId from page views) whose latest page view was
+                made while signed in — so one person on two devices is two, and
+                a signed-in user who has not loaded a page recently is zero.
+                Renamed to say so. */}
+            <span>{t('adminAnalytics.signedInSessions')} <strong>{summary.visitorAnalytics.loggedInVisitors ?? 0}</strong></span>
             <span>{t('adminAnalytics.guestVisitors')} <strong>{summary.visitorAnalytics.guestVisitors ?? 0}</strong></span>
           </div>
           <MiniBarChart data={deviceData} />

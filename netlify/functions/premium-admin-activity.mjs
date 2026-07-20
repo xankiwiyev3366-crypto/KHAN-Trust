@@ -64,8 +64,19 @@ export async function handler(event) {
       grantedBy: grant?.grantedBy || null,
       grantedAt: grant?.grantedAt || null,
       // Activity intelligence (analysis only - never a moderation signal)
-      lastLogin: metrics.lastLogin,
-      lastActivity: metrics.lastActivity,
+      //
+      // lastLogin/lastActivity prefer the DURABLE fields on the user record and
+      // fall back to what the event log still remembers. The record is
+      // authoritative and permanent; the event log is a capped window that
+      // silently forgets. Falling back the other way round would make an
+      // account look dormant simply because its events aged out.
+      lastLogin: u.lastLoginAt || metrics.lastLogin,
+      lastActivity: u.lastActiveAt || metrics.lastActivity,
+      hasLoggedIn: u.hasLoggedIn === true,
+      firstLoginAt: u.firstLoginAt || null,
+      // Whether this account's login state was RECONSTRUCTED by the migration
+      // rather than observed. Surfaced so an admin can tell the difference.
+      loginStateSource: u.loginStateSource || 'observed',
       loginCount: metrics.loginCount,
       scanCount: metrics.scanCount,
       compareCount: metrics.compareCount,
@@ -90,18 +101,55 @@ export async function handler(event) {
     return (b.createdAt ? Date.parse(b.createdAt) : 0) - (a.createdAt ? Date.parse(a.createdAt) : 0);
   });
 
-  // Dashboard aggregate cards - all derived from the same rows.
+  // Dashboard aggregate cards.
+  //
+  // The user-state cards (registered / logged in / never logged in / active)
+  // are derived from `rows`, which are the USER RECORDS — the same durable
+  // `hasLoggedIn` and `lastActiveAt` fields analytics-summary reads. Both
+  // endpoints therefore report identical figures.
+  //
+  // They previously disagreed because this endpoint derived "never logged in"
+  // from `loginCount === 0` (a count of surviving `user_login` EVENTS, written
+  // only by the password-login path) while analytics-summary derived "logged
+  // in" from distinct userIds across ALL event types. The two were not
+  // complements of each other and shared no denominator, so they could never
+  // sum to the registered total — and both drifted as the event log evicted.
+  const loggedInRows = rows.filter((r) => r.hasLoggedIn);
   const dashboard = {
     totalRegistered: total,
     verified: rows.filter((r) => r.emailVerified).length,
-    activeToday: rows.filter((r) => dayKey(r.lastActivity) === today).length,
-    activeThisWeek: rows.filter((r) => isActiveWithinDays(r.lastActivity, 7, now)).length,
+
+    // Active = authenticated activity. Restricted to accounts that have
+    // actually logged in, so activeToday can never exceed loggedIn.
+    activeToday: loggedInRows.filter((r) => dayKey(r.lastActivity) === today).length,
+    activeThisWeek: loggedInRows.filter((r) => isActiveWithinDays(r.lastActivity, 7, now)).length,
+
     withScans: rows.filter((r) => r.scanCount > 0).length,
     zeroScans: rows.filter((r) => r.scanCount === 0).length,
-    neverLoggedIn: rows.filter((r) => r.loginCount === 0).length,
+
+    loggedIn: loggedInRows.length,
+    neverLoggedIn: rows.filter((r) => !r.hasLoggedIn).length,
+
     walletConnected: rows.filter((r) => r.walletConnected).length,
     premiumUsers: rows.filter((r) => r.status === 'active').length,
   };
+
+  // Same assertion as analytics-summary. `total` comes from countRegisteredUsers
+  // (a blob-prefix count) while the buckets come from listRegisteredUsers, so
+  // this ALSO catches the pagination trap: if the user list is ever truncated
+  // below the true total, the halves stop summing and we refuse to serve rather
+  // than quietly under-report every card.
+  if (dashboard.loggedIn + dashboard.neverLoggedIn !== total) {
+    return jsonResponse(500, {
+      message: 'premium-admin-activity: user metrics failed their consistency check',
+      detail: {
+        totalRegistered: total,
+        loggedIn: dashboard.loggedIn,
+        neverLoggedIn: dashboard.neverLoggedIn,
+        rowsReturned: rows.length,
+      },
+    });
+  }
 
   return jsonResponse(200, {
     totalRegistered: total,

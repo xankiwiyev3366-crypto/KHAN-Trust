@@ -1,7 +1,7 @@
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readEvents, jsonResponse } from './_analyticsStore.mjs';
 import { readStatuses, readRequests } from './_verificationStore.mjs';
-import { countRegisteredUsers } from './_authStore.mjs';
+import { getUserLoginStats } from './_authStore.mjs';
 
 const DAY_MS = 86400000;
 
@@ -302,11 +302,22 @@ export async function handler(event) {
     const verificationAnalytics = await buildVerificationAnalytics();
     const visitorAnalytics = buildVisitorAnalytics(pageViewEvents);
 
-    // Registered-user analytics. Every value below is derived from the same
-    // event log plus the auth store's real user count - no counters, no mocks.
-    // "Today" is the UTC calendar day; event timestamps are UTC ISO strings
-    // too, so all day comparisons are timezone-consistent (no local/UTC drift).
-    const registeredTotal = await countRegisteredUsers().catch(() => 0);
+    // ── Registered-user analytics ────────────────────────────────────────────
+    //
+    // These now come from the USER RECORDS (getUserLoginStats), not from the
+    // event log. The event log is capped at 20 000 events and evicts
+    // oldest-first, so anything derived from it answers "…recently enough to
+    // survive the cap", not "…ever". For an all-time fact like "has this
+    // account ever authenticated" that is simply the wrong data source, and it
+    // is what made Logged In / Never Logged In disagree with each other and
+    // with Registered Users.
+    //
+    // Because every account carries exactly one `hasLoggedIn` boolean, the
+    // invariant registered === loggedIn + neverLoggedIn holds BY CONSTRUCTION
+    // rather than by two independent counts happening to agree. It is asserted
+    // below anyway.
+    const loginStats = await getUserLoginStats().catch(() => null);
+    const registeredTotal = loginStats?.registeredUsers ?? 0;
     const today = new Date().toISOString().slice(0, 10);
 
     // New registrations today: user_registered events stamped with today (UTC).
@@ -314,17 +325,14 @@ export async function handler(event) {
       (e) => e.type === 'user_registered' && dateKey(e.timestamp) === today
     ).length;
 
-    // Active users today: unique authenticated accounts with ANY activity on
-    // today's calendar day (scan, view, page_view, login...). Requires a
-    // userId, so only authenticated activity is counted - a calendar-day match,
-    // not a rolling 24h window.
-    const activeUserIds = new Set(
-      events.filter((e) => e.userId && dateKey(e.timestamp) === today).map((e) => e.userId)
-    );
-
     // Returning users: accounts that logged in on 2+ DIFFERENT calendar days.
     // A set of distinct day-keys per user means multiple logins on the same
     // day count once (fixes over-counting same-day repeat requests).
+    //
+    // Still event-derived, and honestly so: this is a BEHAVIOURAL pattern over
+    // time, not an all-time account fact, so the capped window is an
+    // acceptable (and stated) horizon for it. It is deliberately NOT used for
+    // any of the five headline cards.
     const loginDaysByUser = new Map();
     events.filter((e) => e.type === 'user_login' && e.userId).forEach((e) => {
       const days = loginDaysByUser.get(e.userId) || new Set();
@@ -332,9 +340,6 @@ export async function handler(event) {
       loginDaysByUser.set(e.userId, days);
     });
     const returningUsers = Array.from(loginDaysByUser.values()).filter((days) => days.size > 1).length;
-
-    // Logged-in visitors: unique authenticated accounts (distinct userIds).
-    const loggedInVisitors = new Set(events.filter((e) => e.userId).map((e) => e.userId)).size;
 
     // Per-user scan counts, used only for the top-active-users ranking.
     const scansByUser = new Map();
@@ -353,14 +358,54 @@ export async function handler(event) {
       ? Math.round((scanEvents.length / registeredTotal) * 10) / 10
       : 0;
 
+    // THE AUTHORITATIVE FIVE. All from user records, all mutually consistent.
+    //
+    // `loggedInUsers` counts accounts whose `hasLoggedIn` flag is set by a
+    // successful authentication — NOT accounts that merely appear in the event
+    // log. The old value counted any event carrying a userId, so a page view or
+    // a scan made "logged in visitors" tick up, which is why it drifted up
+    // toward the registered total and eventually matched it.
+    const registeredUsers = loginStats?.registeredUsers ?? 0;
+    const loggedInUsers = loginStats?.loggedInUsers ?? 0;
+    const neverLoggedInUsers = loginStats?.neverLoggedInUsers ?? 0;
+    const activeToday = loginStats?.activeToday ?? 0;
+    const activeLast7Days = loginStats?.activeLast7Days ?? 0;
+
+    // Fail LOUD rather than serve numbers that do not add up. The whole point
+    // of this dashboard is that an administrator can trust it; silently
+    // rendering an impossible set of figures is worse than an error, because
+    // decisions get made on it. This can only trip on a genuine bug — the
+    // buckets are complementary by construction — so it is an assertion, not
+    // error handling.
+    const consistent = registeredUsers === loggedInUsers + neverLoggedInUsers;
+    if (!consistent) {
+      return jsonResponse(500, {
+        message: 'analytics-summary: user metrics failed their consistency check',
+        detail: { registeredUsers, loggedInUsers, neverLoggedInUsers },
+      });
+    }
+
     const userAnalytics = {
-      registeredTotal,
+      // Canonical names, matching the required API contract.
+      registeredUsers,
+      loggedInUsers,
+      neverLoggedInUsers,
+      activeToday,
+      activeLast7Days,
+
       registeredToday,
-      activeUsersToday: activeUserIds.size,
       returningUsers,
-      loggedInVisitors,
       avgScansPerUser,
       topActiveUsers,
+
+      // Legacy aliases, kept so nothing that already reads these breaks. They
+      // now point at the CORRECT values rather than the old event-derived
+      // ones. `loggedInVisitors` in particular used to mean something else
+      // entirely (see visitorAnalytics.loggedInVisitors, which is a distinct
+      // metric about page-view sessions and keeps its own name).
+      registeredTotal: registeredUsers,
+      activeUsersToday: activeToday,
+      loggedInVisitors: loggedInUsers,
     };
 
     const overview = {

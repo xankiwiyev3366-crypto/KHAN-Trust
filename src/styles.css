@@ -10928,3 +10928,48 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
   .premium-modal-cta:hover { transform: none; }
 }
 
+
+/* ── Admin analytics: metric tooltips + the consistency note ───────────────── */
+
+/* The little "i" beside a metric label. A real focusable button, not a bare
+   title attribute on a span, so the definition is reachable by keyboard and
+   exposed to screen readers via aria-label. */
+.metric-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 5px;
+  padding: 0;
+  vertical-align: middle;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--border-soft);
+  border-radius: 50%;
+  cursor: help;
+  transition: color 0.18s ease, border-color 0.18s ease;
+}
+
+.metric-info:hover,
+.metric-info:focus-visible {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+/* States the Registered = LoggedIn + NeverLoggedIn arithmetic on screen, so an
+   administrator can check it without opening devtools. */
+.analytics-invariant-note {
+  margin: 10px 0 0;
+  padding: 9px 13px;
+  font-size: 0.78rem;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--border-soft);
+  border-left: 2px solid var(--success);
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metric-info { transition: none; }
+}

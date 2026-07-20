@@ -131,6 +131,139 @@ export async function countRegisteredUsers() {
   }
 }
 
+// ── Login state: DURABLE, on the user record ─────────────────────────────────
+//
+// Before this, "has this user ever logged in?" was answered by scanning the
+// analytics event log for a `user_login` event. That was wrong in two
+// independent ways, and both produced the same visible symptom — a wildly
+// inflated "Never Logged In" count:
+//
+//   1. The event log is CAPPED at 20 000 events and evicts oldest-first
+//      (_analyticsStore.mjs). "Has ever logged in" was therefore really "logged
+//      in recently enough to survive the cap". A user who signed in months ago
+//      silently reverted to "never logged in" as their event aged out. No query
+//      can fix that; the row is gone.
+//   2. Only auth-login.mjs ever wrote `user_login`. Registration auto-login,
+//      email-verification auto-login and session restoration all issue or
+//      accept a token — genuine successful authentications — and recorded
+//      nothing at all.
+//
+// So login state now lives on the user record, where it is written once and
+// never expires. An append-only fact about an account belongs on the account,
+// not in a rolling telemetry buffer.
+//
+// FIELDS
+//   hasLoggedIn   boolean  — true after the first successful authentication.
+//   firstLoginAt  ISO      — set once, never overwritten.
+//   lastLoginAt   ISO      — most recent successful authentication.
+//   lastActiveAt  ISO      — most recent authenticated activity of any kind.
+//
+// `lastLoginAt` and `lastActiveAt` are separate on purpose: a session that is
+// restored from a stored token is real authenticated ACTIVITY but it is not a
+// fresh LOGIN, and collapsing the two would make "logged in today" indis-
+// tinguishable from "had the tab open today".
+
+// Which kinds of successful authentication exist. Recorded so the admin view
+// can tell a real credential login from an auto-login, rather than guessing.
+export const AUTH_METHOD = {
+  PASSWORD: 'password',        // auth-login.mjs — email + password
+  REGISTRATION: 'registration',// auth-register.mjs — token issued at signup
+  EMAIL_VERIFY: 'email_verify',// auth-verify-email.mjs — token issued on verify
+  SESSION: 'session',          // auth-me.mjs — valid stored JWT presented
+};
+
+// Records ONE successful authentication. Call this ONLY after credentials (or a
+// valid signed token) have actually been verified — never on a failed attempt,
+// never before the check. Every call site sits after its auth guard.
+//
+// `isLogin` distinguishes a fresh authentication (password, registration,
+// email-verify) from a restored session. A restored session updates activity
+// and, for a legacy account, proves the user HAS authenticated at some point —
+// a valid signed JWT cannot exist otherwise — but it does not move
+// `lastLoginAt`, because nobody typed a password.
+//
+// Best-effort and never throws: analytics must never be able to fail a login.
+export async function recordSuccessfulAuth(userId, { method = AUTH_METHOD.PASSWORD, isLogin = true, now = Date.now() } = {}) {
+  try {
+    const user = await getUserById(userId);
+    if (!user) return null;
+    const iso = new Date(now).toISOString();
+
+    const updates = {
+      hasLoggedIn: true,
+      // Set once. Overwriting it on every login would turn "first seen" into
+      // "last seen" and quietly destroy cohort/retention analysis.
+      firstLoginAt: user.firstLoginAt || iso,
+      lastActiveAt: iso,
+      lastAuthMethod: method,
+    };
+    if (isLogin) updates.lastLoginAt = iso;
+    // A restored session for an account with no recorded login history still
+    // needs SOME login timestamp, or the account shows as "logged in, never".
+    else if (!user.lastLoginAt) updates.lastLoginAt = user.firstLoginAt || iso;
+
+    return await updateUser(userId, updates);
+  } catch {
+    return null;
+  }
+}
+
+// Reads every user once and returns the authoritative account-level metrics.
+//
+// This is THE source for the admin dashboard's user cards. It is computed from
+// the user records themselves — not from telemetry, not from a counter, not
+// from a cache — so `registered === loggedIn + neverLoggedIn` holds by
+// construction: every account falls in exactly one of the two buckets, because
+// the buckets are defined by a single boolean on that account.
+//
+// `now` is injectable so tests can pin day boundaries.
+export async function getUserLoginStats({ now = Date.now() } = {}) {
+  const result = await store().list({ prefix: 'user:email:' });
+  const blobs = result.blobs || [];
+  const users = await Promise.all(
+    blobs.map((b) => store().get(b.key, { type: 'json' }).catch(() => null))
+  );
+  const records = users.filter(Boolean);
+
+  const today = new Date(now).toISOString().slice(0, 10);
+  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+
+  let loggedIn = 0;
+  let neverLoggedIn = 0;
+  // Sets, not counters: one user active five times today must count ONCE.
+  // Keyed by user id, so duplicate sessions/requests collapse.
+  const activeTodayIds = new Set();
+  const activeWeekIds = new Set();
+
+  for (const user of records) {
+    if (user.hasLoggedIn === true) loggedIn += 1;
+    else neverLoggedIn += 1;
+
+    // Activity requires having authenticated. An account that never logged in
+    // cannot be "active", regardless of any stray timestamp.
+    if (user.hasLoggedIn !== true) continue;
+    const activeAt = user.lastActiveAt || user.lastLoginAt;
+    if (!activeAt) continue;
+    const ts = Date.parse(activeAt);
+    if (Number.isNaN(ts)) continue;
+
+    // Today = UTC calendar day, matching every other day-bucket in this
+    // codebase (scan quota, retention streaks, analytics dateKey).
+    if (activeAt.slice(0, 10) === today) activeTodayIds.add(user.id);
+    // This week = ROLLING 7 days, not "sum of the last 7 daily counts" — a
+    // user active on three of those days still counts once.
+    if (ts >= weekAgo && ts <= now) activeWeekIds.add(user.id);
+  }
+
+  return {
+    registeredUsers: records.length,
+    loggedInUsers: loggedIn,
+    neverLoggedInUsers: neverLoggedIn,
+    activeToday: activeTodayIds.size,
+    activeLast7Days: activeWeekIds.size,
+  };
+}
+
 export async function listRegisteredUsers(limit = 100) {
   try {
     const result = await store().list({ prefix: 'user:email:' });

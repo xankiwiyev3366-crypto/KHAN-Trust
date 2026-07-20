@@ -1054,6 +1054,12 @@ export default {
       socialBetter: 'социальная оценка выросла на {{points}} баллов',
     },
   },
+  sinceVisit: {
+    eyebrow: 'С вашего последнего визита',
+    title: 'Ваш риск во времени',
+    subtitle: 'Пока вас не было, изменились проекты: {{count}}.',
+    scoreLine: 'Сейчас {{score}}/100 — было {{previous}}/100',
+  },
   watchtower: {
     cadence: 'Ваши проекты проверяются каждые {{count}} {{unit}}.',
     cadenceUpsell: 'Premium проверяет каждые 30 минут.',

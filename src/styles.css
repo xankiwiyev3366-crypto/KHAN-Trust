@@ -10270,3 +10270,75 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
   color: var(--gold-bright);
   max-width: 34ch;
 }
+
+/* ── Your Risk Over Time ────────────────────────────────────────────────────
+   Renders only when a real change was measured (see SinceLastVisitPanel), so
+   there is no empty state to style. Tone is carried by a left border AND by
+   the wording, never by colour alone. */
+
+.since-visit-subtitle {
+  color: var(--muted);
+  margin: -4px 0 16px;
+}
+
+.since-visit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.since-visit-row {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-left: 3px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+
+.since-visit-critical { border-left-color: var(--danger); }
+.since-visit-worse    { border-left-color: var(--warning); }
+.since-visit-better   { border-left-color: var(--success); }
+
+.since-visit-name {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 0.98rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  text-align: left;
+}
+
+.since-visit-name:hover { color: var(--gold-bright); }
+
+.since-visit-name span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.since-visit-score {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.since-visit-reasons {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.83rem;
+  line-height: 1.55;
+}
+
+@media (max-width: 640px) {
+  .since-visit-list { grid-template-columns: 1fr; }
+  .since-visit-row { padding: 12px 13px; }
+}

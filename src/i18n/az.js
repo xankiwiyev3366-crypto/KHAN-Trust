@@ -1054,6 +1054,12 @@ export default {
       socialBetter: 'sosial bal {{points}} bal artdı',
     },
   },
+  sinceVisit: {
+    eyebrow: 'Son ziyarətinizdən bəri',
+    title: 'Zamanla Riskiniz',
+    subtitle: 'Siz burada olmadığınız müddətdə layihələrinizdən {{count}} dənəsi dəyişdi.',
+    scoreLine: 'İndi {{score}}/100 — əvvəl {{previous}}/100 idi',
+  },
   watchtower: {
     cadence: 'Layihələriniz hər {{count}} {{unit}} bir yoxlanılır.',
     cadenceUpsell: 'Premium hər 30 dəqiqədən bir yoxlayır.',

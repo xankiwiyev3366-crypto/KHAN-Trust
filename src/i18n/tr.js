@@ -1054,6 +1054,12 @@ export default {
       socialBetter: 'sosyal puan {{points}} puan arttı',
     },
   },
+  sinceVisit: {
+    eyebrow: 'Son ziyaretinizden beri',
+    title: 'Zaman İçinde Riskiniz',
+    subtitle: 'Siz yokken projelerinizden {{count}} tanesi hareket etti.',
+    scoreLine: 'Şimdi {{score}}/100 — önceki {{previous}}/100',
+  },
   watchtower: {
     cadence: 'Projeleriniz her {{count}} {{unit}} bir kontrol ediliyor.',
     cadenceUpsell: 'Premium her 30 dakikada bir kontrol eder.',

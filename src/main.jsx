@@ -138,7 +138,8 @@ import { historyKeyFor, fetchScoreHistory, computeScoreDelta, useScoreHistory } 
 import { useCorpusRecord } from './tokenCorpus.js';
 import { ANALYST_QUESTIONS, answerQuestion, translateSignalKeys, translatedCategory } from './khanAnalyst.js';
 import { detectRiskAlerts, useWatchlistAlertCount } from './riskAlerts.js';
-import { TRUST_CATEGORIES, buildRiskHistory, validHistory } from './riskHistory.js';
+import { TRUST_CATEGORIES, buildRiskHistory, validHistory, describeChange } from './riskHistory.js';
+import { useSinceLastVisit } from './sinceLastVisit.js';
 import { useWatchtowerReport, describeReason, describeCadence, MONITORED_DIMENSIONS, STATUS_TONE } from './watchtower.js';
 import { computePeerBenchmark, peerLabelFor } from './peerBenchmark.js';
 import { I18nProvider, useTranslation } from './i18n/I18nContext.jsx';
@@ -4440,6 +4441,81 @@ function ScanLimitModal({ quota, onClose, navigate }) {
   );
 }
 
+// ── Your Risk Over Time ──────────────────────────────────────────────────────
+//
+// What changed across the user's projects since they were last here. Reads the
+// CLIENT lane (score history) — see src/sinceLastVisit.js for why this is a
+// different question from the Watchtower Report and must never be merged with
+// it.
+//
+// RENDERS NOTHING RATHER THAN "NOTHING CHANGED".
+//
+// Three states collapse to silence: signed out, no previous visit (a first-ever
+// session has no "since"), and no comparable history. Only a real, measured
+// change puts a panel on the dashboard. This is the opposite of the Watchtower
+// Report's rule, and deliberately so: the Watchtower is a report the user
+// ASKED for, where "we checked and all is well" is the answer; this is an
+// interruption on a page they came to for something else, and it has to earn
+// its space every single time.
+function SinceLastVisitPanel({ projects, navigate }) {
+  const { t, language } = useTranslation();
+  const { user } = useAuth();
+  const { hasPremium } = usePremiumEntitlement();
+  const { retention } = useRetention();
+  const previousSeen = retention?.previousSeen || null;
+
+  const { entries, ready } = useSinceLastVisit({
+    projects,
+    previousSeen,
+    enabled: Boolean(user) && hasPremium,
+  });
+
+  if (!user || !hasPremium || !ready || !entries.length) return null;
+
+  return (
+    <section className="content-band since-visit">
+      <SectionTitle icon={History} eyebrow={t('sinceVisit.eyebrow')} title={t('sinceVisit.title')} />
+      <p className="since-visit-subtitle">
+        {t('sinceVisit.subtitle', { count: entries.length })}
+      </p>
+      <ul className="since-visit-list">
+        {entries.map((entry) => (
+          <li
+            key={entry.identity}
+            className={`since-visit-row since-visit-${entry.riskChange?.worse ? 'critical' : entry.worse ? 'worse' : 'better'}`}
+          >
+            <button
+              type="button"
+              className="since-visit-name"
+              onClick={() => navigate(`project/${entry.project.id}`)}
+            >
+              {entry.project.name}
+              {entry.project.ticker && <span>{entry.project.ticker}</span>}
+            </button>
+            <p className="since-visit-score">
+              {t('sinceVisit.scoreLine', {
+                score: entry.latest.score,
+                previous: entry.baseline.score,
+              })}
+            </p>
+            {/* The WHY, from the same describeChange() the on-page history
+                timeline uses — so the dashboard and the token page can never
+                word the same movement differently. */}
+            <ul className="since-visit-reasons">
+              {entry.changes
+                .filter((change) => change.key !== 'trustScore')
+                .slice(0, 3)
+                .map((change, index) => (
+                  <li key={`${change.key}-${index}`}>{describeChange(change, language)}</li>
+                ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function HomePage({ projects, query, setQuery, searchState, scanProgress, onSearch, onSelectMatch, onTokenCheck, navigate, openMethodology, watchlist, alertCount, scanQuota }) {
   const { t } = useTranslation();
   const featured = projects.slice(0, 4);
@@ -4523,6 +4599,10 @@ function HomePage({ projects, query, setQuery, searchState, scanProgress, onSear
           and this is a token scanner: pushing search under a wall of personal
           panels would serve the retention loop at the expense of the thing
           people actually came to do. Renders nothing at all when signed out. */}
+      {/* Leads the personal panels: "what changed while I was gone" is the
+          question a returning user actually has, and the streak/continue cards
+          below are context for it rather than the other way round. */}
+      <SinceLastVisitPanel projects={projects} navigate={navigate} />
       <RetentionDashboard projects={projects} watchlist={watchlist} navigate={navigate} alertCount={alertCount} />
       <CheckAnyTokenSection onTokenCheck={onTokenCheck} navigate={navigate} />
       <KhanEcosystemStrip navigate={navigate} />

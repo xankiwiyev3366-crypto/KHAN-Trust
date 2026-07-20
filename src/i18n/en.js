@@ -1139,6 +1139,14 @@ export default {
   // one the re-scan worker GENUINELY observes every cycle — this list is the
   // product's promise about what it checks, so nothing may be added here that
   // _volatileSignals.mjs does not actually fetch.
+  // Your Risk Over Time (Phase 4). Renders only when a real change was
+  // measured, so there is deliberately no "nothing changed" string here.
+  sinceVisit: {
+    eyebrow: 'Since your last visit',
+    title: 'Your Risk Over Time',
+    subtitle: '{{count}} of your projects moved while you were away.',
+    scoreLine: 'Now {{score}}/100 — was {{previous}}/100',
+  },
   watchtower: {
     cadence: 'Your projects are checked every {{count}} {{unit}}.',
     cadenceUpsell: 'Premium checks every 30 minutes.',

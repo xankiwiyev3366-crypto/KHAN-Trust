@@ -113,6 +113,14 @@ export async function recordVisit(userId, contextInput, now = Date.now()) {
     ...record,
     days,
     firstSeen: record.firstSeen || nowIso,
+    // The PREVIOUS lastSeen is preserved before it is overwritten. This is the
+    // whole basis of "what changed since your last visit" (Phase 4): by the
+    // time the client reads the summary, lastSeen is already this visit, so
+    // without capturing the prior value there is nothing to measure "since"
+    // against. Only advanced when a genuinely new DAY is recorded - otherwise a
+    // second page-load ten minutes later would move the marker forward and
+    // erase the very changes the user came back to see.
+    previousSeen: dayAdded ? (record.lastSeen || record.previousSeen || null) : (record.previousSeen || null),
     lastSeen: nowIso,
     lastContext: contextMoved ? nextContext : record.lastContext,
   };
@@ -170,6 +178,11 @@ export function summarize(record, now = Date.now()) {
     activity: windows,
     firstSeen: record.firstSeen,
     lastSeen: record.lastSeen,
+    // When the user was last here BEFORE this visit. Null for a first-ever
+    // session, which the client must render as "welcome" rather than as "no
+    // changes" - a new user has no history, which is not the same as a
+    // returning user whose watchlist was quiet.
+    previousSeen: record.previousSeen || null,
     // Withheld once stale rather than offered as an old suggestion.
     continueContext: isContextFresh(record.lastContext, now) ? record.lastContext : null,
     milestones: record.milestones || {},

@@ -154,6 +154,19 @@ import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { RetentionProvider, useRetention } from './RetentionContext.jsx';
 import { contextFromProject } from './retention.js';
 import { peekScanQuota, consumeScanQuota, hoursUntilReset, FREE_DAILY_SCAN_LIMIT } from './scanQuota.js';
+// The Free/Premium presentation layer: crowns, teaser locks, and the upgrade
+// modal. The tier rules themselves live in ./lib/features.js, which the SERVER
+// reads too — see netlify/functions/_featureGate.mjs. Nothing here is a
+// security boundary.
+import {
+  PremiumGateProvider,
+  usePremiumGate,
+  PremiumLock,
+  PremiumCrown,
+  PremiumActionButton,
+  PremiumUpgradeModal,
+  FeatureComparisonTable,
+} from './premiumGate.jsx';
 import { AuthModal } from './auth/AuthModal.jsx';
 // Early Stage Projects - additive, lazy-loaded feature. React.lazy keeps this
 // entire module (and its earlyStage.js client) out of the initial bundle; it
@@ -186,7 +199,7 @@ import {
 import { isCardPaymentEnabled, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
-import { planUsdAmount } from './lib/pricing.js';
+import { planUsdAmount, PLAN_USD_AMOUNT } from './lib/pricing.js';
 import { fetchEntitlement, fetchAccountEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
 import { buildAdvancedResearch, buildPremiumAnalysis, buildLocalizedRiskSummary, friendlyMissingFields } from './premiumResearch.js';
 import { useGroundedAnalysis, mergeAnalysis } from './groundedAnalysis.js';
@@ -3720,6 +3733,13 @@ function App() {
   }, []);
 
   return (
+    // Every crown, teaser lock, and upgrade modal in the tree reads its
+    // entitlement from here. It is fed the SAME merged `hasPremium` the rest of
+    // App uses (account + legacy wallet + admin grant, via
+    // usePremiumEntitlement) rather than resolving entitlement a second time —
+    // two independent resolvers would eventually disagree, and the visible
+    // symptom would be a paying user seeing a crown on something they own.
+    <PremiumGateProvider hasPremium={hasPremium} navigate={navigate}>
     <div className={`app-shell${isAdminPage ? ' is-admin' : ''}`}>
       {/* The cyber environment is part of the user-facing product identity and
           is never shown behind the Admin Panel, which stays plain tooling. */}
@@ -3844,9 +3864,15 @@ function App() {
         />
       )}
       {methodologyOpen && <MethodologyModal onClose={() => setMethodologyOpen(false)} />}
+      {/* Hitting the daily limit is the single highest-intent upgrade moment in
+          the product — the user wanted one more analysis and could not have it.
+          So it opens the FULL upgrade modal (comparison, lifetime price, one
+          CTA) rather than the older limit-only notice, which explained the wall
+          without ever showing what was on the other side of it. `reason` swaps
+          the headline to the limit message; the rest of the pitch is shared. */}
       {scanLimitOpen && (
-        <ScanLimitModal
-          quota={scanQuota}
+        <PremiumUpgradeModal
+          reason="scanLimit"
           onClose={() => setScanLimitOpen(false)}
           navigate={(target) => { setScanLimitOpen(false); navigate(target); }}
         />
@@ -3870,6 +3896,7 @@ function App() {
       )}
       </div>
     </div>
+    </PremiumGateProvider>
   );
 }
 
@@ -4808,6 +4835,19 @@ function WatchlistPage({ projects, watchlist, toggleWatch, navigate }) {
     <section className="page-section">
       <SectionTitle icon={Bell} eyebrow={t('watchlist.eyebrow')} title={t('watchlist.title')} />
       {!watchedProjects.length && <KhanAiEmptyState title={t('watchlist.emptyTitle')} text={t('watchlist.emptyText')} />}
+      {/* The Watchlist is Premium. A free user who saved projects BEFORE this
+          became paid still has every one of them — the entries live untouched
+          in local storage and sync back the moment Premium is active. The lock
+          hides the list; it never deletes it. `description` states that
+          explicitly, because "my saved work disappeared behind a paywall" is
+          the one upgrade prompt guaranteed to lose a user rather than convert
+          them, and here it would not even be true. */}
+      <PremiumLock
+        feature="watchlist"
+        description={watchedProjects.length
+          ? t('watchlist.lockedWithItems', { count: watchedProjects.length })
+          : undefined}
+      >
       <div className="project-grid">
         {watchedProjects.map((project) => (
           <div className="watchlist-item" key={project.id}>
@@ -4823,6 +4863,7 @@ function WatchlistPage({ projects, watchlist, toggleWatch, navigate }) {
           </div>
         ))}
       </div>
+      </PremiumLock>
     </section>
   );
 }
@@ -5189,6 +5230,12 @@ function ComparePage({ projects, navigate }) {
     <section className="page-section compare-page">
       <SectionTitle icon={Scale} eyebrow={t('compare.eyebrow')} title={t('compare.title')} />
       {!projects.length && <KhanAiEmptyState title={t('compare.emptyTitle')} text={t('compare.emptyText')} />}
+      {/* Compare is Premium. The whole comparison body is wrapped rather than
+          each row, so a free user sees the page, its title, and a crowned
+          skeleton of the side-by-side — the shape of the answer without the
+          answer. The selectors stay above the lock so the page still reads as
+          a real feature rather than an error. */}
+      <PremiumLock feature="compareProjects" className="compare-lock">
       <div className="compare-selectors">
         <ProjectSelect label={t('compare.projectA')} value={first?.id || ''} projects={projects} onChange={setFirstId} />
         <ProjectSelect label={t('compare.projectB')} value={second?.id || ''} projects={projects} onChange={setSecondId} />
@@ -5217,6 +5264,7 @@ function ComparePage({ projects, navigate }) {
           </div>
         </>
       )}
+      </PremiumLock>
     </section>
   );
 }
@@ -6001,6 +6049,36 @@ function PricingPage({ navigate }) {
         </p>
       )}
       {paymentMessage && <p className="pricing-note payment-message">{paymentMessage}</p>}
+
+      {/* THE HERO: one plan, one price, one button.
+          Lifetime is given the whole top of the page rather than being the
+          third card in a row of three. A three-card grid asks the visitor to
+          run a comparison before they have decided they want anything at all,
+          and the option we most want taken was the one furthest from the eye.
+          The monthly plan and the free tier are still fully available — they
+          are just BELOW this, as the answer to "what else is there?" rather
+          than as competing opening offers. Nothing was removed. */}
+      <div className="pricing-hero-card">
+        <span className="pricing-hero-badge"><Crown size={13} /> {t('pricing.heroBadge')}</span>
+        <div className="pricing-hero-price">
+          <strong>${PLAN_USD_AMOUNT.early_supporter}</strong>
+          <span>{t('premiumModal.lifetimeSuffix')}</span>
+        </div>
+        <p className="pricing-hero-sub">{t('pricing.heroSave')}</p>
+        <ul className="pricing-hero-list">
+          {t('pricing.plans.earlySupporter').features.map((feature) => (
+            <li key={feature}><CheckCircle2 size={16} /> {feature}</li>
+          ))}
+        </ul>
+        <button
+          className="premium-modal-cta"
+          type="button"
+          onClick={() => beginCheckout('early_supporter')}
+        >
+          <Sparkles size={16} /> {t('pricing.plans.earlySupporter').cta} <ArrowRight size={16} />
+        </button>
+      </div>
+
       <div className="premium-value-strip">
         {activeToolNames.map((title) => (
           <span key={title}><CheckCircle2 size={16} /> {title}</span>
@@ -6023,8 +6101,34 @@ function PricingPage({ navigate }) {
           </article>
         ))}
       </div>
+
+      {/* Generated from src/lib/features.js — the same registry the crowns and
+          the server gate read. A hand-written pricing table drifts from what
+          the product actually enforces, and it always drifts into either
+          promising something that is locked or advertising as Premium
+          something that is free. This one cannot. */}
+      <section className="detail-section">
+        <SectionTitle icon={BarChart3} eyebrow={t('pricing.eyebrow')} title={t('pricing.comparison.title')} />
+        <FeatureComparisonTable />
+      </section>
+
+      {/* The legacy hand-written plan grid, kept as-is: it is the only place
+          the KHAN Founding Member-exclusive rows (badge, lifetime recognition)
+          are spelled out, and those are not feature-registry entries. */}
       <PlanComparisonTable />
+
       <PaymentMethodsSection beginCheckout={beginCheckout} onEntitlementChange={refresh} />
+
+      <section className="pricing-faq">
+        <SectionTitle icon={Info} eyebrow={t('pricing.eyebrow')} title={t('pricing.faqTitle')} />
+        {t('pricing.faq').map(([question, answer]) => (
+          <details className="pricing-faq-item" key={question}>
+            <summary>{question}</summary>
+            <p>{answer}</p>
+          </details>
+        ))}
+      </section>
+
       <p className="pricing-note">{t('pricing.footerNote')}</p>
       <Disclaimer />
     </section>
@@ -6583,9 +6687,17 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
             </p>
           )}
           <div className="profile-actions">
-            <button className={watched ? 'primary-button watched' : 'primary-button'} onClick={toggleWatch}>
+            {/* Watchlist and PDF export are Premium, but they stay VISIBLE and
+                clickable for free users — the click opens the upgrade modal
+                naming the feature instead of silently doing nothing. See the
+                note on PremiumActionButton for why these are not `disabled`. */}
+            <PremiumActionButton
+              feature="watchlist"
+              className={watched ? 'primary-button watched' : 'primary-button'}
+              onClick={toggleWatch}
+            >
               <Bell size={18} /> {watched ? t('projectProfile.watchingProject') : t('projectProfile.watchProject')}
-            </button>
+            </PremiumActionButton>
             <TokenAlertToggle project={project} />
             {canEdit && (
               <button className="secondary-button" onClick={onEdit}>
@@ -6597,9 +6709,13 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
                 <BadgeCheck size={18} /> {t('projectProfile.requestVerification')}
               </button>
             )}
-            <button className="secondary-button" onClick={() => gate(() => handleDownloadPdf(project))}>
+            <PremiumActionButton
+              feature="pdfReports"
+              className="secondary-button"
+              onClick={() => gate(() => handleDownloadPdf(project))}
+            >
               <Download size={18} /> {t('projectProfile.downloadPdf')}
-            </button>
+            </PremiumActionButton>
             <button className="primary-button" onClick={unlockPremium}>
               <Lock size={18} /> {t('projectProfile.unlockPremium')}
             </button>
@@ -10647,11 +10763,33 @@ function ScoreCircle({ score, size = 'normal' }) {
 // analyst below, rather than each component fetching its own copy.
 function ScoreHistoryStrip({ project, history }) {
   const { t } = useTranslation();
+  const { can, openUpgrade } = usePremiumGate();
   // The sparkline and delta plot only VALID snapshots — a demo/outage point
   // would otherwise draw a phantom dip the numbers below never explain.
   const valid = useMemo(() => validHistory(history), [history]);
   const delta = computeScoreDelta(valid, project.trustScore);
   const sparkData = valid.length >= 2 ? valid.map((entry) => ({ count: entry.score })) : null;
+
+  // Trust Score History is Premium, and score-history-get now refuses a free
+  // caller, so `history` arrives empty and the component would silently render
+  // nothing at all. Nothing is the wrong answer: the user cannot tell "this
+  // token has no history yet" apart from "this is a paid feature", and a
+  // feature nobody knows exists sells nothing. So a free user gets a compact
+  // crowned teaser in the same slot instead — the full-size PremiumLock overlay
+  // would dwarf the score card this sits inside.
+  if (!can('scoreHistory')) {
+    return (
+      <button
+        type="button"
+        className="score-history-strip score-history-locked"
+        onClick={() => openUpgrade('scoreHistory')}
+        aria-label={t('premiumGate.unlockAria', { feature: t('features.scoreHistory') })}
+      >
+        <PremiumCrown size={12} />
+        <span>{t('features.scoreHistory')}</span>
+      </button>
+    );
+  }
 
   if (!sparkData && !delta) return null;
 

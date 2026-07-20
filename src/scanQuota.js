@@ -25,13 +25,15 @@
 // the whole product is that scan. This mirrors the fire-and-forget contract in
 // platformAnalytics.js and retention.js.
 import { getCachedWalletToken } from './walletSession.js';
+import { FREE_DAILY_SCAN_LIMIT as REGISTRY_LIMIT } from './lib/features.js';
 
 const AUTH_TOKEN_KEY = 'khan-trust-auth-token-v1';
 
-// The free ceiling, mirrored from _scanQuotaStore.FREE_DAILY_SCAN_LIMIT purely
-// so the UI has a sensible default before the first response lands. The server
-// is authoritative and echoes the real `limit` on every reply.
-export const FREE_DAILY_SCAN_LIMIT = 3;
+// The free ceiling, re-exported from the shared registry purely so the UI has a
+// sensible default before the first response lands. The server is still
+// authoritative and echoes the real `limit` on every reply — this is only what
+// the meter shows for the few hundred milliseconds before that arrives.
+export const FREE_DAILY_SCAN_LIMIT = REGISTRY_LIMIT;
 
 // Auth token proves the account; the cached wallet token (never a fresh signing
 // prompt) lets a legacy paid-wallet user be recognised as premium on a passive

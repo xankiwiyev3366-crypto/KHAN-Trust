@@ -7,6 +7,7 @@
 import { verifyJwt, getUserById, bearerToken } from './_authStore.mjs';
 import { toggleToken, jsonResponse } from './_alertsStore.mjs';
 import { resolveUserTier, MAX_WATCHED_TOKENS } from './_watchTiers.mjs';
+import { requireFeature } from './_featureGate.mjs';
 
 const IDENTITY_PATTERN = /^(c:[a-z0-9]{6,90}|id:[a-z0-9-]{3,80})$/i;
 
@@ -22,6 +23,14 @@ export async function handler(event) {
     if (!payload) return jsonResponse(401, { message: 'Unauthorized' });
     const user = await getUserById(payload.sub);
     if (!user) return jsonResponse(404, { message: 'User not found' });
+
+    // PREMIUM (feature `realtimeAlerts`). Subscribing a token is what puts it in
+    // the watch lane AND what causes us to email this person, so it is the one
+    // chokepoint where both paid behaviours are actually bought. Gated after the
+    // auth checks so a signed-out caller still gets 401 rather than a
+    // "upgrade to do this" message that misidentifies why they were refused.
+    const gate = await requireFeature(event, 'realtimeAlerts');
+    if (!gate.allowed) return gate.response;
 
     let body;
     try { body = JSON.parse(event.body || '{}'); } catch { return jsonResponse(400, { message: 'Invalid JSON' }); }

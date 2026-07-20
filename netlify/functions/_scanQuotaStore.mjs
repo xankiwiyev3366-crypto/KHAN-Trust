@@ -33,12 +33,17 @@
 // everything here except money (the growth AI budget is the one fail-closed
 // store). A free scanner is not money.
 import { getNamedStore } from './_blobsClient.mjs';
+import { FREE_DAILY_SCAN_LIMIT as REGISTRY_LIMIT } from '../../src/lib/features.js';
 
 const STORE_NAME = 'khan-trust-scan-quota';
 
-// The free tier: three real scans per UTC day. One number, one place, so the
-// endpoint and any test read the same ceiling.
-export const FREE_DAILY_SCAN_LIMIT = 3;
+// The free tier's daily ceiling. Re-exported from the shared feature registry
+// (src/lib/features.js) rather than declared here, so the number the server
+// enforces and the number the pricing page advertises are the same literal.
+// They used to be two constants in two files, which is a silent-drift bug
+// waiting to happen: the marketing copy says 5, the gate still allows 3, and
+// nothing fails — users just hit a wall the page told them wasn't there.
+export const FREE_DAILY_SCAN_LIMIT = REGISTRY_LIMIT;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

@@ -42,6 +42,37 @@ import {
 import { buildWatchtowerReport } from './_watchtowerReport.mjs';
 import { resolveUserTier, OBSERVE_INTERVAL_MS, MAX_WATCHED_TOKENS } from './_watchTiers.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
+import { resolveTier } from './_featureGate.mjs';
+
+// THE FREE TEASER, ENFORCED SERVER-SIDE.
+//
+// The Watchtower page shows Free users a real summary — "3 tokens changed" —
+// and withholds WHICH and WHY behind the upgrade lock. That is a deliberately
+// honest cliffhanger: the number is true, and it is the strongest possible
+// argument for upgrading precisely because we are not making it up.
+//
+// But the lock was CLIENT-SIDE ONLY. The endpoint returned the complete
+// per-token breakdown to everyone and let the browser decide whether to paint
+// it, which means the entire paid deliverable was one devtools panel away.
+//
+// So the redaction now happens here. Free users get the summary, the coverage
+// panel, and the period — everything the teaser legitimately shows — and the
+// `tokens` array arrives EMPTY, with `redacted` stating plainly that detail was
+// withheld for tier reasons rather than because nothing happened.
+//
+// That distinction is the important one: an empty array on its own is
+// indistinguishable from "all clear", and silently showing a worried user an
+// all-clear they did not earn would be a far worse failure than a paywall.
+function redactForFree(report) {
+  if (!report) return report;
+  return {
+    ...report,
+    tokens: [],
+    // The client reads this to render the lock (with the true change count from
+    // `summary`) instead of the "nothing is being watched" empty state.
+    redacted: { reason: 'premium_required', feature: 'continuousMonitoring', withheldTokens: report.tokens?.length || 0 },
+  };
+}
 
 // Below this, a re-read returns the stored report instead of generating a new
 // one. Fifteen minutes is comfortably shorter than the hourly observation
@@ -64,6 +95,14 @@ export async function handler(event) {
     const userId = payload.sub;
     const now = new Date();
 
+    // Entitlement for the REDACTION decision only. Note this is separate from
+    // resolveUserTier below, which decides monitoring CADENCE and deliberately
+    // fails to free (an unreadable store must not hand out premium cadence and
+    // an unbounded provider bill). This one fails OPEN — a paying customer must
+    // still see their report during an outage. Same question, opposite safe
+    // direction, which is exactly why they are two calls and not one.
+    const { premium } = await resolveTier(event);
+
     // The caller's monitoring plan, so the report can state its OWN cadence
     // ("checked every 30 minutes") rather than describing monitoring in the
     // abstract. This is the number that makes the tier concrete, and it is
@@ -81,7 +120,12 @@ export async function handler(event) {
     // client show "generated 4 minutes ago" rather than implying it just ran.
     const lastAt = state.lastReportAt ? Date.parse(state.lastReportAt) : null;
     if (state.lastReport && Number.isFinite(lastAt) && (now.getTime() - lastAt) < MIN_PERIOD_SECONDS * 1000) {
-      return jsonResponse(200, { ok: true, fresh: false, plan, report: state.lastReport });
+      return jsonResponse(200, {
+        ok: true,
+        fresh: false,
+        plan,
+        report: premium ? state.lastReport : redactForFree(state.lastReport),
+      });
     }
 
     const subscription = await getSubscription(userId);
@@ -143,7 +187,12 @@ export async function handler(event) {
       lastReportAt: periodEnd,
     });
 
-    return jsonResponse(200, { ok: true, fresh: true, plan, report });
+    // The report is STORED complete (above) and redacted only on the way out,
+    // so the moment a user upgrades, the detail they were already paying us to
+    // collect is there — no regeneration, no lost period, no gap in the
+    // baseline chain. Redacting before the write would have quietly destroyed
+    // history that can never be recomputed.
+    return jsonResponse(200, { ok: true, fresh: true, plan, report: premium ? report : redactForFree(report) });
   } catch (error) {
     return jsonResponse(500, { message: `watchtower-report crashed: ${error.message}` });
   }

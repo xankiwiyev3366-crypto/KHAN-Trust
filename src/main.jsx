@@ -188,6 +188,7 @@ import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayme
 import { planUsdAmount } from './lib/pricing.js';
 import { fetchEntitlement, fetchAccountEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
 import { buildAdvancedResearch, buildPremiumAnalysis, buildLocalizedRiskSummary, friendlyMissingFields } from './premiumResearch.js';
+import { useGroundedAnalysis, mergeAnalysis } from './groundedAnalysis.js';
 import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction, submitBulkPremiumAction, fetchUserActivity, fetchUserActivityDetail } from './premiumAdmin.js';
 import { recordWalletLink } from './walletLink.js';
 import { fetchUserData, saveReport, removeSavedReport, toggleServerWatch } from './userData.js';
@@ -5576,8 +5577,16 @@ function ResearchList({ items, tone = 'neutral' }) {
 // Premium-only deep dive built deterministically from the same data the free
 // analysis uses (see premiumResearch.js). Free users see an upgrade CTA.
 function AdvancedResearchCard({ project, navigate }) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const { hasPremium, entitlement } = usePremiumEntitlement();
+  // Hooks run before the early return below, unconditionally, as they must.
+  // The overlay is gated on Premium so a free user never triggers a paid call.
+  const { fields: aiFields } = useGroundedAnalysis({
+    project,
+    identity: historyKeyFor(project),
+    language,
+    enabled: hasPremium && Boolean(project.assetCategory),
+  });
   if (!project.assetCategory) return null; // nothing to analyze yet
   return (
     <section className="detail-section premium-ai-card">
@@ -5586,7 +5595,11 @@ function AdvancedResearchCard({ project, navigate }) {
         <PremiumUpgradeCTA navigate={navigate} text={t('advancedResearch.lockedText')} />
       ) : (
         (() => {
-          const r = buildAdvancedResearch(project);
+          // The deterministic build FIRST — it renders immediately and is
+          // complete on its own. The AI overlay replaces only the prose fields
+          // it actually produced; every number below still comes from the
+          // engine. See mergeAnalysis() for the allowlist that enforces this.
+          const r = mergeAnalysis(buildAdvancedResearch(project), aiFields);
           return (
             <>
               <div className="premium-ai-badgeline"><AccountBadge entitlement={entitlement} compact /></div>
@@ -5615,8 +5628,16 @@ function AdvancedResearchCard({ project, navigate }) {
 // ── Premium feature 2: Premium AI Analysis ────────────────────────────────────
 // An ADDITIONAL section alongside (never replacing) the free AI Risk Summary.
 function PremiumAnalysisCard({ project, navigate }) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const { hasPremium, entitlement } = usePremiumEntitlement();
+  // Same overlay, same cache. Two cards asking for one token in one language
+  // hit the same cached entry, so this is one generation, not two.
+  const { fields: aiFields } = useGroundedAnalysis({
+    project,
+    identity: historyKeyFor(project),
+    language,
+    enabled: hasPremium && Boolean(project.assetCategory),
+  });
   if (!project.assetCategory) return null;
   return (
     <section className="detail-section premium-ai-card">
@@ -5625,7 +5646,10 @@ function PremiumAnalysisCard({ project, navigate }) {
         <PremiumUpgradeCTA navigate={navigate} text={t('premiumAnalysis.lockedText')} />
       ) : (
         (() => {
-          const a = buildPremiumAnalysis(project);
+          // Deterministic first, AI prose overlaid. riskConfidenceScore,
+          // aiConfidence, dataQuality, bullish, bearish and missingInfo are NOT
+          // overlayable — they are engine output and stay engine output.
+          const a = mergeAnalysis(buildPremiumAnalysis(project), aiFields);
           return (
             <>
               <div className="premium-ai-badgeline"><AccountBadge entitlement={entitlement} compact /></div>

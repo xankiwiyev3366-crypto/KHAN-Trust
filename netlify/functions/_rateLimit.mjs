@@ -110,6 +110,17 @@ export const RATE_POLICIES = {
   // link a few times. Fails open — a broken counter must never block the
   // sign-up page the link points at.
   referral_click_ip: { max: 30, windowMs: 5 * MINUTE },
+  // The Grounded AI Analyst is the ONLY endpoint that can spend real money per
+  // request, so this is a cost guard rather than a security one. It applies to
+  // cache MISSES only — normal reading of already-analysed tokens is never
+  // throttled — so the ceiling bounds how fast one paying account can force
+  // fresh generations by varying the posted facts. Well above any legitimate
+  // session: a user analysing 30 distinct tokens in ten minutes is not reading
+  // them. Per authenticated user, not per IP: the endpoint is Premium-gated, so
+  // the account is the thing that spends, and a shared NAT must not be the unit
+  // being limited. Fails open like every policy here — the hard monthly ceiling
+  // in _aiBudget fails CLOSED and is the actual backstop on spend.
+  premium_analysis_user: { max: 30, windowMs: 10 * MINUTE },
 };
 
 // Convenience wrapper: enforce one named policy for one identifier.

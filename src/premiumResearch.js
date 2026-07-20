@@ -1,10 +1,32 @@
 // Premium-only deep research composer. Like khanAnalyst.js, this is
 // deliberately deterministic: every field is composed from data the scoring
 // engine already produced (positiveSignals, hiddenRiskSignals, scamRisk,
-// scoreBreakdown, realData) - there is NO external LLM call and nothing here
-// can assert anything the underlying data doesn't support. It is rendered only
-// for Premium users (see AdvancedResearchCard / PremiumAnalysisCard in
+// scoreBreakdown, realData) - nothing here calls an LLM and nothing here can
+// assert anything the underlying data doesn't support. It is rendered only for
+// Premium users (see AdvancedResearchCard / PremiumAnalysisCard in
 // src/main.jsx); this module itself does no gating, it just builds the text.
+//
+// THIS MODULE IS NOW THE FLOOR, NOT THE WHOLE BUILDING.
+//
+// The Grounded AI Analyst (src/groundedAnalysis.js) overlays generated prose on
+// top of what is built here. That does NOT weaken the guarantee above; it
+// narrows where the guarantee lives:
+//
+//   - Everything this module computes still comes from the engine, and the
+//     PROSE fields it produces are still what renders first, instantly, before
+//     any network call resolves.
+//   - The AI overlay may replace only a fixed allowlist of prose fields (see
+//     OVERLAYABLE in groundedAnalysis.js). It can never touch a score, a
+//     signal list, a confidence value or a data-quality verdict.
+//   - Every number in generated prose is mechanically verified against the
+//     engine's own facts before it is allowed through (_aiValidator.mjs); a
+//     sentence citing anything else is discarded and the template below is used
+//     for that field instead.
+//
+// So this file is not legacy and must not be deleted. It is what renders when
+// the AI is unconfigured, over budget, refused, slow, or wrong - all of which
+// are normal operating states, not incidents. A Premium user must always see a
+// complete, accurate card, and this is the module that guarantees it.
 import { translate as t } from './i18n/index.js';
 import { translateSignalKeys, translatedCategory, translatedModifier } from './khanAnalyst.js';
 

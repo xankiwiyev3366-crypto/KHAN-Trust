@@ -10951,10 +10951,17 @@ function KhanAiEmptyState({ title, text }) {
 }
 
 function Disclaimer({ compact = false, text }) {
+  // The fallback goes through t('disclaimer.default'), NOT an inline English
+  // literal. It was a literal, which meant every caller that did not pass
+  // `text` — the pricing page among them — rendered an English legal
+  // disclaimer inside an Azerbaijani, Turkish or Russian page. The key already
+  // existed and was already translated in all four dictionaries; nothing was
+  // reaching it.
+  const { t } = useTranslation();
   return (
     <section className={compact ? 'disclaimer compact' : 'disclaimer'}>
       <AlertTriangle size={18} />
-      <p>{text || 'KHAN Trust does not provide financial advice. Scores are for research and risk awareness only.'}</p>
+      <p>{text || t('disclaimer.default')}</p>
     </section>
   );
 }

@@ -904,10 +904,15 @@ export default {
       unlimited: 'Unlimited',
       columns: ['Feature', 'Free', 'Premium', 'KHAN Founding Member'],
       rows: [
+        // Trust Score stays free — it is the core scan. The three below moved
+        // to Premium with the feature-gate work and MUST read false for Free
+        // here: this table is hand-written (it carries the Founding
+        // Member-exclusive rows the registry has no entry for), so unlike the
+        // generated table above it does not self-correct.
         ['Trust Score & Risk Level', true, true, true],
-        ['Full risk factor breakdown', true, true, true],
-        ['Holder concentration insights', true, true, true],
-        ['PDF report export', true, true, true],
+        ['Full risk factor breakdown', false, true, true],
+        ['Holder concentration insights', false, true, true],
+        ['PDF report export', false, true, true],
         ['Saved Reports', false, true, true],
         ['Synced Watchlist', false, true, true],
         ['Token Creation (Launchpad)', false, true, true],

@@ -2,6 +2,8 @@
 // Public Solana RPC endpoints reject many browser-origin requests with HTTP 403, so the
 // getTransaction lookup (and the SOL/USD price lookup) must happen off the client.
 
+import { translate } from './i18n/index.js';
+
 const RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || '';
 const PAYMENT_WALLET = import.meta.env.VITE_KHAN_PAYMENT_WALLET || '';
 const VERIFY_ENDPOINT = '/.netlify/functions/verify-solana-payment';
@@ -21,8 +23,16 @@ export function isSolanaVerificationConfigured() {
   return Boolean(RPC_URL && PAYMENT_WALLET);
 }
 
+// Localized via the module-level translate() mirror rather than a React hook —
+// this is a plain .js module with no component to hang useTranslation() on, and
+// that mirror exists for exactly this case (see the note in src/i18n/index.js;
+// the scoring engine and PDF export use it the same way).
+//
+// It returned a hardcoded English string, which surfaced untranslated on the
+// pricing page whenever Solana verification was unconfigured. The key was
+// already present and translated in all four dictionaries.
 export function solanaUnavailableMessage() {
-  return 'Automatic verification is not configured yet';
+  return translate('pricing.payment.status.notConfigured');
 }
 
 export async function verifySolanaPayment({ transactionHash, plan }) {

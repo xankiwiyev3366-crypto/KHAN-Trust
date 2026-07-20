@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/verify-boundary.mjs && node scripts/verify-functions.mjs",
+    "build": "vite build && node scripts/verify-boundary.mjs && node scripts/verify-functions.mjs && node scripts/verify-i18n.mjs",
     "verify:boundary": "node scripts/verify-boundary.mjs",
     "verify:functions": "node scripts/verify-functions.mjs",
+    "verify:i18n": "node scripts/verify-i18n.mjs",
     "verify:stripe": "node scripts/verify-stripe-pricing.mjs",
     "preview": "vite preview",
     "test": "node --experimental-test-module-mocks --test"

@@ -4898,11 +4898,14 @@ button:disabled {
     conic-gradient(
       from var(--ai-live-angle),
       rgba(224, 183, 92, 0) 0deg,
-      rgba(224, 183, 92, 0) 165deg,
-      rgba(224, 183, 92, 0.18) 250deg,
-      rgba(244, 216, 137, 0.6) 312deg,
-      rgba(255, 248, 230, 1) 350deg,
-      rgba(244, 216, 137, 0.72) 360deg
+      rgba(224, 183, 92, 0) 118deg,
+      rgba(224, 183, 92, 0.06) 196deg,
+      rgba(224, 183, 92, 0.26) 256deg,
+      rgba(244, 216, 137, 0.62) 298deg,
+      rgba(255, 249, 233, 0.92) 320deg,
+      rgba(244, 216, 137, 0.5) 338deg,
+      rgba(224, 183, 92, 0.12) 352deg,
+      rgba(224, 183, 92, 0) 360deg
     ),
     linear-gradient(rgba(224, 183, 92, 0.13), rgba(224, 183, 92, 0.13));
   -webkit-mask:
@@ -4913,11 +4916,13 @@ button:disabled {
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
   mask-composite: exclude;
-  filter: drop-shadow(0 0 5px rgba(224, 183, 92, 0.5));
+  filter:
+    drop-shadow(0 0 4px rgba(224, 183, 92, 0.42))
+    drop-shadow(0 0 9px rgba(224, 183, 92, 0.22));
   opacity: 0.95;
   pointer-events: none;
   animation:
-    aiLiveSpin 6s linear infinite,
+    aiLiveSpin 7s linear infinite,
     aiLiveBreathe 4.5s ease-in-out infinite;
 }
 
@@ -4977,6 +4982,11 @@ button:disabled {
     transform: scaleX(1);
     opacity: 0.85;
   }
+
+  /* Soft gold aura on hover — the label lights up rather than boxing in. */
+  .desktop-nav button:hover {
+    box-shadow: 0 0 0 1px rgba(224, 183, 92, 0.14), 0 6px 20px rgba(224, 183, 92, 0.12);
+  }
 }
 
 .desktop-nav button.active::after {
@@ -4984,8 +4994,14 @@ button:disabled {
   opacity: 1;
 }
 
+/* The active item breathes a slow gold glow — a quiet "you are here" pulse. */
 .desktop-nav button.active {
-  text-shadow: 0 0 12px rgba(224, 183, 92, 0.35);
+  animation: navActiveGlow 3.8s ease-in-out infinite;
+}
+
+@keyframes navActiveGlow {
+  0%, 100% { text-shadow: 0 0 9px rgba(224, 183, 92, 0.26); }
+  50% { text-shadow: 0 0 17px rgba(224, 183, 92, 0.5); }
 }
 
 /* ── Primary buttons: soft light sweep + a stronger hover glow ──────────────── */
@@ -5003,8 +5019,8 @@ button:disabled {
   top: 0;
   bottom: 0;
   left: -60%;
-  width: 45%;
-  background: linear-gradient(100deg, transparent, rgba(255, 248, 230, 0.38), transparent);
+  width: 52%;
+  background: linear-gradient(100deg, transparent, rgba(255, 249, 235, 0.3), transparent);
   transform: translateX(0) skewX(-18deg);
   opacity: 0;
   pointer-events: none;
@@ -5012,17 +5028,17 @@ button:disabled {
 
 @media (hover: hover) {
   .primary-button:hover::after {
-    animation: aiBtnSheen 0.85s ease;
+    animation: aiBtnSheen 1s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .primary-button:hover {
-    box-shadow: 0 14px 34px rgba(224, 183, 92, 0.4), 0 0 0 1px rgba(244, 216, 137, 0.4);
+    box-shadow: 0 14px 36px rgba(224, 183, 92, 0.42), 0 0 0 1px rgba(244, 216, 137, 0.42);
   }
 }
 
 @keyframes aiBtnSheen {
   0% { transform: translateX(0) skewX(-18deg); opacity: 0; }
-  16% { opacity: 0.85; }
+  18% { opacity: 0.7; }
   100% { transform: translateX(380%) skewX(-18deg); opacity: 0; }
 }
 
@@ -5048,10 +5064,64 @@ button:disabled {
   50% { opacity: 1; transform: scale(1.06) translate3d(0, -1.4%, 0); }
 }
 
+/* A second, larger and slower glow field on its own timing. Because it drifts
+   out of phase with the base aura, the two interleave into a soft holographic
+   wash that spreads the hero light well beyond the centre — never a hotspot.
+   inset:-12% so its scale/drift never uncovers an edge. */
+.khan-bg-depth::after {
+  content: '';
+  position: absolute;
+  inset: -12%;
+  background:
+    radial-gradient(ellipse 62% 46% at 28% 16%, rgba(224, 183, 92, 0.05), transparent 72%),
+    radial-gradient(ellipse 56% 46% at 74% 30%, rgba(224, 183, 92, 0.04), transparent 74%);
+  pointer-events: none;
+  animation: khanBgHalo 58s ease-in-out infinite;
+}
+
+@keyframes khanBgHalo {
+  0%, 100% { opacity: 0.55; transform: translate3d(0, 0, 0) scale(1); }
+  50% { opacity: 0.95; transform: translate3d(2.4%, 1.6%, 0) scale(1.08); }
+}
+
+/* ── Neural mesh: the whole network breathes as one, over the per-node twinkle,
+   so it reads as a single intelligent system idling rather than scattered
+   blinks. Opacity only. ────────────────────────────────────────────────────── */
+.khan-bg-net {
+  animation: khanBgNetBreathe 16s ease-in-out infinite;
+}
+
+@keyframes khanBgNetBreathe {
+  0%, 100% { opacity: 0.82; }
+  50% { opacity: 1; }
+}
+
+/* ── Project Signals brain: a faint glass highlight along the top of the hero
+   panel that slowly breathes, for premium glass-like lighting. Kept to the top
+   ~20% at ~5% white so it lifts the surface without ever touching legibility. */
+.hero-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 20%);
+  animation: heroPanelSheen 9s ease-in-out infinite;
+}
+
+@keyframes heroPanelSheen {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.95; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .primary-button:hover::after,
   .score-circle.large,
-  .khan-bg-depth {
+  .khan-bg-depth,
+  .khan-bg-depth::after,
+  .khan-bg-net,
+  .desktop-nav button.active,
+  .hero-panel::after {
     animation: none;
   }
 
@@ -8727,9 +8797,9 @@ main {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 80% 55% at 50% -10%, rgba(224, 183, 92, 0.12), transparent 70%),
-    radial-gradient(ellipse 60% 50% at 12% 20%, rgba(224, 183, 92, 0.06), transparent 65%),
-    radial-gradient(ellipse 70% 60% at 88% 75%, rgba(224, 183, 92, 0.045), transparent 70%),
+    radial-gradient(ellipse 118% 78% at 50% -12%, rgba(224, 183, 92, 0.11), transparent 72%),
+    radial-gradient(ellipse 78% 64% at 12% 20%, rgba(224, 183, 92, 0.055), transparent 68%),
+    radial-gradient(ellipse 86% 70% at 88% 78%, rgba(224, 183, 92, 0.045), transparent 72%),
     linear-gradient(180deg, transparent 0%, rgba(5, 5, 5, 0.5) 60%, var(--bg) 100%);
 }
 
@@ -8928,16 +8998,18 @@ main {
 .pricing-card,
 .token-check-card,
 .payment-method-card {
-  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.24s ease, border-color 0.24s ease;
+  /* Shadow interpolates a touch slower than the lift with the same soft easing,
+     so the elevation reads as light settling rather than a snap. */
+  transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.34s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.26s ease;
 }
 
 @media (hover: hover) {
   .project-card:hover,
   .pricing-card:hover,
   .token-check-card:hover {
-    transform: translateY(-3px);
-    border-color: rgba(224, 183, 92, 0.4);
-    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(224, 183, 92, 0.16);
+    transform: translateY(-4px);
+    border-color: rgba(224, 183, 92, 0.42);
+    box-shadow: 0 22px 50px rgba(0, 0, 0, 0.52), 0 0 0 1px rgba(224, 183, 92, 0.2), 0 0 28px rgba(224, 183, 92, 0.08);
   }
 }
 
@@ -8976,6 +9048,24 @@ main {
   transform: translateY(-1px);
 }
 
+/* Every other text surface (forms, modals) takes the same soft gold focus ring,
+   for one consistent premium input language. Kept at element-level specificity
+   on purpose, so the search field's own, more specific focus style above always
+   wins and is never doubled. */
+input,
+textarea,
+select {
+  transition: border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  border-color: rgba(244, 216, 137, 0.55);
+  box-shadow: 0 0 0 3px rgba(224, 183, 92, 0.13), 0 0 16px rgba(224, 183, 92, 0.1);
+}
+
 /* ── Responsive ───────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   /* Fewer moving parts on phones: the node network and particles are the first
@@ -8996,6 +9086,10 @@ main {
   /* Keep the living border's travelling comet, but drop its per-frame glow
      filter on phones — the drop-shadow is the one costly part of the effect. */
   .ai-live::before { filter: none; }
+
+  /* The second hero glow field holds its position on phones (the base aura
+     already breathes) — one fewer animated full-screen layer. */
+  .khan-bg-depth::after { animation: none; }
 
   .khan-ai-stage-note { display: none; }
 }

@@ -75,7 +75,21 @@ button {
   padding: 14px clamp(16px, 4vw, 56px);
   border-bottom: 1px solid var(--border-soft);
   background: rgba(5, 5, 5, 0.84);
+  -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
+  transition: background 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease,
+    -webkit-backdrop-filter 0.3s ease, backdrop-filter 0.3s ease;
+}
+
+/* Once the page has scrolled, the header deepens its blur and lifts a soft
+   shadow so it separates cleanly from the content passing beneath it, rather
+   than sitting flat against it. Purely a background/shadow change — no layout. */
+.site-header.is-scrolled {
+  background: rgba(5, 5, 5, 0.93);
+  border-bottom-color: var(--border);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.42);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
 }
 
 .site-header-top {

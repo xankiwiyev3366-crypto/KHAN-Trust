@@ -4090,10 +4090,39 @@ function NotificationBell({ projects, navigate }) {
   );
 }
 
+// Tracks whether the page has scrolled past a small threshold, so the sticky
+// header can deepen its blur/shadow to separate from the content beneath it
+// while scrolling. The boolean only flips when the threshold is crossed, so a
+// re-render happens at most twice per scroll gesture (React bails on an
+// unchanged primitive); the scroll read itself is rAF-throttled and passive, so
+// this never competes with content for the main thread. The visual change is a
+// CSS transition on background/box-shadow — no layout properties are touched.
+function useScrolled(threshold = 8) {
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    let frame = 0;
+    const read = () => {
+      frame = 0;
+      setScrolled(window.scrollY > threshold);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(read);
+    };
+    read();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [threshold]);
+  return scrolled;
+}
+
 function Header({ page, navigate, navTo, setAuthModalMode, projects }) {
   const { t } = useTranslation();
+  const scrolled = useScrolled();
   return (
-    <header className="site-header">
+    <header className={`site-header${scrolled ? ' is-scrolled' : ''}`}>
       <div className="site-header-top">
         <button className="brand" onClick={() => navigate('home')} aria-label={t('header.goHome')}>
           <span className="brand-mark">K</span>
@@ -7733,7 +7762,7 @@ function ScamRiskCard({ project }) {
       <SectionTitle icon={AlertTriangle} eyebrow={t('profileSections.scamRiskEyebrow')} title={t('profileSections.scamRiskTitle')} />
       <div className="result-score-row">
         <span className={`risk-pill ${toneClass}`}>{t(`profileSections.scamRiskLevel.${toneClass}`)}</span>
-        <strong>{scamRisk.riskScore}/100</strong>
+        <strong><AnimatedNumber value={scamRisk.riskScore} />/100</strong>
       </div>
       {reasons.length ? (
         <ul className="scam-risk-reasons">

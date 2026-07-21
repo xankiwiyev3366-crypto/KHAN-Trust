@@ -5,15 +5,20 @@
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { listRegisteredUsers, countRegisteredUsers, jsonResponse } from './_authStore.mjs';
 import { readGrants, isGrantActive, effectivePlan } from './_premiumStore.mjs';
+import { readEntitlements, countActivePaidPremium } from './_entitlementsStore.mjs';
 
 export async function handler(event) {
   if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
   if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });
 
-  const [users, grants, total] = await Promise.all([
+  const [users, grants, total, entitlements] = await Promise.all([
     listRegisteredUsers(500),
     readGrants(),
     countRegisteredUsers(),
+    // Paid Premium comes from the isolated paid-entitlements store, never from
+    // the manual grants above. Fail-soft to 0 so this fallback endpoint keeps
+    // serving even if that store is briefly unavailable.
+    readEntitlements().catch(() => ({})),
   ]);
 
   const now = Date.now();
@@ -46,10 +51,12 @@ export async function handler(event) {
   });
 
   const premiumCount = rows.filter((r) => r.status === 'active').length;
+  const paidPremiumCount = countActivePaidPremium(entitlements);
 
   return jsonResponse(200, {
     totalRegistered: total,
     premiumCount,
+    paidPremiumCount,
     users: rows,
   });
 }

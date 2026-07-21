@@ -2683,6 +2683,7 @@ export default {
     searchPlaceholder: 'Ad, kullanıcı adı veya e-posta ile ara...',
     statRegistered: 'Kayıtlı Kullanıcılar',
     statActivePremium: 'Aktif Premium',
+    statPaidPremium: 'Ücretli Premium Kullanıcılar',
     emptyTitle: 'Eşleşen kullanıcı yok',
     emptyText: 'Aramanızla eşleşen kayıtlı kullanıcı bulunamadı.',
     unnamed: 'Adsız kullanıcı',
@@ -2837,7 +2838,8 @@ export default {
       neverLoggedIn: 'Hiç Giriş Yapmamış',
       walletConnected: 'Cüzdan Bağlı',
       tooltips: {
-        activePremium: 'Aktif ücretli veya yönetici tarafından verilmiş Premium hakkı olan hesaplar.',
+        activePremium: 'Tüm aktif Premium kullanıcılar — ücretli, ayrıca elle atanmış, hediye ve ücretsiz promosyon hakları.',
+        paidPremium: 'Yalnızca ödeme sistemi üzerinden Premium satın alan kullanıcılar. Elle, hediye ve promosyon hakları hariç.',
         verified: 'E-posta adresini onaylamış hesaplar. E-posta doğrulaması giriş yapmakla aynı şey değildir.',
         withScans: 'En az bir token taraması tamamlamış hesaplar.',
         zeroScans: 'Hiç tarama tamamlamamış kayıtlı hesaplar.',

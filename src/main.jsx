@@ -34,6 +34,7 @@ import {
   Bell,
   BookOpen,
   CalendarClock,
+  CreditCard,
   CalendarDays,
   Camera,
   Check,
@@ -9320,6 +9321,10 @@ function AdminPremiumPage() {
               numbers for the same question. */}
           <StatCard icon={Users} label={t('adminPremium.statRegistered')} numericValue={data.totalRegistered} tooltip={t('adminAnalytics.tooltips.registeredUsers')} />
           <StatCard icon={Crown} label={t('adminPremium.statActivePremium')} numericValue={data.premiumCount} tooltip={t('adminPremium.dashboard.tooltips.activePremium')} />
+          {/* Paid Premium = real purchases only (payment system / entitlements
+              store), never manual/promo/gifted grants. Defaults to 0 when the
+              lighter fallback endpoint is used or nothing has been bought yet. */}
+          <StatCard icon={CreditCard} label={t('adminPremium.statPaidPremium')} numericValue={data.paidPremiumCount ?? 0} tooltip={t('adminPremium.dashboard.tooltips.paidPremium')} />
           {dashboard && <StatCard icon={BadgeCheck} label={t('adminPremium.dashboard.verified')} numericValue={dashboard.verified} tooltip={t('adminPremium.dashboard.tooltips.verified')} />}
           {dashboard && <StatCard icon={Users} label={t('adminPremium.dashboard.loggedIn')} numericValue={dashboard.loggedIn} tooltip={t('adminAnalytics.tooltips.loggedInUsers')} />}
           {dashboard && <StatCard icon={Lock} label={t('adminPremium.dashboard.neverLoggedIn')} numericValue={dashboard.neverLoggedIn} tooltip={t('adminAnalytics.tooltips.neverLoggedInUsers')} />}
@@ -9484,7 +9489,7 @@ function AdminPremiumPage() {
                       <span className={u.status === 'active' ? 'premium-status active' : 'premium-status'}>
                         {u.status === 'active' ? t('adminPremium.statusActive') : t('adminPremium.statusInactive')}
                       </span>
-                      {u.expiresAt && <div className="table-subtext">{t('adminPremium.expires', { date: new Date(u.expiresAt).toLocaleDateString() })}</div>}
+                      {u.expiresAt && <div className="table-subtext">{t('adminPremium.expires', { date: formatDateDMY(u.expiresAt) })}</div>}
                     </td>
                     <td>{formatAccountAge(u.accountAgeDays)}</td>
                     <td><ActivityBadge score={u.activityScore} level={u.activityLevel} t={t} /></td>
@@ -10319,6 +10324,19 @@ function formatDateTime(timestamp) {
   if (!timestamp) return { date: translate('common.notAvailable'), time: '' };
   const d = new Date(timestamp);
   return { date: d.toLocaleDateString(), time: d.toLocaleTimeString() };
+}
+
+// Unambiguous DD.MM.YYYY for admin date displays. The locale-default
+// toLocaleDateString() renders as M/D/YYYY in en-US (e.g. 8/12/2026), which is
+// ambiguous day-vs-month. This is FORMATTING ONLY — it never changes a stored
+// date or a Premium duration. Returns '' for a missing/invalid value.
+function formatDateDMY(value) {
+  if (!value) return '';
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}.${mm}.${d.getFullYear()}`;
 }
 
 function AdminHolderAnalyticsPage() {
@@ -12462,7 +12480,7 @@ function PremiumProfilePanel({ entitlement }) {
   const expirationValue = d.isLifetime
     ? t('accountPlan.lifetimePremium')
     : d.expiresAt
-      ? new Date(d.expiresAt).toLocaleDateString()
+      ? formatDateDMY(d.expiresAt)
       : t('accountPlan.noExpiration');
 
   return (

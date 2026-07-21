@@ -106,6 +106,34 @@ export async function hasPremiumEntitlement(walletAddress) {
   return Boolean(entitlement && isPremiumPlan(entitlement.plan));
 }
 
+// Is this entitlement record a PAID, currently-active Premium? Every record in
+// this store is a real purchase (Stripe or on-chain) — admin/manual/promo grants
+// live in the isolated _premiumStore and never reach here — so "active premium
+// entitlement" is exactly "active paid Premium user". Cancelled Stripe
+// subscriptions are revoked (deleted) rather than expired, so a present record
+// is normally live; the optional expiresAt check is belt-and-braces.
+export function isEntitlementActivePremium(record, now = Date.now()) {
+  if (!record || !isPremiumPlan(record.plan)) return false;
+  if (record.expiresAt && Date.parse(record.expiresAt) <= now) return false;
+  return true;
+}
+
+// Count DISTINCT paying users with active Premium. A single account purchase is
+// written to BOTH the wallet key and the "u:<id>" account key (verify-solana-
+// payment / premium-claim-wallet follow a copy-never-move rule), and both copies
+// carry the same transactionHash — so we dedupe by transactionHash to count the
+// human once, falling back to the subject key for any record without one. This
+// is the ONLY definition of "paid premium users"; both admin endpoints call it
+// so they can never drift. Returns 0 when nothing has been purchased yet.
+export function countActivePaidPremium(entitlements = {}, now = Date.now()) {
+  const seen = new Set();
+  for (const [subject, record] of Object.entries(entitlements)) {
+    if (!isEntitlementActivePremium(record, now)) continue;
+    seen.add(record?.transactionHash || subject);
+  }
+  return seen.size;
+}
+
 // Stripe webhooks (e.g. subscription cancellation) identify the affected
 // customer/subscription, not the subject directly - entitlements are keyed by
 // subject, so look up the subject by scanning for the matching Stripe id that

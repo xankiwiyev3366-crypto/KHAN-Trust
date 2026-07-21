@@ -10,6 +10,7 @@
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { listRegisteredUsers, countRegisteredUsers, jsonResponse } from './_authStore.mjs';
 import { readGrants, isGrantActive, effectivePlan } from './_premiumStore.mjs';
+import { readEntitlements, countActivePaidPremium } from './_entitlementsStore.mjs';
 import { readEvents } from './_analyticsStore.mjs';
 import { readAllUserData } from './_userDataStore.mjs';
 import { readWalletLinks } from './_walletLinkStore.mjs';
@@ -33,6 +34,14 @@ export async function handler(event) {
   const now = Date.now();
   const today = new Date(now).toISOString().slice(0, 10);
   const eventsByUser = indexEventsByUser(events);
+
+  // Paid Premium is read from the paid-entitlements store, which is the ONLY
+  // record of a real purchase — it is fully isolated from the manual/promo/
+  // gifted grants above (see _premiumStore vs _entitlementsStore). Read
+  // separately and fail-soft to 0: a blob hiccup on this store must degrade one
+  // analytics card, never take down the whole Premium dashboard.
+  const entitlements = await readEntitlements().catch(() => ({}));
+  const paidPremiumCount = countActivePaidPremium(entitlements, now);
 
   const rows = users.map((u) => {
     const grant = grants[u.id] || null;
@@ -131,7 +140,13 @@ export async function handler(event) {
     neverLoggedIn: rows.filter((r) => !r.hasLoggedIn).length,
 
     walletConnected: rows.filter((r) => r.walletConnected).length,
+    // Active Premium = EVERY active grant regardless of source (manual, promo,
+    // giveaway, early_supporter, or payment). Paid Premium = only real
+    // purchases, from the separate entitlements store. Paid is a subset in
+    // spirit but counted from a different lane, so it is never derived by
+    // filtering `rows`.
     premiumUsers: rows.filter((r) => r.status === 'active').length,
+    paidPremiumUsers: paidPremiumCount,
   };
 
   // Same assertion as analytics-summary. `total` comes from countRegisteredUsers
@@ -154,6 +169,7 @@ export async function handler(event) {
   return jsonResponse(200, {
     totalRegistered: total,
     premiumCount: dashboard.premiumUsers,
+    paidPremiumCount: dashboard.paidPremiumUsers,
     dashboard,
     users: rows,
   });

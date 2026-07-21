@@ -4623,7 +4623,7 @@ function HomePage({ projects, query, setQuery, searchState, scanProgress, onSear
               </a>
             </div>
           </div>
-          <div className="hero-panel">
+          <div className="hero-panel ai-live">
             <div className="signal-header">
               <div>
                 <span className="tiny-label">{t('home.liveTrustRadar')}</span>
@@ -6179,7 +6179,7 @@ function PricingPage({ navigate }) {
           The monthly plan and the free tier are still fully available — they
           are just BELOW this, as the answer to "what else is there?" rather
           than as competing opening offers. Nothing was removed. */}
-      <div className="pricing-hero-card">
+      <div className="pricing-hero-card ai-live">
         <span className="pricing-hero-badge"><Crown size={13} /> {t('pricing.heroBadge')}</span>
         <div className="pricing-hero-price">
           <strong>${PLAN_USD_AMOUNT.early_supporter}</strong>
@@ -6852,7 +6852,7 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
             (glow -> shield pulse -> data settles -> score -> risk indicators ->
             calm); arriving from a link or a refresh shows the card plainly,
             because there was no analysis to reveal. */}
-        <div className={`profile-score-card${revealScan ? ' is-revealing' : ''}`}>
+        <div className={`profile-score-card ai-live${revealScan ? ' is-revealing' : ''}`}>
           <ScoreCircle score={project.trustScore} size="large" />
           <ScoreHistoryStrip project={project} history={history} />
           <RiskPill level={project.riskLevel} />

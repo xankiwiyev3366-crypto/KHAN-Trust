@@ -4847,6 +4847,87 @@ button:disabled {
   }
 }
 
+/* ==========================================================================
+   Living surfaces — ambient "powered" motion for the focal cards
+   A slowly rotating holographic gradient ring plus a soft breathing aura on the
+   few most important surfaces (home hero panel, Trust Score verdict, pricing
+   hero), so the platform reads as an active AI system rather than a static
+   page. Deliberately restrained: it is the border that lives, not the content.
+
+   Cost is bounded on purpose — the effect is scoped to a small, curated set of
+   cards (in practice at most one or two are on screen at once), the ring is a
+   masked pseudo-element (no extra DOM node, no layout box, no reflow), the
+   rotation is driven by a registered <angle> custom property so it interpolates
+   on its own, and the breathe animates opacity only. Frozen to a calm static
+   ring under prefers-reduced-motion.
+   ========================================================================== */
+
+@property --ai-live-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.ai-live {
+  /* No offsets, so this never moves the card — it only anchors the ring. */
+  position: relative;
+  /* Fallback for engines without @property registration: the ring renders as a
+     still gradient border instead of animating, rather than breaking. */
+  --ai-live-angle: 0deg;
+}
+
+/* The living ring. inset:0 + a 1px content-box mask leaves only the outermost
+   1px painted, so the gradient reads as an animated border sitting exactly over
+   the card's own edge. pointer-events:none keeps every control beneath it fully
+   clickable, and because it is drawn on the perimeter (cards have padding) it
+   never overlaps content — no child z-index juggling required. */
+.ai-live::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--ai-live-angle),
+    transparent 0deg,
+    rgba(224, 183, 92, 0.5) 55deg,
+    rgba(244, 216, 137, 0.92) 90deg,
+    rgba(224, 183, 92, 0.5) 125deg,
+    transparent 210deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0.7;
+  pointer-events: none;
+  animation:
+    aiLiveSpin 14s linear infinite,
+    aiLiveBreathe 5.5s ease-in-out infinite;
+}
+
+@keyframes aiLiveSpin {
+  to { --ai-live-angle: 360deg; }
+}
+
+@keyframes aiLiveBreathe {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.82; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Motion stilled, presence kept: a calm static gold edge, no rotation. */
+  .ai-live::before {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
 .skeleton-block {
   position: relative;
   overflow: hidden;
@@ -8571,8 +8652,8 @@ main {
 }
 
 @keyframes khanBgNode {
-  0%, 100% { opacity: 0.14; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.25); }
+  0%, 100% { opacity: 0.18; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.25); }
 }
 
 @keyframes khanBgSweep {

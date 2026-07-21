@@ -344,7 +344,7 @@ export function KhanAiBackdrop() {
               d="M14 0.5 L42 0.5 L56 24.25 L42 48 L14 48 L0 24.25 Z"
               fill="none"
               stroke="var(--gold)"
-              strokeOpacity="0.055"
+              strokeOpacity="0.07"
               strokeWidth="1"
             />
           </pattern>
@@ -371,7 +371,7 @@ export function KhanAiBackdrop() {
 
           <g className="khan-bg-net">
             {NET_EDGES.map(([ax, ay, bx, by], i) => (
-              <line key={i} x1={ax} y1={ay} x2={bx} y2={by} stroke="var(--gold)" strokeOpacity="0.09" strokeWidth="0.75" />
+              <line key={i} x1={ax} y1={ay} x2={bx} y2={by} stroke="var(--gold)" strokeOpacity="0.12" strokeWidth="0.75" />
             ))}
             {NET_NODES.map(([cx, cy], i) => (
               <circle key={i} className="khan-bg-node" cx={cx} cy={cy} r={i % 4 === 0 ? 2.4 : 1.5} style={{ animationDelay: `${(i % 7) * 0.9}s` }} />

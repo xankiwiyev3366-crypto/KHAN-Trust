@@ -4881,21 +4881,30 @@ button:disabled {
    the card's own edge. pointer-events:none keeps every control beneath it fully
    clickable, and because it is drawn on the perimeter (cards have padding) it
    never overlaps content — no child z-index juggling required. */
+/* Two stacked backgrounds under one mask: a faint constant gold track so the
+   border is always present (never a lone dot chasing a dark edge), and over it
+   a bright "comet" — a concentrated head with a soft trailing falloff that
+   sweeps continuously around the perimeter. The drop-shadow gives the head a
+   soft glowing wake. Thicker track (1.5px) and a 6s lap make the travelling
+   light immediately readable, ~2.5x the presence of the first pass, while the
+   mostly-transparent comet keeps it expensive rather than flashy. */
 .ai-live::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: 1px;
-  background: conic-gradient(
-    from var(--ai-live-angle),
-    transparent 0deg,
-    rgba(224, 183, 92, 0.5) 55deg,
-    rgba(244, 216, 137, 0.92) 90deg,
-    rgba(224, 183, 92, 0.5) 125deg,
-    transparent 210deg,
-    transparent 360deg
-  );
+  padding: 1.5px;
+  background:
+    conic-gradient(
+      from var(--ai-live-angle),
+      rgba(224, 183, 92, 0) 0deg,
+      rgba(224, 183, 92, 0) 165deg,
+      rgba(224, 183, 92, 0.18) 250deg,
+      rgba(244, 216, 137, 0.6) 312deg,
+      rgba(255, 248, 230, 1) 350deg,
+      rgba(244, 216, 137, 0.72) 360deg
+    ),
+    linear-gradient(rgba(224, 183, 92, 0.13), rgba(224, 183, 92, 0.13));
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
@@ -4904,11 +4913,12 @@ button:disabled {
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
   mask-composite: exclude;
-  opacity: 0.7;
+  filter: drop-shadow(0 0 5px rgba(224, 183, 92, 0.5));
+  opacity: 0.95;
   pointer-events: none;
   animation:
-    aiLiveSpin 14s linear infinite,
-    aiLiveBreathe 5.5s ease-in-out infinite;
+    aiLiveSpin 6s linear infinite,
+    aiLiveBreathe 4.5s ease-in-out infinite;
 }
 
 @keyframes aiLiveSpin {
@@ -4916,15 +4926,137 @@ button:disabled {
 }
 
 @keyframes aiLiveBreathe {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.82; }
+  0%, 100% { opacity: 0.78; }
+  50% { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Motion stilled, presence kept: a calm static gold edge, no rotation. */
+  /* Motion stilled, presence kept: a calm static gold edge, no comet, no glow. */
   .ai-live::before {
     animation: none;
-    opacity: 0.5;
+    filter: none;
+    opacity: 0.6;
+    background: linear-gradient(rgba(224, 183, 92, 0.16), rgba(224, 183, 92, 0.16));
+  }
+}
+
+/* ==========================================================================
+   Premium interaction layer
+   Navigation, primary buttons, the Trust Score, and the ambient hero light —
+   given the same restrained, expensive motion vocabulary as the living
+   surfaces. Everything here is transform/opacity or a slow box-shadow on a
+   single small element, and every loop is disabled under prefers-reduced-motion
+   at the foot of this block.
+   ========================================================================== */
+
+/* ── Navigation: animated underline + soft active glow ─────────────────────── */
+.desktop-nav button {
+  position: relative;
+}
+
+/* A centre-out underline that grows on hover and stays lit on the active item.
+   Pure scaleX, so it rides the compositor. */
+.desktop-nav button::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--gold-bright), transparent);
+  transform: scaleX(0);
+  transform-origin: center;
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+  pointer-events: none;
+}
+
+@media (hover: hover) {
+  .desktop-nav button:hover::after {
+    transform: scaleX(1);
+    opacity: 0.85;
+  }
+}
+
+.desktop-nav button.active::after {
+  transform: scaleX(1);
+  opacity: 1;
+}
+
+.desktop-nav button.active {
+  text-shadow: 0 0 12px rgba(224, 183, 92, 0.35);
+}
+
+/* ── Primary buttons: soft light sweep + a stronger hover glow ──────────────── */
+.primary-button {
+  position: relative;
+  overflow: hidden;
+}
+
+/* A single diagonal highlight that travels across the face on hover — light
+   catching brushed metal, not a spinner. Clipped by overflow:hidden; outlines
+   and box-shadows are unaffected by that clip, so focus and glow still show. */
+.primary-button::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255, 248, 230, 0.38), transparent);
+  transform: translateX(0) skewX(-18deg);
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (hover: hover) {
+  .primary-button:hover::after {
+    animation: aiBtnSheen 0.85s ease;
+  }
+
+  .primary-button:hover {
+    box-shadow: 0 14px 34px rgba(224, 183, 92, 0.4), 0 0 0 1px rgba(244, 216, 137, 0.4);
+  }
+}
+
+@keyframes aiBtnSheen {
+  0% { transform: translateX(0) skewX(-18deg); opacity: 0; }
+  16% { opacity: 0.85; }
+  100% { transform: translateX(380%) skewX(-18deg); opacity: 0; }
+}
+
+/* ── Trust Score: a slow AI pulse on the headline dial ─────────────────────── */
+.score-circle.large {
+  animation: aiScorePulse 4.5s ease-in-out infinite;
+}
+
+@keyframes aiScorePulse {
+  0%, 100% { box-shadow: 0 0 18px rgba(224, 183, 92, 0.14); }
+  50% { box-shadow: 0 0 30px rgba(224, 183, 92, 0.32); }
+}
+
+/* ── Ambient hero light: the backdrop's glow slowly breathes and drifts, so the
+   environment reads as actively thinking rather than a still gradient. One
+   compositor transform + opacity on the full-screen glow layer. ───────────── */
+.khan-bg-depth {
+  animation: khanBgAura 42s ease-in-out infinite;
+}
+
+@keyframes khanBgAura {
+  0%, 100% { opacity: 0.82; transform: scale(1) translate3d(0, 0, 0); }
+  50% { opacity: 1; transform: scale(1.06) translate3d(0, -1.4%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primary-button:hover::after,
+  .score-circle.large,
+  .khan-bg-depth {
+    animation: none;
+  }
+
+  .desktop-nav button::after {
+    transition: none;
   }
 }
 
@@ -8595,9 +8727,9 @@ main {
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 80% 55% at 50% -10%, rgba(224, 183, 92, 0.09), transparent 70%),
-    radial-gradient(ellipse 60% 50% at 12% 20%, rgba(224, 183, 92, 0.05), transparent 65%),
-    radial-gradient(ellipse 70% 60% at 88% 75%, rgba(224, 183, 92, 0.035), transparent 70%),
+    radial-gradient(ellipse 80% 55% at 50% -10%, rgba(224, 183, 92, 0.12), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 12% 20%, rgba(224, 183, 92, 0.06), transparent 65%),
+    radial-gradient(ellipse 70% 60% at 88% 75%, rgba(224, 183, 92, 0.045), transparent 70%),
     linear-gradient(180deg, transparent 0%, rgba(5, 5, 5, 0.5) 60%, var(--bg) 100%);
 }
 
@@ -8652,8 +8784,8 @@ main {
 }
 
 @keyframes khanBgNode {
-  0%, 100% { opacity: 0.18; transform: scale(1); }
-  50% { opacity: 0.55; transform: scale(1.25); }
+  0%, 100% { opacity: 0.22; transform: scale(1); }
+  50% { opacity: 0.62; transform: scale(1.28); }
 }
 
 @keyframes khanBgSweep {
@@ -8860,6 +8992,10 @@ main {
   .khan-bg-grid,
   .khan-bg-node,
   .khan-bg-particle { animation: none; }
+
+  /* Keep the living border's travelling comet, but drop its per-frame glow
+     filter on phones — the drop-shadow is the one costly part of the effect. */
+  .ai-live::before { filter: none; }
 
   .khan-ai-stage-note { display: none; }
 }

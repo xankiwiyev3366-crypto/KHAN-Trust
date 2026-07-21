@@ -4588,7 +4588,7 @@ function HomePage({ projects, query, setQuery, searchState, scanProgress, onSear
             </KhanAiHeroMark>
             <p className="hero-subtitle">{t('home.subtitle')}</p>
             <p className="hero-explainer">{t('home.explainer')}</p>
-            <SearchBox value={query} onChange={setQuery} onSubmit={onSearch} loading={searchState.status === 'loading'} />
+            <SearchBox value={query} onChange={setQuery} onSubmit={onSearch} loading={searchState.status === 'loading'} className="ai-live" />
             <ScanQuotaMeter quota={scanQuota} navigate={navigate} />
             {/* KHAN AI takes over the scan's loading and error reporting; the
                 plain one-line status stays for the quieter states (success,
@@ -4741,7 +4741,7 @@ function ExplorePage({ projects, query, setQuery, searchState, scanProgress, onS
   return (
     <section className="page-section">
       <SectionTitle icon={ListFilter} eyebrow={t('explore.eyebrow')} title={t('explore.title')} />
-      <SearchBox value={query} onChange={setQuery} onSubmit={onSearch} loading={searchState.status === 'loading'} />
+      <SearchBox value={query} onChange={setQuery} onSubmit={onSearch} loading={searchState.status === 'loading'} className="ai-live" />
       {/* A failed scan on the home page redirects here, so this is where the
           error is actually read - KHAN AI reports it in both places. */}
       <KhanAiScanConsole
@@ -5864,7 +5864,7 @@ function InvestmentThesisCard({ project, navigate }) {
     stamp = new Date(generatedAt).toLocaleString();
   }
   return (
-    <section className="detail-section premium-ai-card">
+    <section className="detail-section premium-ai-card ai-live">
       <SectionTitle icon={TrendingUp} eyebrow={t('investmentThesis.eyebrow')} title={t('investmentThesis.title')} />
       {!hasPremium ? (
         <PremiumUpgradeCTA navigate={navigate} text={t('investmentThesis.lockedText')} />
@@ -10882,10 +10882,10 @@ function MethodologyModal({ onClose }) {
   );
 }
 
-function SearchBox({ value, onChange, onSubmit, loading = false }) {
+function SearchBox({ value, onChange, onSubmit, loading = false, className = '' }) {
   const { t } = useTranslation();
   return (
-    <form className="search-box" onSubmit={(event) => { event.preventDefault(); onSubmit?.(); }}>
+    <form className={`search-box${className ? ` ${className}` : ''}`} onSubmit={(event) => { event.preventDefault(); onSubmit?.(); }}>
       <Search size={20} />
       <input
         value={value}

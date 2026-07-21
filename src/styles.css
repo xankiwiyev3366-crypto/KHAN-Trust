@@ -4834,6 +4834,34 @@ button:disabled {
   animation: khanFadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* ── Route transition ───────────────────────────────────────────────────────
+   Layout-neutral wrapper around the route content (RouteTransition). It does
+   nothing at rest — the incoming page's entrance stays the khanFadeUp above —
+   and only paints during the brief exit of the outgoing page: a soft fade, a
+   small upward lift and a touch of blur, so the old page clears out before the
+   new one rises in. transform/opacity/filter only; interaction is blocked while
+   it plays so a half-faded page can't be clicked. */
+.route-view.is-exiting {
+  animation: routeExit var(--route-exit, 200ms) cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+}
+
+@keyframes routeExit {
+  from { opacity: 1; transform: translateY(0); filter: blur(0); }
+  to { opacity: 0; transform: translateY(-6px); filter: blur(2px); }
+}
+
+/* Phones drop the blur (a full-viewport filter is the one costly part) but keep
+   the fade + lift, so the exit stays smooth on lower-end hardware. */
+@media (max-width: 640px) {
+  .route-view.is-exiting { animation-name: routeExitLite; }
+}
+
+@keyframes routeExitLite {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-6px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hero-section,
   .page-section,
@@ -4844,6 +4872,12 @@ button:disabled {
   .brand-mark {
     animation: none !important;
     transition: none !important;
+  }
+
+  /* RouteTransition already swaps instantly under this query; guard the class
+     too in case an exit was mid-flight when the preference changed. */
+  .route-view.is-exiting {
+    animation: none !important;
   }
 }
 

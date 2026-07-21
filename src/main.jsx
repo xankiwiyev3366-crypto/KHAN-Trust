@@ -3275,6 +3275,66 @@ function applyHolderGrowth(project, existing) {
 // Clicking these in the nav shows the gate modal rather than navigating.
 const GATED_PAGES = new Set(['watchlist', 'alerts', 'add', 'launchpad', 'profile', 'referral']);
 
+// Route content is swapped purely by `page` state (there is no router library).
+// On its own that swap is a hard cut: the outgoing page vanishes and the
+// incoming one's sections play their existing khanFadeUp entrance. This supplies
+// the missing half — a short, GPU-friendly exit for the outgoing page — then
+// hands straight back to that existing entrance, so a route change reads as one
+// continuous motion rather than a jump. It adds no entrance of its own, so the
+// established per-section reveal is never doubled.
+//
+// Hand-off details that keep it clean and consistent across every route:
+//  - `frozen` mirrors the live route's children but is refreshed only while the
+//    displayed key still matches the live route. So same-route updates (a live
+//    Home search, scan telemetry) flow through untouched, yet the instant the
+//    route changes we keep rendering the OUTGOING content — never a one-frame
+//    flash of the incoming page — while it animates out.
+//  - When the exit finishes we adopt the new key; the keyed wrapper remounts, so
+//    the incoming sections mount fresh and replay khanFadeUp. Entrance is the
+//    existing one, reused, not a second copy.
+//  - Rapid navigation collapses safely: a newer target just resets the timer and
+//    we swap directly to the latest route, so pages never overlap or duplicate.
+//  - Back/forward drive the same `page` state (via hashchange), so they animate
+//    identically; scroll behaviour is left entirely to the existing navigate()/
+//    hashchange handlers, so it is preserved exactly.
+//  - Reduced motion swaps instantly (and the reused entrance is itself disabled
+//    under the same query), so those users get a plain, calm cut.
+const ROUTE_EXIT_MS = 200;
+
+function RouteTransition({ routeKey, children }) {
+  const [displayKey, setDisplayKey] = useState(routeKey);
+  const [exiting, setExiting] = useState(false);
+  const frozen = useRef(children);
+  const timer = useRef(null);
+
+  // Keep the frozen copy current only while the live route is on screen, so it
+  // still holds the OUTGOING content at the moment the route changes.
+  if (routeKey === displayKey) frozen.current = children;
+
+  useEffect(() => {
+    if (routeKey === displayKey) return undefined;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) {
+      setExiting(false);
+      setDisplayKey(routeKey);
+      return undefined;
+    }
+    setExiting(true);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      setDisplayKey(routeKey);
+      setExiting(false);
+    }, ROUTE_EXIT_MS);
+    return () => clearTimeout(timer.current);
+  }, [routeKey, displayKey]);
+
+  return (
+    <div key={displayKey} className={`route-view${exiting ? ' is-exiting' : ''}`}>
+      {frozen.current}
+    </div>
+  );
+}
+
 function App() {
   const { t } = useTranslation();
   const { user, isLoading: authLoading, gate } = useAuth();
@@ -3750,6 +3810,7 @@ function App() {
       <div className="app-content">
       <Header page={page} navigate={navigate} navTo={navTo} setAuthModalMode={setAuthModalMode} projects={projects} />
       <main>
+        <RouteTransition routeKey={page}>
         {page === 'home' && (
           <HomePage
             projects={projects}
@@ -3855,6 +3916,7 @@ function App() {
         {page === 'profile' && pageAuthReady && <UserProfilePage navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />}
         {page.startsWith('verify-email/') && <EmailVerifyPage token={page.split('/')[1]} navigate={navigate} />}
         {page.startsWith('reset-password/') && <ResetPasswordPage token={page.split('/')[1]} navigate={navigate} />}
+        </RouteTransition>
       </main>
       <Footer navigate={navigate} />
       <MobileNav page={page} navigate={navigate} navTo={navTo} setAuthModalMode={setAuthModalMode} />

@@ -770,6 +770,8 @@ export default {
     reasonsEmpty: 'Mevcut verilerde güçlü olumlu yatırım faktörleri belirlenmedi.',
     generatedNote: 'Canlı blok zinciri istihbaratından üretildi.',
     timestamp: 'Üretildi {{time}}',
+    convictionSubtitle: 'Mevcut kanıtların bu değerlendirmeyi ne kadar güçlü desteklediğinin bir ölçüsü — alma, satma veya tutma tavsiyesi değildir.',
+    disclaimer: 'Bu rapor, kamuya açık blok zinciri ve proje verilerinden yapay zekâ tarafından otomatik olarak, insan incelemesi olmadan üretilir ve yalnızca genel araştırma ve bilgilendirme amacıyla “olduğu gibi” esasına göre sunulur. Eksik, yanlış veya güncelliğini yitirmiş olabilir. Finansal, yatırım, hukuki veya vergi tavsiyesi değildir, kişisel koşullarınıza göre uyarlanmamıştır ve herhangi bir dijital varlığı alma, satma veya tutma yönünde bir teklif, davet ya da tavsiye değildir. Tüm rakamlar geçmiş veya mevcut zincir üstü verileri tanımlar ve gelecekteki performansın bir tahmini veya garantisi değildir; ileriye dönük gözlemler tahmin değil, ileri araştırma için hipotezlerdir. Dijital varlıklar oldukça değişkendir ve yatırımınızın tamamını kaybedebilirsiniz. Herhangi bir finansal karar vermeden önce daima kendi araştırmanızı yapın ve uygun olduğunda lisanslı bir uzmana danışın.',
     dimensionNames: {
       liquidity: 'likidite derinliği',
       distribution: 'holder dağılımı',
@@ -829,12 +831,12 @@ export default {
       none: 'Mevcut verilerde yukarıda ele alınanların ötesinde önemli ek yatırım riski belirlenmedi.',
     },
     catalysts: {
-      holderGrowth: 'Holder tabanı genişliyor (+{{value}}), bu da sürdürülürse birikebilecek artan bir benimsemenin işaretidir.',
-      listingVisibility: 'Bağımsız listeleme görünürlüğü erişimi genişletir ve zamanla yeni katılımcıları çekebilir.',
-      approachingMaturity: 'Token bir yıllık geçmişe yaklaşıyor; bu, uzun vadeli katılımcıların dikkate aldığı bir olgunluk eşiğidir.',
-      deepeningLiquidity: 'Sağlıklı, derinleşen likidite, fiyatı istikrarsızlaştırmadan daha büyük katılımı destekleyebilir.',
-      communityScale: 'Büyük bir topluluk tabanı, gelecekteki dağıtım ve farkındalık için organik ivme sağlar.',
-      activeDevelopment: 'Kamuya açık bir kod deposu, gelecekteki ürün kilometre taşlarını yönlendirebilecek devam eden geliştirmeye işaret eder.',
+      holderGrowth: 'Holder tabanı ölçülen dönemde {{value}} genişledi; bu, eğilim sürerse artan bir benimsemeyi yansıtabilir.',
+      listingVisibility: 'Token bağımsız bir araştırma toplayıcısında listelenmiştir; bu, keşfedilebilirliğini artırabilir.',
+      approachingMaturity: 'Token bir yıllık geçmişe yaklaşıyor; bu, uzun vadeli katılımcıların sıklıkla dikkate aldığı bir olgunluk eşiğidir.',
+      deepeningLiquidity: 'Likidite şu anda aktiviteye göre sağlıklı okunuyor; bu, sürmesi hâlinde daha büyük katılımı desteklemeye yardımcı olabilir.',
+      communityScale: 'İzlenen topluluk tabanı büyüktür; bu, daha geniş farkındalığı destekleyebilir, ancak topluluk büyüklüğü tek başına katılımı garanti etmez.',
+      activeDevelopment: 'Kamuya açık bir kod deposu bağlanmıştır; bu, şeffaflığı ve projenin kodunun bağımsız incelenmesini destekler.',
       emptyNote: 'Mevcut verilerden güçlü, ileriye dönük büyüme katalizörleri belirlenmedi. Bu, kanıtlarla ilgili bir ifadedir, olumsuz bir sinyal değildir.',
     },
     conviction: {

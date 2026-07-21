@@ -770,6 +770,8 @@ export default {
     reasonsEmpty: 'Mövcud məlumatlarda güclü müsbət investisiya amilləri aşkarlanmadı.',
     generatedNote: 'Canlı blokçeyn kəşfiyyatı əsasında yaradılıb.',
     timestamp: 'Yaradılıb {{time}}',
+    convictionSubtitle: 'Mövcud sübutların bu qiymətləndirməni nə dərəcədə güclü dəstəklədiyinin ölçüsü — almaq, satmaq və ya saxlamaq tövsiyəsi deyil.',
+    disclaimer: 'Bu hesabat açıq blokçeyn və layihə məlumatları əsasında süni intellekt tərəfindən avtomatik, insan yoxlaması olmadan yaradılır və yalnız ümumi araşdırma və məlumat məqsədləri üçün “olduğu kimi” əsasında təqdim olunur. O, natamam, qeyri-dəqiq və ya köhnəlmiş ola bilər. Bu, maliyyə, investisiya, hüquqi və ya vergi məsləhəti deyil, sizin şəraitinizə uyğunlaşdırılmayıb və hər hansı rəqəmsal aktivi almaq, satmaq və ya saxlamaq üçün təklif, dəvət və ya tövsiyə deyil. Bütün rəqəmlər keçmiş və ya cari zəncir məlumatlarını təsvir edir və gələcək performansın proqnozu və ya zəmanəti deyil; hər hansı gələcəyə yönəlik müşahidələr əlavə araşdırma üçün fərziyyələrdir, proqnoz deyil. Rəqəmsal aktivlər yüksək dərəcədə dəyişkəndir və bütün investisiyanızı itirə bilərsiniz. Hər hansı maliyyə qərarı verməzdən əvvəl həmişə öz araşdırmanızı aparın və lazım gəldikdə lisenziyalı mütəxəssislə məsləhətləşin.',
     dimensionNames: {
       liquidity: 'likvidlik dərinliyi',
       distribution: 'holder paylanması',
@@ -829,12 +831,12 @@ export default {
       none: 'Mövcud məlumatlarda yuxarıda əhatə olunanlardan başqa əhəmiyyətli əlavə investisiya riski aşkarlanmadı.',
     },
     catalysts: {
-      holderGrowth: 'Holder bazası genişlənir (+{{value}}), bu da davam etsə güclənə biləcək artan qəbulun əlamətidir.',
-      listingVisibility: 'Müstəqil listinq görünürlüyü əhatəni genişləndirir və zamanla yeni iştirakçıları cəlb edə bilər.',
-      approachingMaturity: 'Token birillik iş keçmişinə yaxınlaşır, bu isə uzunmüddətli iştirakçıların nəzərə aldığı yetkinlik həddidir.',
-      deepeningLiquidity: 'Sağlam, dərinləşən likvidlik qiyməti sarsıtmadan daha böyük iştirakı dəstəkləyə bilər.',
-      communityScale: 'Böyük icma bazası gələcək paylanma və tanınma üçün üzvi impuls təmin edir.',
-      activeDevelopment: 'İctimai kod deposu gələcək məhsul mərhələlərini irəli apara biləcək davam edən inkişafa işarə edir.',
+      holderGrowth: 'Holder bazası ölçülən dövrdə {{value}} genişlənib, bu da tendensiya davam edərsə artan qəbulu əks etdirə bilər.',
+      listingVisibility: 'Token müstəqil araşdırma aqreqatorunda listələnib, bu da onun görünürlüyünü artıra bilər.',
+      approachingMaturity: 'Token birillik iş keçmişinə yaxınlaşır, bu isə uzunmüddətli iştirakçıların tez-tez nəzərə aldığı yetkinlik həddidir.',
+      deepeningLiquidity: 'Likvidlik hazırda aktivliyə nisbətən sağlam görünür, bu da davam edərsə daha böyük iştirakı dəstəkləyə bilər.',
+      communityScale: 'İzlənilən icma bazası böyükdür, bu da daha geniş tanınmanı dəstəkləyə bilər, lakin icmanın ölçüsü təkbaşına iştirakı zəmanət etmir.',
+      activeDevelopment: 'İctimai kod deposu bağlanıb, bu da şəffaflığı və layihənin kodunun müstəqil yoxlanmasını dəstəkləyir.',
       emptyNote: 'Mövcud məlumatlardan güclü gələcəyə yönəlik artım katalizatorları aşkarlanmadı. Bu, sübutlar haqqında bir bəyanatdır, mənfi siqnal deyil.',
     },
     conviction: {

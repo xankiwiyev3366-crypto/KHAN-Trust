@@ -5870,11 +5870,20 @@ function InvestmentThesisCard({ project, navigate }) {
                 <span className="thesis-conviction-label">{t('investmentThesis.convictionTitle')}</span>
                 <ConvictionBadge conviction={thesis.conviction} />
                 <p className="inline-note">{thesis.conviction.note}</p>
+                <p className="inline-note">{t('investmentThesis.convictionSubtitle')}</p>
               </div>
 
               <p className="thesis-footnote">
                 <Sparkles size={13} /> {t('investmentThesis.generatedNote')} · {t('investmentThesis.timestamp', { time: stamp })}
               </p>
+
+              {/* Prominent, feature-specific compliance disclaimer. The narrative's
+                  closing line disclaims too, but this dedicated block is the
+                  authoritative one: automated/AI, as-is, not advice, not a
+                  solicitation, no future-performance guarantee. Reuses the shared
+                  Disclaimer component so styling and the warning icon are
+                  consistent with the rest of the platform. */}
+              <Disclaimer text={t('investmentThesis.disclaimer')} />
             </>
           );
         })()

@@ -831,6 +831,8 @@ export default {
     reasonsEmpty: 'No strong positive investment factors were identified in the available data.',
     generatedNote: 'Generated from live blockchain intelligence.',
     timestamp: 'Generated {{time}}',
+    convictionSubtitle: 'A measure of how strongly the available evidence supports this assessment — not a recommendation to buy, sell, or hold.',
+    disclaimer: 'This report is generated automatically by AI from publicly available blockchain and project data, without human review, and is provided on an “as-is” basis for general research and informational purposes only. It may be incomplete, inaccurate, or out of date. It is not financial, investment, legal, or tax advice, is not personalised to your circumstances, and is not an offer, solicitation, or recommendation to buy, sell, or hold any digital asset. All figures describe past or current on-chain data and are not a prediction or guarantee of future performance; any forward-looking observations are hypotheses for further research, not forecasts. Digital assets are highly volatile and you may lose your entire investment. Always do your own research and, where appropriate, consult a licensed professional before making any financial decision.',
     dimensionNames: {
       liquidity: 'liquidity depth',
       distribution: 'holder distribution',
@@ -890,12 +892,12 @@ export default {
       none: 'No material additional investment risks were identified in the available data beyond those covered above.',
     },
     catalysts: {
-      holderGrowth: 'The holder base is expanding (+{{value}}), a sign of growing adoption that can compound if sustained.',
-      listingVisibility: 'Independent listing visibility broadens reach and can attract new participants over time.',
-      approachingMaturity: 'The token is approaching a one-year track record, a maturity threshold longer-term participants weigh.',
-      deepeningLiquidity: 'Healthy, deepening liquidity can support larger participation without destabilising the price.',
-      communityScale: 'A large community base provides organic momentum for future distribution and awareness.',
-      activeDevelopment: 'A public code repository points to ongoing development that could drive future product milestones.',
+      holderGrowth: 'The holder base has expanded by {{value}} in the measured period, which can reflect growing adoption if the trend continues.',
+      listingVisibility: 'The token is listed on an independent research aggregator, which can improve its discoverability.',
+      approachingMaturity: 'The token is approaching a one-year track record, a maturity threshold longer-term participants often weigh.',
+      deepeningLiquidity: 'Liquidity currently reads as healthy relative to activity, which can help support larger participation if it holds.',
+      communityScale: 'The tracked community base is large, which can support broader awareness, though community size alone does not guarantee engagement.',
+      activeDevelopment: 'A public code repository is linked, which supports transparency and independent review of the project’s code.',
       emptyNote: 'No strong forward-looking growth catalysts were identified from the available data. This is a statement about evidence, not a negative signal.',
     },
     conviction: {

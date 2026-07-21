@@ -2300,6 +2300,7 @@ export default {
     searchPlaceholder: 'Search by name, username, or email...',
     statRegistered: 'Registered Users',
     statActivePremium: 'Active Premium',
+    statPaidPremium: 'Paid Premium Users',
     emptyTitle: 'No matching users',
     emptyText: 'No registered users match your search.',
     unnamed: 'Unnamed user',
@@ -2454,7 +2455,8 @@ export default {
       neverLoggedIn: 'Never Logged In',
       walletConnected: 'Wallet Connected',
       tooltips: {
-        activePremium: 'Accounts with an active paid or admin-granted Premium entitlement.',
+        activePremium: 'All active Premium users — paid, plus manually assigned, gifted, and free promotional grants.',
+        paidPremium: 'Users who purchased Premium through the payment system only. Excludes manual, gifted, and promotional grants.',
         verified: 'Accounts that have confirmed their email address. Email verification is not the same as logging in.',
         withScans: 'Accounts that have completed at least one token scan.',
         zeroScans: 'Registered accounts that have never completed a scan.',

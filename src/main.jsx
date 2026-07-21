@@ -203,6 +203,7 @@ import { planUsdAmount, PLAN_USD_AMOUNT } from './lib/pricing.js';
 import { fetchEntitlement, fetchAccountEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
 import { buildAdvancedResearch, buildPremiumAnalysis, buildLocalizedRiskSummary, friendlyMissingFields } from './premiumResearch.js';
 import { useGroundedAnalysis, mergeAnalysis } from './groundedAnalysis.js';
+import { buildInvestmentThesis } from './investmentThesis.js';
 import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction, submitBulkPremiumAction, fetchUserActivity, fetchUserActivityDetail } from './premiumAdmin.js';
 import { recordWalletLink } from './walletLink.js';
 import { fetchUserData, saveReport, removeSavedReport, toggleServerWatch } from './userData.js';
@@ -5814,6 +5815,87 @@ function PremiumAnalysisCard({ project, navigate }) {
   );
 }
 
+// ── Premium feature 3: AI Investment Thesis ───────────────────────────────────
+// The SYNTHESIS card. It sits after Advanced Research and Premium Analysis and
+// deliberately does NOT re-list their signals: it aggregates the engine's
+// category scores into investment dimensions and produces the one verdict, the
+// forward-looking catalysts and the institutional narrative that appear nowhere
+// else (see src/investmentThesis.js for the non-duplication contract). Fully
+// deterministic and grounded — every figure traces to engine output.
+function InvestmentThesisCard({ project, navigate }) {
+  const { t, language } = useTranslation();
+  const { hasPremium, entitlement } = usePremiumEntitlement();
+  if (!project.assetCategory) return null; // nothing to synthesize yet
+  const generatedAt = project.dataFetchedAt || Date.now();
+  let stamp;
+  try {
+    stamp = new Date(generatedAt).toLocaleString(language);
+  } catch {
+    stamp = new Date(generatedAt).toLocaleString();
+  }
+  return (
+    <section className="detail-section premium-ai-card">
+      <SectionTitle icon={TrendingUp} eyebrow={t('investmentThesis.eyebrow')} title={t('investmentThesis.title')} />
+      {!hasPremium ? (
+        <PremiumUpgradeCTA navigate={navigate} text={t('investmentThesis.lockedText')} />
+      ) : (
+        (() => {
+          const thesis = buildInvestmentThesis(project);
+          return (
+            <>
+              <div className="premium-ai-badgeline">
+                <AccountBadge entitlement={entitlement} compact />
+                <ConvictionBadge conviction={thesis.conviction} />
+              </div>
+
+              <h4>{t('investmentThesis.whyConsiderTitle')}</h4>
+              {thesis.reasonsEmpty
+                ? <p className="inline-note">{t('investmentThesis.reasonsEmpty')}</p>
+                : <ResearchList items={thesis.reasons} tone="good" />}
+
+              <h4>{t('investmentThesis.catalystsTitle')}</h4>
+              {thesis.catalystsEmpty
+                ? <p className="inline-note">{t('investmentThesis.catalysts.emptyNote')}</p>
+                : <ResearchList items={thesis.catalysts} tone="neutral" />}
+
+              <h4>{t('investmentThesis.risksTitle')}</h4>
+              <ResearchList items={thesis.risks} tone="bad" />
+
+              <div className="premium-ai-conclusion">
+                <strong>{t('investmentThesis.overallTitle')}</strong>
+                <p>{thesis.narrative}</p>
+              </div>
+
+              <div className="thesis-conviction-block">
+                <span className="thesis-conviction-label">{t('investmentThesis.convictionTitle')}</span>
+                <ConvictionBadge conviction={thesis.conviction} />
+                <p className="inline-note">{thesis.conviction.note}</p>
+              </div>
+
+              <p className="thesis-footnote">
+                <Sparkles size={13} /> {t('investmentThesis.generatedNote')} · {t('investmentThesis.timestamp', { time: stamp })}
+              </p>
+            </>
+          );
+        })()
+      )}
+    </section>
+  );
+}
+
+// The single synthesized verdict, rendered as a toned pill. low → cautionary,
+// moderate → neutral, high → positive; the same three-tone language the rest of
+// the report uses.
+function ConvictionBadge({ conviction }) {
+  const tone = conviction.key === 'high' ? 'good' : conviction.key === 'low' ? 'bad' : 'neutral';
+  const Icon = tone === 'good' ? TrendingUp : tone === 'bad' ? AlertTriangle : Scale;
+  return (
+    <span className={`thesis-conviction thesis-conviction-${tone}`}>
+      <Icon size={14} /> {conviction.label}
+    </span>
+  );
+}
+
 // Real, working Saved Reports - the one Premium/Early Supporter feature that
 // previously existed only as marketing copy. Reads/writes go through
 // userData.js, which is rejected server-side for any wallet without an
@@ -6761,6 +6843,7 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
           <DeepRiskAnalysisCard project={project} />
           <AdvancedResearchCard project={project} navigate={navigate} />
           <PremiumAnalysisCard project={project} navigate={navigate} />
+          <InvestmentThesisCard project={project} navigate={navigate} />
           <RiskFlags flags={project.riskFlags} />
           <Timeline items={project.timeline} />
           <Roadmap phases={project.roadmap} />

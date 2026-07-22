@@ -11392,3 +11392,41 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
 @media (prefers-reduced-motion: reduce) {
   .metric-info { transition: none; }
 }
+
+/* ── Shareable Trust Card (Task 3) ─────────────────────────────────────────── */
+.trust-card-share { display: flex; flex-direction: column; gap: 14px; }
+.trust-card-preview {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  aspect-ratio: 1200 / 630;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.trust-card-preview img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.trust-card-skeleton {
+  color: var(--muted);
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+}
+.trust-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.trust-card-actions .secondary-button {
+  flex: 1 1 auto;
+  min-width: 150px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+}
+.trust-card-hint { color: var(--muted); font-size: 0.8rem; }
+@media (max-width: 560px) {
+  .trust-card-actions .secondary-button { flex-basis: 100%; }
+}

@@ -204,6 +204,14 @@ import { planUsdAmount, PLAN_USD_AMOUNT } from './lib/pricing.js';
 import { fetchEntitlement, fetchAccountEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
 import { buildAdvancedResearch, buildPremiumAnalysis, buildLocalizedRiskSummary, friendlyMissingFields } from './premiumResearch.js';
 import { useGroundedAnalysis, mergeAnalysis } from './groundedAnalysis.js';
+import {
+  renderTrustCard,
+  canvasToBlob,
+  downloadCanvas,
+  trustCardShareUrl,
+  xShareUrl,
+  telegramShareUrl,
+} from './trustCard.js';
 import { buildInvestmentThesis } from './investmentThesis.js';
 import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction, submitBulkPremiumAction, fetchUserActivity, fetchUserActivityDetail } from './premiumAdmin.js';
 import { recordWalletLink } from './walletLink.js';
@@ -5250,6 +5258,126 @@ function TokenAlertToggle({ project }) {
   );
 }
 
+// ── Shareable Trust Card (Task 3) ─────────────────────────────────────────────
+// Renders the premium card to a canvas and offers Share on X / Telegram /
+// Download / Copy Link. The card image is generated once per token from the
+// computed project (see trustCard.js) — it never invents a number, and a logo
+// is drawn only when it loads CORS-clean. Available to every user on every
+// completed scan: the card is a distribution loop, not a paid feature.
+function TrustCardShare({ project }) {
+  const { t, language } = useTranslation();
+  const [preview, setPreview] = useState('');
+  const [status, setStatus] = useState('idle'); // idle | rendering | ready | error
+  const [copied, setCopied] = useState(false);
+  const canvasRef = useRef(null);
+
+  const shareUrl = trustCardShareUrl(project);
+  const shareText = t('trustCard.shareText', {
+    name: project.name || project.ticker || 'this token',
+    score: Math.round(Number(project.trustScore) || 0),
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    setStatus('rendering');
+    setPreview('');
+    const labels = {
+      trustScore: t('trustCard.trustScore'),
+      riskLevel: t('trustCard.riskLevel'),
+      riskLevelValue: translateRiskLevel(project.riskLevel),
+      scamProbability: t('trustCard.scamProbability'),
+      liquidity: t('trustCard.liquidity'),
+      holders: t('trustCard.holders'),
+      verifiedStatus: t('trustCard.status'),
+      verified: t('common.verifiedShort'),
+      unverified: t('common.unverifiedShort'),
+      isVerified: normalizeVerificationStatus(project.verificationStatus) === VERIFICATION_STATUS.VERIFIED,
+      tagline: t('header.tagline'),
+      timestamp: `${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`,
+    };
+    renderTrustCard(project, labels)
+      .then((canvas) => {
+        if (cancelled) return;
+        canvasRef.current = canvas;
+        setPreview(canvas.toDataURL('image/png'));
+        setStatus('ready');
+      })
+      .catch(() => {
+        if (!cancelled) setStatus('error');
+      });
+    return () => { cancelled = true; };
+  }, [project.id, project.trustScore, language]);
+
+  const onDownload = () => {
+    if (!canvasRef.current) return;
+    const slug = slugify(project.ticker || project.name || 'token');
+    downloadCanvas(canvasRef.current, `khan-trust-${slug}.png`);
+  };
+
+  const onCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  // Native share with the actual image where supported (mobile), else fall back
+  // to opening the X/Telegram intent with the token URL + text.
+  const onNativeShare = async () => {
+    if (!canvasRef.current || !navigator.share) return false;
+    try {
+      const blob = await canvasToBlob(canvasRef.current);
+      const file = new File([blob], 'khan-trust-card.png', { type: 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], text: shareText, url: shareUrl });
+        return true;
+      }
+      await navigator.share({ text: shareText, url: shareUrl });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  return (
+    <section className="detail-section trust-card-share">
+      <SectionTitle icon={Share2} eyebrow={t('trustCard.eyebrow')} title={t('trustCard.title')} />
+      <p className="inline-note">{t('trustCard.subtitle')}</p>
+      <div className="trust-card-preview">
+        {status === 'ready' && preview
+          ? <img src={preview} alt={t('trustCard.alt', { name: project.name || project.ticker || '' })} />
+          : status === 'error'
+            ? <p className="lookup-message error">{t('trustCard.error')}</p>
+            : <div className="trust-card-skeleton" aria-hidden="true">{t('trustCard.rendering')}</div>}
+      </div>
+      <div className="trust-card-actions">
+        <a
+          className="secondary-button"
+          href={xShareUrl(shareText, shareUrl)}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => { if (navigator.share) { e.preventDefault(); onNativeShare().then((ok) => { if (!ok) window.open(xShareUrl(shareText, shareUrl), '_blank', 'noopener'); }); } }}
+        >
+          <Share2 size={16} /> {t('trustCard.shareX')}
+        </a>
+        <a className="secondary-button" href={telegramShareUrl(shareText, shareUrl)} target="_blank" rel="noopener noreferrer">
+          <Send size={16} /> {t('trustCard.shareTelegram')}
+        </a>
+        <button className="secondary-button" type="button" onClick={onDownload} disabled={status !== 'ready'}>
+          <Download size={16} /> {t('trustCard.download')}
+        </button>
+        <button className="secondary-button" type="button" onClick={onCopyLink}>
+          <Link2 size={16} /> {copied ? t('common.copied') : t('trustCard.copyLink')}
+        </button>
+      </div>
+      <small className="trust-card-hint">{t('trustCard.attachHint')}</small>
+    </section>
+  );
+}
+
 function RiskReportPage({ project, navigate }) {
   const { t } = useTranslation();
   const { gate } = useAuth();
@@ -5287,6 +5415,8 @@ function RiskReportPage({ project, navigate }) {
         </div>
         <TokenAlertToggle project={project} />
       </div>
+
+      <TrustCardShare project={project} />
 
       <div className="report-layout">
         <div className="main-column">

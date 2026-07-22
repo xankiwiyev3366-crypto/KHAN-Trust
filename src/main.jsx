@@ -5631,6 +5631,12 @@ function PremiumAnalysisCard({ project, navigate }) {
             <>
               <div className="premium-ai-badgeline"><AccountBadge entitlement={entitlement} compact /></div>
               <p className="inline-note">{a.explanation}</p>
+              {a.contractSecurity && (
+                <div className="premium-ai-contract">
+                  <h4>{t('premiumAnalysis.contractSecurityLabel')}</h4>
+                  <p className="inline-note">{a.contractSecurity}</p>
+                </div>
+              )}
               <div className="premium-ai-metrics">
                 <div className="premium-ai-metric">
                   <span>{t('premiumAnalysis.riskConfidence')}</span>

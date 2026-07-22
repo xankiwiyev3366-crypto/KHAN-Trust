@@ -718,6 +718,12 @@ export default {
     communityUnknown: 'Bu token üçün icma ölçüsü məlumatı hələ mövcud deyil.',
     communityObservation: 'İzlənilən icma təxminən {{size}} üzvdən ibarətdir, bu {{level}} izdir.',
     communityLarge: 'böyük', communityGrowing: 'artan', communitySmall: 'kiçik',
+    contractUnknown: 'Bu token üçün zəncirüstü kontrakt səlahiyyətləri müşahidə olunmadı, ona görə kontrakt nəzarəti heç bir istiqamətdə təsdiqlənə bilməz.',
+    contractMintOn: 'Emissiya səlahiyyəti hələ aktivdir, ona görə yaradıcı yeni tədarük buraxıb sahibləri seyrəldə bilər.',
+    contractMintOff: 'Emissiya səlahiyyəti geri götürülüb, ona görə yeni tədarük buraxıla bilməz.',
+    contractFreezeOn: 'Dondurma səlahiyyəti hələ aktivdir, ona görə yaradıcı hesabları dondurub köçürmələri bloklaya bilər.',
+    contractFreezeOff: 'Dondurma səlahiyyəti geri götürülüb, ona görə balanslar dondurula bilməz.',
+    contractUpgradeable: 'Kontrakt təkmilləşdirilə biləndir, ona görə davranışı yerləşdirmədən sonra dəyişə bilər.',
     outlook: {
       positive: '{{score}}/100 Etibar Balı və {{risk}} risklə, komanda təslim etməyə davam etsə və şəffaflıq qorunsa, uzunmüddətli siqnallar konstruktivdir.',
       mixed: '{{score}}/100 Etibar Balı və {{risk}} risklə, uzunmüddətli mənzərə qarışıqdır - potensial var, lakin icra və daha aydın məlumatdan asılıdır.',
@@ -732,6 +738,7 @@ export default {
   premiumAnalysis: {
     eyebrow: 'Premium',
     title: 'Premium AI Təhlili',
+    contractSecurityLabel: 'Kontrakt təhlükəsizliyi',
     lockedText: 'Premium AI Təhlili risk etibar balı, yüksəliş/düşüş siqnalları, məlumat keyfiyyəti yoxlamaları və AI tövsiyələri əlavə edir. Premium ilə açın.',
     riskConfidence: 'Risk Etibar Balı',
     aiConfidence: 'AI Etibar Səviyyəsi',

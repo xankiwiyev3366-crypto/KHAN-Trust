@@ -68,6 +68,7 @@ export const ANALYST_FIELDS = [
   'liquidity',
   'holders',
   'communitySignals',
+  'contractSecurity',
   'outlook',
   'conclusion',
   'explanation',
@@ -81,6 +82,7 @@ const SCHEMA = {
     liquidity: { type: 'string', maxLength: 400 },
     holders: { type: 'string', maxLength: 400 },
     communitySignals: { type: 'string', maxLength: 400 },
+    contractSecurity: { type: 'string', maxLength: 400 },
     outlook: { type: 'string', maxLength: 600 },
     conclusion: { type: 'string', maxLength: 600 },
     explanation: { type: 'string', maxLength: 900 },
@@ -168,6 +170,7 @@ Produce:
 - liquidity: what the liquidity picture means for someone trying to exit a position.
 - holders: what the holder distribution implies about concentration risk.
 - communitySignals: what the community/social footprint indicates, or that it is unknown.
+- contractSecurity: what the on-chain contract authorities mean for the holder. An ENABLED mint or freeze authority is real risk (the deployer can still mint new supply or freeze balances); a DISABLED/renounced authority is good news. An upgradeable contract can change after deploy. If a flag is null it was NOT observed — say so; never read a missing flag as safe.
 - outlook: the longer-term read, grounded in the engine's score and risk level.
 - conclusion: the overall verdict in two or three sentences.
 - explanation: a fuller narrative read tying the signals together.

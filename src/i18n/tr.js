@@ -718,6 +718,12 @@ export default {
     communityUnknown: 'Bu token için topluluk boyutu verisi henüz mevcut değil.',
     communityObservation: 'Takip edilen topluluk yaklaşık {{size}} üyeden oluşuyor, bu {{level}} bir iz.',
     communityLarge: 'büyük', communityGrowing: 'büyüyen', communitySmall: 'küçük',
+    contractUnknown: 'Bu token için zincir üstü kontrat yetkileri gözlemlenmedi, bu nedenle kontrat kontrolü her iki yönde de doğrulanamaz.',
+    contractMintOn: 'Basım yetkisi hâlâ aktif, bu nedenle geliştirici yeni arz oluşturup sahipleri sulandırabilir.',
+    contractMintOff: 'Basım yetkisi bırakıldı, bu nedenle yeni arz basılamaz.',
+    contractFreezeOn: 'Dondurma yetkisi hâlâ aktif, bu nedenle geliştirici hesapları dondurup transferleri engelleyebilir.',
+    contractFreezeOff: 'Dondurma yetkisi bırakıldı, bu nedenle bakiyeler dondurulamaz.',
+    contractUpgradeable: 'Kontrat yükseltilebilir, bu nedenle davranışı dağıtımdan sonra değişebilir.',
     outlook: {
       positive: '{{score}}/100 Güven Puanı ve {{risk}} risk ile, ekip teslimata devam eder ve şeffaflık korunursa uzun vadeli sinyaller yapıcıdır.',
       mixed: '{{score}}/100 Güven Puanı ve {{risk}} risk ile, uzun vadeli tablo karışık - potansiyel var ama uygulama ve daha net verilere bağlı.',
@@ -732,6 +738,7 @@ export default {
   premiumAnalysis: {
     eyebrow: 'Premium',
     title: 'Premium AI Analizi',
+    contractSecurityLabel: 'Kontrat güvenliği',
     lockedText: 'Premium AI Analizi risk güven puanı, yükseliş/düşüş sinyalleri, veri kalitesi kontrolleri ve AI önerileri ekler. Premium ile açın.',
     riskConfidence: 'Risk Güven Puanı',
     aiConfidence: 'AI Güven Düzeyi',

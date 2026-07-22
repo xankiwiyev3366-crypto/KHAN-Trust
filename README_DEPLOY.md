@@ -22,6 +22,7 @@ KHAN Trust is a standalone React + Vite frontend app.
 - `VITE_STRIPE_PREMIUM_PRICE_ID` (optional) - Stripe Price ID for the Premium monthly plan.
 - `VITE_STRIPE_SUPPORTER_PRICE_ID` (optional) - Stripe Price ID for the Early Supporter one-time payment.
 - `VITE_KHAN_PAYMENT_WALLET` (optional) - Public Solana wallet address shown for manual USDT/SOL crypto payments.
+- `ANTHROPIC_API_KEY` (optional, server-side / Netlify Function env) - Activates the Grounded AI Analyst. When set, the Premium AI cards overlay real Claude-written prose (explaining the deterministic engine's scores, holder concentration, liquidity, and contract-security authorities) over the deterministic templates. The model NEVER produces a number: every figure is validated against the engine's own facts and any fabricated number is discarded (`_aiValidator`), and the monthly spend ceiling in `_aiBudget` fails closed. When unset, the AI layer is silently skipped and the deterministic templates render unchanged — no user-visible error. Never expose this as a `VITE_` variable; it is server-only.
 
 If any required Stripe variable is missing, card payment buttons show “Card payments are not configured yet” and the site keeps working. If the crypto wallet variable is missing, the crypto section shows “Crypto payments are not configured yet”.
 

@@ -779,6 +779,12 @@ export default {
     communityUnknown: 'Community size data is not available for this token yet.',
     communityObservation: 'The tracked community is around {{size}} members, a {{level}} footprint.',
     communityLarge: 'large', communityGrowing: 'growing', communitySmall: 'small',
+    contractUnknown: 'On-chain contract authorities were not observed for this token, so contract control cannot be confirmed either way.',
+    contractMintOn: 'The mint authority is still active, so the deployer can create new supply and dilute holders.',
+    contractMintOff: 'The mint authority is renounced, so no new supply can be minted.',
+    contractFreezeOn: 'The freeze authority is still active, so the deployer can freeze token accounts and block transfers.',
+    contractFreezeOff: 'The freeze authority is renounced, so balances cannot be frozen.',
+    contractUpgradeable: 'The contract is upgradeable, so its behaviour can change after deployment.',
     outlook: {
       positive: 'With a Trust Score of {{score}}/100 and {{risk}} risk, the long-term signals lean constructive if the team keeps delivering and transparency holds.',
       mixed: 'With a Trust Score of {{score}}/100 and {{risk}} risk, the long-term picture is mixed - upside exists but depends on execution and clearer data.',
@@ -793,6 +799,7 @@ export default {
   premiumAnalysis: {
     eyebrow: 'Premium',
     title: 'Premium AI Analysis',
+    contractSecurityLabel: 'Contract security',
     lockedText: 'Premium AI Analysis adds risk confidence scoring, bullish/bearish signals, data-quality checks, and AI recommendations. Unlock with Premium.',
     riskConfidence: 'Risk Confidence Score',
     aiConfidence: 'AI Confidence Level',

@@ -180,6 +180,23 @@ function communityObservation(project) {
   return t('advancedResearch.communityObservation', { size: size.toLocaleString(), level });
 }
 
+// Contract-security read from the on-chain authority flags GoPlus reports.
+// Enabled authorities are real risk (the deployer can still mint or freeze);
+// disabled/renounced authorities are good news. A null flag is NOT observed and
+// must never be read as "safe" — the deterministic floor says so plainly and
+// the AI overlay is instructed to do the same.
+function contractSecurityObservation(project) {
+  const d = realData(project);
+  const parts = [];
+  if (d.mintAuthorityEnabled === true) parts.push(t('advancedResearch.contractMintOn'));
+  else if (d.mintAuthorityEnabled === false) parts.push(t('advancedResearch.contractMintOff'));
+  if (d.freezeAuthorityEnabled === true) parts.push(t('advancedResearch.contractFreezeOn'));
+  else if (d.freezeAuthorityEnabled === false) parts.push(t('advancedResearch.contractFreezeOff'));
+  if (d.upgradeable === true) parts.push(t('advancedResearch.contractUpgradeable'));
+  if (!parts.length) return t('advancedResearch.contractUnknown');
+  return parts.join(' ');
+}
+
 function longTermOutlook(project) {
   const score = num(project.trustScore) ?? 0;
   const tone = score >= 70 ? 'positive' : score >= 45 ? 'mixed' : 'cautious';
@@ -278,6 +295,7 @@ export function buildPremiumAnalysis(project) {
     bearish: [...new Set([...deriveWeaknesses(project), ...translatedScamReasons(project)])],
     dataQuality: dq,
     missingInfo: project.missingDataFields || [],
+    contractSecurity: contractSecurityObservation(project),
     recommendations: recommendations(project),
   };
 }

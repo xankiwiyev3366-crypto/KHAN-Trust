@@ -29,6 +29,7 @@ const OVERLAYABLE = new Set([
   'liquidity',
   'holders',
   'communitySignals',
+  'contractSecurity',
   'outlook',
   'conclusion',
   'explanation',

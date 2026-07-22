@@ -213,6 +213,8 @@ import {
   telegramShareUrl,
 } from './trustCard.js';
 import HolderClusterMap from './HolderClusterMap.jsx';
+import { detectChain } from './chains/detect.js';
+import { getChain, chainSupports, explorerTokenUrl as chainExplorerTokenUrl, CHAINS } from './chains/registry.js';
 import { buildInvestmentThesis } from './investmentThesis.js';
 import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction, submitBulkPremiumAction, fetchUserActivity, fetchUserActivityDetail } from './premiumAdmin.js';
 import { recordWalletLink } from './walletLink.js';
@@ -354,6 +356,7 @@ const CHAIN_LABELS = {
   avalanche: 'Avalanche',
   optimism: 'Optimism',
   sui: 'Sui',
+  aptos: 'Aptos',
 };
 
 const CHAIN_TO_COINGECKO_PLATFORM = {
@@ -365,6 +368,8 @@ const CHAIN_TO_COINGECKO_PLATFORM = {
   polygon: 'polygon-pos',
   avalanche: 'avalanche',
   optimism: 'optimistic-ethereum',
+  sui: 'sui',
+  aptos: 'aptos',
 };
 
 const CHAIN_TO_GECKOTERMINAL_NETWORK = {
@@ -377,6 +382,7 @@ const CHAIN_TO_GECKOTERMINAL_NETWORK = {
   avalanche: 'avax',
   optimism: 'optimism',
   sui: 'sui',
+  aptos: 'aptos',
 };
 
 const COINGECKO_PLATFORM_TO_CHAIN = Object.fromEntries(
@@ -1295,6 +1301,50 @@ async function lookupGenericChainToken(chainId, address, report) {
     return cached.value;
   }
   return withLookupCache(cacheKey, () => lookupGenericChainTokenUncached(chainId, address, report));
+}
+
+// Resolves the EXACT chain for an address that detection could only narrow to a
+// family (every EVM chain shares the 20-byte address space; Sui and Aptos share
+// the Move 32-byte space). We ask Dexscreener which chain actually has real
+// liquidity for this address and pick the strongest — the same trading-strength
+// ranking used everywhere else, so an impostor pool on an exotic chain can't win
+// (see compareDexMatchStrength). Returns a chainId or null when no provider can
+// place the address on any candidate chain — in which case we refuse rather than
+// guess a chain and fabricate a verdict on the wrong network.
+async function resolveChainForAddress(address, candidates) {
+  const allowed = new Set(candidates);
+  const matches = await fetchDexscreenerSearchMatches(address).catch(() => []);
+  const norm = address.toLowerCase();
+  // Matches arrive pre-sorted strongest-first; take the first whose base token
+  // is this exact address on one of the candidate chains.
+  const hit = matches.find(
+    (m) => m.address?.toLowerCase() === norm && allowed.has(m.chainId),
+  );
+  return hit?.chainId || null;
+}
+
+// The one entry point the UI uses for a pasted address. Auto-detects the chain
+// family (requirement 4), resolves the exact chain when needed, and dispatches
+// to the matching adapter path — Solana keeps its dedicated, unchanged lookup;
+// every other chain goes through the shared generic path. Throws an honest error
+// when the address matches no known format or cannot be placed on a chain.
+async function lookupTokenByAddress(rawAddress, report) {
+  const address = String(rawAddress || '').trim();
+  const detected = detectChain(address);
+  if (!detected) {
+    throw new Error('Unrecognized contract address. Paste a Solana, EVM (0x…), Sui, or Aptos address.');
+  }
+  if (detected.family === 'solana') {
+    return lookupSolanaToken(address, report);
+  }
+  // EVM or Move: narrow the family to a single chain via real liquidity.
+  const chainId = detected.resolved
+    ? detected.candidates[0]
+    : await resolveChainForAddress(address, detected.candidates);
+  if (!chainId) {
+    throw new Error('Could not determine which chain this token is on. It may have no public liquidity yet.');
+  }
+  return lookupGenericChainToken(chainId, address, report);
 }
 
 async function lookupGenericChainTokenUncached(chainId, address, report) {
@@ -3447,7 +3497,10 @@ function App() {
       return;
     }
 
-    if (looksLikeSolanaAddress(term)) {
+    // Any recognized contract address (Solana, EVM 0x…, Sui/Aptos) is scanned
+    // directly via auto-detection; Solana keeps its dedicated lookup inside
+    // lookupTokenByAddress, so this is a superset of the old Solana-only path.
+    if (detectChain(term)) {
       if (!(await guardScan())) {
         setSearchState({ status: 'idle', message: '' });
         return;
@@ -3458,7 +3511,7 @@ function App() {
       trackSearchEvent(term);
       growth.search(term);
       try {
-        const liveLookup = await lookupSolanaToken(term, report);
+        const liveLookup = await lookupTokenByAddress(term, report);
         const liveProject = runTrustEngine(liveLookup, report);
         setUserProjects((items) => upsertProject(items, liveProject));
         setSearchState({ status: 'success', message: t('search.successOpened', { name: liveProject.name || liveProject.ticker }) });
@@ -3513,7 +3566,10 @@ function App() {
     if (!term) {
       return { status: 'error', message: t('checkToken.errorEmpty') };
     }
-    if (!looksLikeSolanaAddress(term)) {
+    // Accept any recognized chain address (Solana, EVM, Sui/Aptos) — the chain
+    // is auto-detected inside lookupTokenByAddress. Only truly unrecognized
+    // input is rejected up front.
+    if (!detectChain(term)) {
       return { status: 'error', message: t('checkToken.errorInvalid') };
     }
 
@@ -3527,7 +3583,7 @@ function App() {
       trackTokenScanStarted(term);
       trackSearchEvent(term);
       growth.search(term);
-      const liveLookup = await lookupSolanaToken(term);
+      const liveLookup = await lookupTokenByAddress(term);
       const liveProject = normalizeProject(mergeStoredMetadata(liveLookup, findStoredProject(userProjects, liveLookup)));
       setUserProjects((items) => upsertProject(items, liveProject));
       trackTokenScanCompleted(term, 'success');

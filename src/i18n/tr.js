@@ -422,7 +422,7 @@ export default {
     submit: 'Tokeni Kontrol Et',
     seePricing: 'Fiyatlandırmaya Bak',
     errorEmpty: 'Önce bir Solana token kontrat adresi yapıştır.',
-    errorInvalid: 'Geçerli bir Solana token kontrat adresi gir, genellikle 32-48 base58 karakterdir.',
+    errorInvalid: 'Geçerli bir token adresi gir — bir Solana mint, bir EVM 0x… adresi (Ethereum, Base, BNB, Arbitrum, Optimism, Polygon) veya bir Sui/Aptos adresi.',
     successOpened: '{{name}} için ücretsiz risk raporu açıldı.',
     successCachedLive: 'Canlı arama kullanılamadı, bu nedenle KHAN Trust {{name}} için mevcut yetkili raporu açtı.',
     liveUnavailable: 'Canlı veriler şu anda kullanılamıyor. Lütfen kısa süre sonra tekrar deneyin.',

@@ -422,7 +422,7 @@ export default {
     submit: 'Проверить токен',
     seePricing: 'Смотреть тарифы',
     errorEmpty: 'Сначала вставьте адрес контракта токена Solana.',
-    errorInvalid: 'Введите корректный адрес контракта Solana, обычно 32-48 символов в base58.',
+    errorInvalid: 'Введите корректный адрес токена — mint Solana, EVM-адрес 0x… (Ethereum, Base, BNB, Arbitrum, Optimism, Polygon) или адрес Sui/Aptos.',
     successOpened: 'Открыт бесплатный отчёт о риске для {{name}}.',
     successCachedLive: 'Поиск в реальном времени был недоступен, поэтому KHAN Trust открыл существующий авторитетный отчёт для {{name}}.',
     liveUnavailable: 'Данные в реальном времени сейчас недоступны. Пожалуйста, повторите попытку позже.',

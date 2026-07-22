@@ -473,7 +473,7 @@ export default {
     submit: 'Check Token',
     seePricing: 'See Pricing',
     errorEmpty: 'Paste a Solana token contract address first.',
-    errorInvalid: 'Enter a valid Solana token contract address, usually 32-48 base58 characters.',
+    errorInvalid: 'Enter a valid token address — a Solana mint, an EVM 0x… address (Ethereum, Base, BNB, Arbitrum, Optimism, Polygon), or a Sui/Aptos address.',
     successOpened: 'Opened free risk report for {{name}}.',
     successCachedLive: 'Live lookup was unavailable, so KHAN Trust opened the existing authoritative report for {{name}}.',
     liveUnavailable: 'Live data is currently unavailable. Please try again shortly.',

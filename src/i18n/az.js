@@ -422,7 +422,7 @@ export default {
     submit: 'Tokeni Yoxla',
     seePricing: 'Qiymətlərə bax',
     errorEmpty: 'Əvvəlcə Solana token kontrakt ünvanını yapıştır.',
-    errorInvalid: 'Düzgün Solana token kontrakt ünvanı daxil et, adətən 32-48 base58 simvol olur.',
+    errorInvalid: 'Düzgün token ünvanı daxil et — Solana mint, EVM 0x… ünvanı (Ethereum, Base, BNB, Arbitrum, Optimism, Polygon) və ya Sui/Aptos ünvanı.',
     successOpened: '{{name}} üçün pulsuz risk hesabatı açıldı.',
     successCachedLive: 'Canlı axtarış əlçatan olmadı, ona görə KHAN Trust {{name}} üçün mövcud rəsmi hesabatı açdı.',
     liveUnavailable: 'Canlı məlumat hazırda əlçatan deyil. Zəhmət olmasa bir azdan yenidən cəhd edin.',

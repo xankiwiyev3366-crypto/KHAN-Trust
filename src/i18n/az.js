@@ -414,7 +414,7 @@ export default {
   checkToken: {
     eyebrow: 'Token yoxlayıcı',
     title: 'İstənilən Tokeni Yoxla',
-    description: 'Pulsuz KHAN Trust risk hesabatı yaratmaq üçün Solana token kontrakt ünvanını yapıştır. Canlı açıq API-lar əlçatan olmadıqda, yoxlayıcı demo risk məlumatından istifadə edir ki, hesabat strukturu sınaqdan keçirilə bilsin.',
+    description: 'Real zəncirüstü və bazar məlumatlarından pulsuz KHAN Trust risk hesabatı yaratmaq üçün Solana token kontrakt ünvanını yapıştır. Hər bal real məlumatdan hesablanır — canlı mənbələr əlçatan olmadıqda, KHAN Trust təxmin etmək əvəzinə bunu açıq şəkildə bildirir.',
     fieldLabel: 'Solana kontrakt ünvanı',
     placeholder: 'Token mint ünvanını yapıştır',
     checking: 'Token risk siqnalları yoxlanılır...',
@@ -425,7 +425,7 @@ export default {
     errorInvalid: 'Düzgün Solana token kontrakt ünvanı daxil et, adətən 32-48 base58 simvol olur.',
     successOpened: '{{name}} üçün pulsuz risk hesabatı açıldı.',
     successCachedLive: 'Canlı axtarış əlçatan olmadı, ona görə KHAN Trust {{name}} üçün mövcud rəsmi hesabatı açdı.',
-    successDemo: 'Canlı API məlumatı əlçatan olmadı, ona görə KHAN Trust demo risk hesabatı açdı.',
+    liveUnavailable: 'Canlı məlumat hazırda əlçatan deyil. Zəhmət olmasa bir azdan yenidən cəhd edin.',
   },
   search: {
     placeholder: 'Coin, token, layihə, şəbəkə və ya kontrakt ünvanı axtar',
@@ -530,7 +530,6 @@ export default {
   },
   riskReport: {
     checkAnother: 'Başqa token yoxla',
-    demoReport: 'Demo hesabat',
     freeReport: 'Pulsuz hesabat',
     title: 'Risk Hesabatı',
     on: '{{name}}, {{chain}} şəbəkəsində',
@@ -541,7 +540,6 @@ export default {
     trustScoreLabel: 'Trust Score',
     riskLevelLabel: 'Risk Səviyyəsi',
     dataModeLabel: 'Məlumat rejimi',
-    dataModeMock: 'Demo məlumat',
     dataModeLive: 'Canlı/açıq',
     confidenceScoreLabel: 'Etibarlılıq Xalı',
     signalCoverage: 'Siqnal əhatəsi: {{available}}/{{total}} məlumat nöqtəsi mövcuddur.',
@@ -2422,7 +2420,6 @@ export default {
       lowHolders: 'aşağı holder sayı',
       veryNewProject: 'çox yeni layihə',
       liveDataAvailable: 'Canlı Solana məlumatı mövcuddur. Açıq şəffaflıq siqnallarını nəzərdən keçirməyə davam et.',
-      demoFallback: 'Canlı açıq API-lar əlçatan olmadığı üçün demo risk məlumatı yaradıldı.',
     },
     riskFlags: { none: 'Əhəmiyyətli açıq risk bayrağı aşkar edilmədi' },
     confidence: { high: 'Yüksək etibarlılıq', medium: 'Orta etibarlılıq', limited: 'Məhdud məlumat' },

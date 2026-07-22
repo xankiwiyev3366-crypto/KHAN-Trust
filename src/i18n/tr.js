@@ -414,7 +414,7 @@ export default {
   checkToken: {
     eyebrow: 'Token kontrolcüsü',
     title: 'Herhangi Bir Tokeni Kontrol Et',
-    description: 'Ücretsiz bir KHAN Trust risk raporu oluşturmak için Solana token kontrat adresini yapıştır. Canlı genel API\'ler kullanılamıyorsa, kontrolcü rapor yapısının test edilebilir kalması için demo risk verisi kullanır.',
+    description: 'Gerçek zincir üstü ve piyasa verilerinden ücretsiz bir KHAN Trust risk raporu oluşturmak için Solana token kontrat adresini yapıştır. Her puan gerçek verilerden hesaplanır — canlı kaynaklar kullanılamıyorsa, KHAN Trust tahmin yürütmek yerine bunu açıkça bildirir.',
     fieldLabel: 'Solana kontrat adresi',
     placeholder: 'Token mint adresini yapıştır',
     checking: 'Token risk sinyalleri kontrol ediliyor...',
@@ -425,7 +425,7 @@ export default {
     errorInvalid: 'Geçerli bir Solana token kontrat adresi gir, genellikle 32-48 base58 karakterdir.',
     successOpened: '{{name}} için ücretsiz risk raporu açıldı.',
     successCachedLive: 'Canlı arama kullanılamadı, bu nedenle KHAN Trust {{name}} için mevcut yetkili raporu açtı.',
-    successDemo: 'Canlı API verisi kullanılamadı, bu nedenle KHAN Trust bir demo risk raporu açtı.',
+    liveUnavailable: 'Canlı veriler şu anda kullanılamıyor. Lütfen kısa süre sonra tekrar deneyin.',
   },
   search: {
     placeholder: 'Coin, token, proje, zincir veya kontrat adresi ara',
@@ -530,7 +530,6 @@ export default {
   },
   riskReport: {
     checkAnother: 'Başka bir token kontrol et',
-    demoReport: 'Demo rapor',
     freeReport: 'Ücretsiz rapor',
     title: 'Risk Raporu',
     on: '{{name}}, {{chain}} üzerinde',
@@ -541,7 +540,6 @@ export default {
     trustScoreLabel: 'Trust Score',
     riskLevelLabel: 'Risk Seviyesi',
     dataModeLabel: 'Veri modu',
-    dataModeMock: 'Demo veri',
     dataModeLive: 'Canlı/genel',
     confidenceScoreLabel: 'Güven Skoru',
     signalCoverage: 'Sinyal kapsamı: {{available}}/{{total}} veri noktası mevcut.',
@@ -2423,7 +2421,6 @@ export default {
       lowHolders: 'düşük holder sayısı',
       veryNewProject: 'çok yeni proje',
       liveDataAvailable: 'Canlı Solana verisi mevcut. Genel şeffaflık sinyallerini incelemeye devam et.',
-      demoFallback: 'Canlı genel API\'ler kullanılamadığı için demo risk verisi oluşturuldu.',
     },
     riskFlags: { none: 'Önemli bir genel risk bayrağı tespit edilmedi' },
     confidence: { high: 'Yüksek güven', medium: 'Orta güven', limited: 'Sınırlı veri' },

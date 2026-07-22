@@ -500,189 +500,6 @@ function mentionsKhan(term) {
   return normalizeSearchTerm(term).includes('khan');
 }
 
-const khanProject = {
-  id: 'khan-solana',
-  name: 'KHAN',
-  ticker: '$KHAN',
-  chain: 'Solana',
-  contract: 'Coming soon',
-  website: OFFICIAL_KHAN_LINKS.website,
-  twitter: OFFICIAL_KHAN_LINKS.x,
-  telegram: OFFICIAL_KHAN_LINKS.telegram,
-  github: 'https://github.com/khantrust',
-  launchDate: '2026-06-01',
-  description: 'Building a crypto trust ecosystem from zero with community-first project profiles and public risk signals.',
-  mission: 'Building a crypto trust ecosystem from zero.',
-  status: 'Early community',
-  lastUpdate: '2026-06-19',
-  trustScore: 74,
-  riskLevel: 'Medium',
-  founderStatus: 'Public mission, early founder activity',
-  communitySize: 1280,
-  holders: 0,
-  traders: 0,
-  activityStatus: 'Forming',
-  scoreBreakdown: {
-    founderActivity: 74,
-    communityActivity: 68,
-    roadmapClarity: 84,
-    transparency: 72,
-    tokenRisk: 58,
-    socialProof: 70,
-  },
-  riskFlags: ['Very new project', 'Low holders', 'Not verified'],
-  timeline: [
-    { label: 'X account created', date: '2026-06-01' },
-    { label: 'Telegram launched', date: '2026-06-04' },
-    { label: 'Website launched', date: '2026-06-12' },
-    { label: 'Roadmap published', date: '2026-06-16' },
-    { label: 'New update posted', date: '2026-06-19' },
-  ],
-  roadmap: [
-    { phase: 'Phase 1 - KHAN Community', status: 'In progress' },
-    { phase: 'Phase 2 - KHAN Trust Portal', status: 'Completed' },
-    { phase: 'Phase 3 - Project trust profiles', status: 'In progress' },
-    { phase: 'Phase 4 - Community proof tools', status: 'Planned' },
-    { phase: 'Phase 5 - AI-assisted project analysis', status: 'Planned' },
-  ],
-  riskNotes: 'Planned community/utility token. Users should review activity and public updates before forming opinions.',
-};
-
-const demoProjects = [
-  khanProject,
-  {
-    id: 'aurum-vault-eth',
-    name: 'Aurum Vault',
-    ticker: 'AVLT',
-    chain: 'Ethereum',
-    contract: '0x91f2...a8c0',
-    website: 'https://example.com/aurum-vault',
-    twitter: 'https://x.com/example',
-    telegram: 'https://t.me/example',
-    github: 'https://github.com/example/aurum-vault',
-    launchDate: '2025-11-08',
-    description: 'Example Ethereum DeFi project focused on vault transparency, public reports, and risk dashboards.',
-    status: 'Verified demo',
-    lastUpdate: '2026-06-17',
-    trustScore: 86,
-    riskLevel: 'Low',
-    founderStatus: 'Public operators',
-    communitySize: 18600,
-    holders: 12450,
-    traders: 3620,
-    activityStatus: 'Active',
-    scoreBreakdown: {
-      founderActivity: 88,
-      communityActivity: 82,
-      roadmapClarity: 90,
-      transparency: 91,
-      tokenRisk: 76,
-      socialProof: 84,
-    },
-    riskFlags: ['High concentration'],
-    timeline: [
-      { label: 'Website launched', date: '2025-10-21' },
-      { label: 'X account created', date: '2025-10-25' },
-      { label: 'Roadmap published', date: '2025-11-02' },
-      { label: 'Community milestone reached', date: '2026-02-11' },
-      { label: 'New update posted', date: '2026-06-17' },
-    ],
-    roadmap: [
-      { phase: 'Protocol dashboard', status: 'Completed' },
-      { phase: 'Vault reporting', status: 'Completed' },
-      { phase: 'Risk module expansion', status: 'In progress' },
-      { phase: 'DAO transparency hub', status: 'Planned' },
-    ],
-    riskNotes: 'Concentration should be monitored even with strong reporting signals.',
-  },
-  {
-    id: 'moonbark-bsc',
-    name: 'MoonBark',
-    ticker: 'MBRK',
-    chain: 'BSC',
-    contract: '0xb21d...77aa',
-    website: 'https://example.com/moonbark',
-    twitter: 'https://x.com/example',
-    telegram: 'https://t.me/example',
-    github: 'Not provided',
-    launchDate: '2026-05-28',
-    description: 'Example BSC meme project with early social traction but limited transparency and roadmap proof.',
-    status: 'Community watched',
-    lastUpdate: '2026-06-10',
-    trustScore: 39,
-    riskLevel: 'High',
-    founderStatus: 'Anonymous team',
-    communitySize: 9400,
-    holders: 730,
-    traders: 1180,
-    activityStatus: 'Unclear',
-    scoreBreakdown: {
-      founderActivity: 28,
-      communityActivity: 52,
-      roadmapClarity: 26,
-      transparency: 22,
-      tokenRisk: 31,
-      socialProof: 46,
-    },
-    riskFlags: ['Very new project', 'Anonymous team', 'No roadmap', 'Not verified', 'Weak community'],
-    timeline: [
-      { label: 'Telegram launched', date: '2026-05-25' },
-      { label: 'X account created', date: '2026-05-26' },
-      { label: 'Website launched', date: '2026-05-28' },
-      { label: 'New update posted', date: '2026-06-10' },
-    ],
-    roadmap: [
-      { phase: 'Community launch', status: 'Completed' },
-      { phase: 'Public roadmap', status: 'Planned' },
-      { phase: 'Team transparency update', status: 'Planned' },
-    ],
-    riskNotes: 'Demo example of a project that needs clearer founder and roadmap proof.',
-  },
-  {
-    id: 'creatorbase-base',
-    name: 'CreatorBase',
-    ticker: 'CRTB',
-    chain: 'Base',
-    contract: '0x2ca9...40de',
-    website: 'https://example.com/creatorbase',
-    twitter: 'https://x.com/example',
-    telegram: 'https://t.me/example',
-    github: 'https://github.com/example/creatorbase',
-    launchDate: '2026-02-19',
-    description: 'Example Base creator token with public creator updates, small holder base, and measured roadmap execution.',
-    status: 'Building',
-    lastUpdate: '2026-06-15',
-    trustScore: 67,
-    riskLevel: 'Medium',
-    founderStatus: 'Public creator',
-    communitySize: 5200,
-    holders: 1680,
-    traders: 810,
-    activityStatus: 'Active',
-    scoreBreakdown: {
-      founderActivity: 78,
-      communityActivity: 64,
-      roadmapClarity: 70,
-      transparency: 66,
-      tokenRisk: 55,
-      socialProof: 62,
-    },
-    riskFlags: ['Low holders', 'Very new project'],
-    timeline: [
-      { label: 'X account created', date: '2026-01-30' },
-      { label: 'Website launched', date: '2026-02-10' },
-      { label: 'Roadmap published', date: '2026-02-17' },
-      { label: 'Community milestone reached', date: '2026-05-02' },
-      { label: 'New update posted', date: '2026-06-15' },
-    ],
-    roadmap: [
-      { phase: 'Creator token launch', status: 'Completed' },
-      { phase: 'Community rewards', status: 'In progress' },
-      { phase: 'Creator proof dashboard', status: 'Planned' },
-    ],
-    riskNotes: 'Small but active community. Holder growth and update consistency matter.',
-  },
-];
 
 const navItems = [
   { id: 'home', label: 'Home', icon: Home },
@@ -1768,65 +1585,6 @@ async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel, report) {
   };
 }
 
-function createDemoRiskProject(contractAddress, reason = '') {
-  const address = contractAddress.trim();
-  const signal = address.split('').reduce((total, char) => total + char.charCodeAt(0), 0);
-  const holderCount = 120 + (signal % 8800);
-  const topHolderPercent = 12 + (signal % 34);
-  const topTenHolderPercent = clamp(topHolderPercent + 22 + (signal % 28), 28, 92);
-  const liquidityUsd = 3500 + ((signal * 97) % 180000);
-  const tokenAgeDays = 4 + (signal % 260);
-  const riskNotes = [
-    topHolderPercent > 35 ? 'high holder concentration' : '',
-    liquidityUsd < 50000 ? 'low liquidity' : '',
-    tokenAgeDays < 30 ? 'very new project' : '',
-    holderCount < 500 ? 'low holders' : '',
-  ].filter(Boolean).join(', ') || 'Demo risk data generated because live public APIs were unavailable.';
-
-  return {
-    id: `solana-demo-${slugify(address)}`,
-    name: `Solana Token ${address.slice(0, 4)}...${address.slice(-4)}`,
-    ticker: 'DEMO',
-    chain: 'Solana',
-    contract: address,
-    website: '',
-    twitter: '',
-    telegram: '',
-    github: '',
-    launchDate: new Date(Date.now() - tokenAgeDays * 86400000).toISOString().slice(0, 10),
-    description: 'Demo Solana token risk report generated with mock data while live API data is unavailable.',
-    status: 'Demo risk report',
-    lastUpdate: new Date().toISOString().slice(0, 10),
-    holderCount,
-    communitySize: holderCount,
-    founderStatus: 'Not provided',
-    roadmapText: '',
-    riskNotes,
-    realData: {
-      source: reason ? `Demo fallback: ${reason}` : 'Demo fallback risk model',
-      holderSource: 'Mock demo holder data',
-      liquidityUsd,
-      totalLiquidityUsd: liquidityUsd,
-      marketCapUsd: liquidityUsd * (18 + (signal % 34)),
-      tokenAgeDays,
-      holderCount,
-      topHolderPercent,
-      topTenHolderPercent,
-      holderGrowthPercent: null,
-      supply: 1000000000 + signal * 1000,
-      topAccountCount: 20,
-      poolCount: 1,
-      websiteUrl: '',
-      twitterUrl: '',
-      telegramUrl: '',
-      githubUrl: '',
-      socialMetadataAvailable: false,
-      fetchedAt: new Date().toISOString(),
-      isDemo: true,
-    },
-  };
-}
-
 async function fetchDexscreenerToken(address, chainId = 'solana') {
   const response = await fetch(`${DEXSCREENER_TOKEN_PAIRS_BASE_URL}/${chainId}/${address}`);
   if (!response.ok) throw new Error('Dexscreener lookup failed.');
@@ -2713,9 +2471,6 @@ function confidenceScore(project = {}) {
     socialPresenceState('telegram', project, data).state !== 'Data unavailable',
   ];
   const available = checks.filter(Boolean).length;
-  if (data.isDemo) {
-    return { label: translate('scoring.confidence.limited'), available, total: checks.length };
-  }
   if (available >= 7) return { label: translate('scoring.confidence.high'), available, total: checks.length };
   if (available >= 5) return { label: translate('scoring.confidence.medium'), available, total: checks.length };
   return { label: translate('scoring.confidence.limited'), available, total: checks.length };
@@ -3239,6 +2994,10 @@ function writeStorage(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+// Legacy purge: earlier builds could persist fabricated ("demo") reports to
+// localStorage when live APIs failed. That behaviour is gone — but we still
+// strip any such records on read/write so no user ever sees a stale fabricated
+// Trust Score. Live data unavailable now returns an honest error instead.
 function readProjectStorage() {
   return readStorage(PROJECTS_KEY, []).filter((project) => !project?.realData?.isDemo);
 }
@@ -3254,9 +3013,6 @@ function looksLikeSolanaAddress(value) {
 function upsertProject(items, project) {
   const normalizedContract = dedupableContract(project.contract);
   const existing = findStoredProject(items, project);
-  if (project.realData?.isDemo && existing?.realData && !existing.realData.isDemo) {
-    return [normalizeProject(existing), ...items.filter((item) => item !== existing)];
-  }
   const mergedProject = normalizeProject(mergeStoredMetadata(project, existing));
   const projectWithGrowth = applyHolderGrowth(mergedProject, existing);
   const withoutExisting = items.filter((item) => {
@@ -3741,6 +3497,9 @@ function App() {
       navigate(`report/${liveProject.id}`);
       return { status: 'success', message: t('checkToken.successOpened', { name: liveProject.name || liveProject.ticker }) };
     } catch (error) {
+      // Never fabricate a report. If we already hold a REAL (non-demo) cached
+      // scan for this token, show that; otherwise fail honestly. We never
+      // estimate, mock, or demo a Trust Score when live data is unavailable.
       const existing = findStoredProject(userProjects, { contract: term });
       if (existing?.realData && !existing.realData.isDemo) {
         const existingProject = normalizeProject(existing);
@@ -3750,11 +3509,8 @@ function App() {
         navigate(`report/${existingProject.id}`);
         return { status: 'success', message: t('checkToken.successCachedLive', { name: existingProject.name || existingProject.ticker }) };
       }
-      const demoProject = normalizeProject(createDemoRiskProject(term, error.message));
-      setUserProjects((items) => upsertProject(items, demoProject));
-      trackTokenScanCompleted(term, 'demo-fallback');
-      navigate(`report/${demoProject.id}`);
-      return { status: 'success', message: t('checkToken.successDemo') };
+      trackTokenScanCompleted(term, 'live-unavailable');
+      return { status: 'error', message: t('checkToken.liveUnavailable') };
     }
   };
 
@@ -5511,7 +5267,7 @@ function RiskReportPage({ project, navigate }) {
       <button className="back-button" onClick={() => navigate('home')}>{t('riskReport.checkAnother')}</button>
       <div className="report-hero detail-section">
         <div>
-          <span className="status-badge">{project.realData?.isDemo ? t('riskReport.demoReport') : t('riskReport.freeReport')}</span>
+          <span className="status-badge">{t('riskReport.freeReport')}</span>
           <h1>{t('riskReport.title')}</h1>
           <p>{project.name} on {project.chain}</p>
           <strong className="contract-line">{project.contract}</strong>
@@ -5547,7 +5303,7 @@ function RiskReportPage({ project, navigate }) {
               </div>
               <div>
                 <span>{t('riskReport.dataModeLabel')}</span>
-                <strong>{project.realData?.isDemo ? t('riskReport.dataModeMock') : t('riskReport.dataModeLive')}</strong>
+                <strong>{t('riskReport.dataModeLive')}</strong>
               </div>
               <div>
                 <span>{t('riskReport.confidenceScoreLabel')}</span>

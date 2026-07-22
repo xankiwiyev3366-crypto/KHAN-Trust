@@ -465,7 +465,7 @@ export default {
   checkToken: {
     eyebrow: 'Token checker',
     title: 'Check Any Token',
-    description: 'Paste a Solana token contract address to generate a free KHAN Trust risk report. If live public APIs are unavailable, the checker uses demo risk data so the report structure remains testable.',
+    description: 'Paste a Solana token contract address to generate a free KHAN Trust risk report from live on-chain and market data. Every score is computed from real data — if live sources are unavailable, KHAN Trust tells you plainly instead of estimating.',
     fieldLabel: 'Solana contract address',
     placeholder: 'Paste token mint address',
     checking: 'Checking token risk signals...',
@@ -476,7 +476,7 @@ export default {
     errorInvalid: 'Enter a valid Solana token contract address, usually 32-48 base58 characters.',
     successOpened: 'Opened free risk report for {{name}}.',
     successCachedLive: 'Live lookup was unavailable, so KHAN Trust opened the existing authoritative report for {{name}}.',
-    successDemo: 'Live API data was unavailable, so KHAN Trust opened a demo risk report.',
+    liveUnavailable: 'Live data is currently unavailable. Please try again shortly.',
   },
   search: {
     placeholder: 'Search coin, token, project, chain, or contract address',
@@ -598,7 +598,6 @@ export default {
   },
   riskReport: {
     checkAnother: 'Check another token',
-    demoReport: 'Demo report',
     freeReport: 'Free report',
     title: 'Risk Report',
     on: '{{name}} on {{chain}}',
@@ -609,7 +608,6 @@ export default {
     trustScoreLabel: 'Trust Score',
     riskLevelLabel: 'Risk Level',
     dataModeLabel: 'Data mode',
-    dataModeMock: 'Mock demo',
     dataModeLive: 'Live/public',
     confidenceScoreLabel: 'Confidence Score',
     signalCoverage: 'Signal coverage: {{available}}/{{total}} data points available.',
@@ -2730,7 +2728,6 @@ export default {
       lowHolders: 'low holders',
       veryNewProject: 'very new project',
       liveDataAvailable: 'Live Solana data available. Continue reviewing public transparency signals.',
-      demoFallback: 'Demo risk data generated because live public APIs were unavailable.',
     },
     riskFlags: { none: 'No major public risk flags detected' },
     confidence: { high: 'High confidence', medium: 'Medium confidence', limited: 'Limited data' },

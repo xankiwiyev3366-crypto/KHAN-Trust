@@ -14,7 +14,9 @@ const MAX_STR = 120;
 const VALID_RISK_LEVELS = new Set(['Low', 'Medium', 'High']);
 // Matches the two identity shapes historyKeyFor() produces in
 // src/scoreHistory.js: "c:<contract>" or "id:<projectId>".
-const IDENTITY_PATTERN = /^(c:[a-z0-9]{6,90}|id:[a-z0-9-]{3,80})$/i;
+// `c:<contract>` (Solana, backward compatible) or `c:<chainId>:<contract>`
+// (EVM/Move, chain-prefixed so the same address on two chains never collides).
+const IDENTITY_PATTERN = /^(c:([a-z0-9]+:)?[a-z0-9]{6,90}|id:[a-z0-9-]{3,80})$/i;
 
 function cleanStr(value, max = MAX_STR) {
   return String(value == null ? '' : value).replace(/<[^>]*>/g, '').trim().slice(0, max);

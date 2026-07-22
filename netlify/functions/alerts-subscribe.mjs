@@ -9,7 +9,9 @@ import { toggleToken, jsonResponse } from './_alertsStore.mjs';
 import { resolveUserTier, MAX_WATCHED_TOKENS } from './_watchTiers.mjs';
 import { requireFeature } from './_featureGate.mjs';
 
-const IDENTITY_PATTERN = /^(c:[a-z0-9]{6,90}|id:[a-z0-9-]{3,80})$/i;
+// `c:<contract>` (Solana, backward compatible) or `c:<chainId>:<contract>`
+// (EVM/Move, chain-prefixed so the same address on two chains never collides).
+const IDENTITY_PATTERN = /^(c:([a-z0-9]+:)?[a-z0-9]{6,90}|id:[a-z0-9-]{3,80})$/i;
 
 function cleanStr(value, max = 120) {
   return String(value == null ? '' : value).replace(/<[^>]*>/g, '').trim().slice(0, max);

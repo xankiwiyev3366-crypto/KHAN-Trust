@@ -60,7 +60,20 @@ const NO_CONTRACT_PLACEHOLDERS = new Set(['not provided', 'native asset (no cont
 
 export function historyKeyFor(project = {}) {
   const contract = String(project.contract || '').trim().toLowerCase();
-  if (contract && !NO_CONTRACT_PLACEHOLDERS.has(contract)) return `c:${contract}`;
+  if (contract && !NO_CONTRACT_PLACEHOLDERS.has(contract)) {
+    // Multi-chain safety: the SAME EVM/Move address can be deployed on many
+    // chains (0x… on Ethereum AND Base AND BSC …). Without the chain in the key
+    // their score history, watch snapshots and alerts would all collide onto one
+    // identity. Non-Solana chains therefore carry a `<chainId>:` prefix.
+    //
+    // Solana KEEPS the bare `c:<addr>` key it has always used: its base58 mints
+    // are globally unique so they never collide, and preserving the exact format
+    // keeps every pre-multichain Solana history/watch record intact (backward
+    // compatibility — requirement 8).
+    const chainId = project.chainId;
+    if (chainId && chainId !== 'solana') return `c:${chainId}:${contract}`;
+    return `c:${contract}`;
+  }
   return project.id ? `id:${project.id}` : '';
 }
 

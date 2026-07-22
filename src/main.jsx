@@ -7069,7 +7069,7 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
           <RiskFlags flags={project.riskFlags} />
           <Timeline items={project.timeline} />
           <Roadmap phases={project.roadmap} />
-          <ShareReady project={project} />
+          <TrustCardShare project={project} />
           <KhanTokenRole navigate={navigate} />
           <FutureFoundationSection />
         </div>

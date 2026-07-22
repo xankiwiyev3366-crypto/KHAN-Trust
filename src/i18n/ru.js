@@ -549,6 +549,12 @@ export default {
     factorsTitle: 'Объяснение реальных сигналов Solana',
   },
 
+  chains: {
+    notSupported: 'Не поддерживается в этой сети',
+    viewOnExplorer: 'Открыть в {{explorer}}',
+    detected: 'Обнаруженная сеть',
+    holdersUnsupported: 'Ончейн-распределение держателей пока недоступно в этой сети, поэтому KHAN Trust не показывает его, а не оценивает.',
+  },
   clusterMap: {
     eyebrow: 'Аналитика держателей',
     title: 'Карта кластеров держателей',

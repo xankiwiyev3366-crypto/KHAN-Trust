@@ -549,6 +549,12 @@ export default {
     factorsTitle: 'Gerçek Solana Sinyal Açıklamaları',
   },
 
+  chains: {
+    notSupported: 'Bu zincirde desteklenmiyor',
+    viewOnExplorer: '{{explorer}} üzerinde görüntüle',
+    detected: 'Algılanan zincir',
+    holdersUnsupported: 'Zincir üstü sahip dağılımı bu zincirde henüz mevcut değil, bu nedenle KHAN Trust tahmin etmek yerine göstermez.',
+  },
   clusterMap: {
     eyebrow: 'Holder istihbaratı',
     title: 'Holder Küme Haritası',

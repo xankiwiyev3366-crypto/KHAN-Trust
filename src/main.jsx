@@ -214,7 +214,7 @@ import {
 } from './trustCard.js';
 import HolderClusterMap from './HolderClusterMap.jsx';
 import { detectChain } from './chains/detect.js';
-import { getChain, chainSupports, explorerTokenUrl as chainExplorerTokenUrl, CHAINS } from './chains/registry.js';
+import { getChain, chainSupports, explorerTokenUrl as chainExplorerTokenUrl } from './chains/registry.js';
 import { buildInvestmentThesis } from './investmentThesis.js';
 import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction, submitBulkPremiumAction, fetchUserActivity, fetchUserActivityDetail } from './premiumAdmin.js';
 import { recordWalletLink } from './walletLink.js';
@@ -559,6 +559,12 @@ function normalizeProject(input) {
     name: input.name || 'Untitled Project',
     ticker: input.ticker || 'N/A',
     chain: input.chain || 'Unknown',
+    // Canonical chain id (registry key) for chain-aware UI: badge, explorer
+    // links, and capability gating. Preserved from the lookup; for legacy
+    // stored projects it is derived from the id prefix (`${chainId}-slug`),
+    // which is safe because no chain id contains a hyphen. Solana stays the
+    // default so pre-multichain records keep working unchanged.
+    chainId: input.chainId || (typeof input.id === 'string' && input.id.includes('-') ? input.id.split('-')[0] : 'solana'),
     contract: input.contract || 'Not provided',
     website: firstPresent(input.website, realData?.websiteUrl) || 'Not provided',
     twitter: firstPresent(input.twitter, realData?.twitterUrl) || 'Not provided',
@@ -1087,6 +1093,7 @@ async function lookupSolanaTokenUncached(address, report) {
 
   return {
     id: `solana-${slugify(address)}`,
+    chainId: 'solana',
     name: token.name || jupiter?.name || geckoTerminal?.name || coingecko?.name || '',
     ticker: token.symbol ? token.symbol.toUpperCase() : (jupiter?.symbol?.toUpperCase() || geckoTerminal?.symbol?.toUpperCase() || coingecko?.symbol || ''),
     chain: 'Solana',
@@ -1425,6 +1432,7 @@ async function lookupGenericChainTokenUncached(chainId, address, report) {
 
   return {
     id: `${chainId}-${slugify(address)}`,
+    chainId,
     name,
     ticker: token.symbol ? token.symbol.toUpperCase() : (geckoTerminal?.symbol?.toUpperCase() || coingecko?.symbol || ''),
     chain: chainLabel,
@@ -5465,6 +5473,52 @@ function TrustCardShare({ project }) {
   );
 }
 
+// ── Multi-chain UI (requirement 7) ────────────────────────────────────────────
+// The detected network, as a coloured badge. Uses the registry's brand colour
+// so each chain is recognisable at a glance; falls back to a neutral chip and
+// the plain label for anything not in the registry (e.g. a native coin).
+function ChainBadge({ chainId, label }) {
+  const chain = chainId ? getChain(chainId) : null;
+  const text = chain?.label || label || 'Unknown';
+  const color = chain?.color || 'var(--gold)';
+  return (
+    <span className="chain-badge" style={{ '--chain-color': color }} title={text}>
+      <span className="chain-badge-dot" style={{ background: color }} />
+      {text}
+    </span>
+  );
+}
+
+// A chain-specific block-explorer link for the token (requirement 7). Rendered
+// only when the registry can build a real URL for this chain; never a dead or
+// wrong-explorer link.
+function ChainExplorerLink({ project }) {
+  const { t } = useTranslation();
+  const chain = project.chainId ? getChain(project.chainId) : null;
+  const url = chain && project.contract && !['Not provided', 'Not available'].includes(project.contract)
+    ? chainExplorerTokenUrl(project.chainId, project.contract)
+    : null;
+  if (!url) return null;
+  return (
+    <a className="chain-explorer-link" href={url} target="_blank" rel="noopener noreferrer">
+      <ExternalLink size={14} /> {t('chains.viewOnExplorer', { explorer: chain.explorerName })}
+    </a>
+  );
+}
+
+// Renders "Not supported on this chain" (requirement 5) when a metric the report
+// wants to show is genuinely unavailable on the token's chain. `children` is the
+// real UI shown when the chain DOES support the metric. This is how the product
+// stays honest instead of rendering a fabricated 0/Unknown for, e.g., holder
+// data on Sui or Aptos.
+function ChainMetric({ chainId, capability, children }) {
+  const { t } = useTranslation();
+  if (chainId && !chainSupports(chainId, capability)) {
+    return <p className="chain-unsupported inline-note">{t('chains.notSupported')}</p>;
+  }
+  return children;
+}
+
 function RiskReportPage({ project, navigate }) {
   const { t } = useTranslation();
   const { gate } = useAuth();
@@ -5484,8 +5538,14 @@ function RiskReportPage({ project, navigate }) {
         <div>
           <span className="status-badge">{t('riskReport.freeReport')}</span>
           <h1>{t('riskReport.title')}</h1>
-          <p>{project.name} on {project.chain}</p>
-          <strong className="contract-line">{project.contract}</strong>
+          <p className="report-hero-chainline">
+            {project.name}
+            <ChainBadge chainId={project.chainId} label={project.chain} />
+          </p>
+          <div className="contract-line-row">
+            <strong className="contract-line">{project.contract}</strong>
+            <ChainExplorerLink project={project} />
+          </div>
         </div>
         <div className="report-score">
           <ScoreCircle score={project.trustScore} size="large" />
@@ -5776,6 +5836,16 @@ function ResearchList({ items, tone = 'neutral' }) {
 function HolderClusterCard({ project, navigate }) {
   const { t } = useTranslation();
   const holders = project.realData?.topHolders;
+  // On a chain with no public holder-distribution source (Sui, Aptos today),
+  // say so explicitly rather than vanish or fabricate — requirement 5.
+  if (project.chainId && !chainSupports(project.chainId, 'topHolders')) {
+    return (
+      <section className="detail-section holder-cluster-section">
+        <SectionTitle icon={Users} eyebrow={t('clusterMap.eyebrow')} title={t('clusterMap.title')} />
+        <p className="chain-unsupported inline-note">{t('chains.notSupported')} — {t('chains.holdersUnsupported')}</p>
+      </section>
+    );
+  }
   if (!Array.isArray(holders) || !holders.length) return null;
   return (
     <section className="detail-section holder-cluster-section">

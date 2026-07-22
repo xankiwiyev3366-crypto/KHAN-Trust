@@ -487,6 +487,12 @@ export default {
     errorNone: 'No live Solana token data was found.',
     verified: 'Verified',
   },
+  chains: {
+    notSupported: 'Not supported on this chain',
+    viewOnExplorer: 'View on {{explorer}}',
+    detected: 'Detected chain',
+    holdersUnsupported: 'On-chain holder distribution is not available on this chain yet, so KHAN Trust does not show it rather than estimate it.',
+  },
   clusterMap: {
     eyebrow: 'Holder intelligence',
     title: 'Holder Cluster Map',

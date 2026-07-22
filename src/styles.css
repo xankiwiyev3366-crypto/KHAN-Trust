@@ -11468,3 +11468,25 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
   border-left: 2px solid var(--border); padding-left: 12px; margin-top: 4px;
 }
 .cluster-empty { padding: 24px; text-align: center; }
+
+/* ── Multi-chain UI (requirement 7) ────────────────────────────────────────── */
+.report-hero-chainline { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.chain-badge {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 3px 11px 3px 9px; border-radius: 999px;
+  font-size: 0.8rem; font-weight: 600; line-height: 1;
+  color: var(--text);
+  background: color-mix(in srgb, var(--chain-color) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chain-color) 45%, transparent);
+}
+.chain-badge-dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 8px var(--chain-color); }
+.contract-line-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 4px; }
+.chain-explorer-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 0.82rem; color: var(--gold); text-decoration: none;
+}
+.chain-explorer-link:hover { text-decoration: underline; }
+.chain-unsupported {
+  color: var(--muted); font-style: italic;
+  border-left: 2px solid var(--border); padding-left: 12px;
+}

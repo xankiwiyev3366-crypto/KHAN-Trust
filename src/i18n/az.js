@@ -549,6 +549,12 @@ export default {
     factorsTitle: 'Real Solana Siqnal İzahları',
   },
 
+  chains: {
+    notSupported: 'Bu şəbəkədə dəstəklənmir',
+    viewOnExplorer: '{{explorer}} üzərində bax',
+    detected: 'Aşkarlanan şəbəkə',
+    holdersUnsupported: 'Zəncirüstü sahib bölgüsü bu şəbəkədə hələ mövcud deyil, ona görə KHAN Trust təxmin etmək əvəzinə onu göstərmir.',
+  },
   clusterMap: {
     eyebrow: 'Holder kəşfiyyatı',
     title: 'Holder Klaster Xəritəsi',

@@ -204,14 +204,19 @@ import { planUsdAmount, PLAN_USD_AMOUNT } from './lib/pricing.js';
 import { fetchEntitlement, fetchAccountEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
 import { buildAdvancedResearch, buildPremiumAnalysis, buildLocalizedRiskSummary, friendlyMissingFields } from './premiumResearch.js';
 import { useGroundedAnalysis, mergeAnalysis } from './groundedAnalysis.js';
+import { renderTrustCard } from './trustCard.js';
 import {
-  renderTrustCard,
-  canvasToBlob,
-  downloadCanvas,
-  trustCardShareUrl,
-  xShareUrl,
-  telegramShareUrl,
-} from './trustCard.js';
+  reportShareUrl,
+  buildShareText as buildCardShareText,
+  xIntentUrl,
+  telegramIntentUrl,
+  copyText as copyTextToClipboard,
+  openIntent,
+  downloadCardPng,
+  shareCardImage,
+  isMobile as isMobileDevice,
+  DEFAULT_HASHTAGS,
+} from './shareApi.js';
 import HolderClusterMap from './HolderClusterMap.jsx';
 import { detectChain } from './chains/detect.js';
 import { getChain, chainSupports, explorerTokenUrl as chainExplorerTokenUrl } from './chains/registry.js';
@@ -5359,35 +5364,64 @@ function TokenAlertToggle({ project }) {
 // computed project (see trustCard.js) — it never invents a number, and a logo
 // is drawn only when it loads CORS-clean. Available to every user on every
 // completed scan: the card is a distribution loop, not a paid feature.
+// The security verdict shown on the card + report: a short, grounded phrase
+// derived only from the deterministic scam-risk level. Never a new judgement.
+function securityVerdictFor(project, t) {
+  const level = String(project.scamRisk?.level || '').toLowerCase();
+  if (level === 'high') return { text: t('trustCard.verdict.highRisk'), color: '#ff756e' };
+  if (level === 'medium') return { text: t('trustCard.verdict.caution'), color: '#f7be52' };
+  if (level === 'low') return { text: t('trustCard.verdict.clear'), color: '#67d39c' };
+  return { text: t('trustCard.verdict.unknown'), color: '#aaa28d' };
+}
+
 function TrustCardShare({ project }) {
   const { t, language } = useTranslation();
   const [preview, setPreview] = useState('');
   const [status, setStatus] = useState('idle'); // idle | rendering | ready | error
-  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(''); // which action is in flight (prevents double-clicks)
+  const [feedback, setFeedback] = useState(null); // { type: 'success'|'error', message }
   const canvasRef = useRef(null);
+  const feedbackTimer = useRef(null);
 
-  const shareUrl = trustCardShareUrl(project);
-  const shareText = t('trustCard.shareText', {
+  const shareUrl = reportShareUrl(project);
+  const shareText = buildCardShareText({
     name: project.name || project.ticker || 'this token',
-    score: Math.round(Number(project.trustScore) || 0),
+    score: project.trustScore,
+    template: t('trustCard.shareText'),
   });
+  const hashtags = [...DEFAULT_HASHTAGS, project.ticker].filter(Boolean);
+
+  const toast = (type, message) => {
+    setFeedback({ type, message });
+    window.clearTimeout(feedbackTimer.current);
+    feedbackTimer.current = window.setTimeout(() => setFeedback(null), 2600);
+  };
+  useEffect(() => () => window.clearTimeout(feedbackTimer.current), []);
 
   useEffect(() => {
     let cancelled = false;
     setStatus('rendering');
     setPreview('');
+    const verdict = securityVerdictFor(project, t);
+    const chainMeta = project.chainId ? getChain(project.chainId) : null;
     const labels = {
       trustScore: t('trustCard.trustScore'),
       riskLevel: t('trustCard.riskLevel'),
       riskLevelValue: translateRiskLevel(project.riskLevel),
-      scamProbability: t('trustCard.scamProbability'),
+      holderRisk: t('trustCard.holderRisk'),
       liquidity: t('trustCard.liquidity'),
-      holders: t('trustCard.holders'),
-      verifiedStatus: t('trustCard.status'),
+      marketCap: t('trustCard.marketCap'),
+      scamProbability: t('trustCard.scamProbability'),
+      securityLabel: t('trustCard.securityLabel'),
+      securityVerdict: verdict.text,
+      securityColor: verdict.color,
       verified: t('common.verifiedShort'),
       unverified: t('common.unverifiedShort'),
       isVerified: normalizeVerificationStatus(project.verificationStatus) === VERIFICATION_STATUS.VERIFIED,
+      chainLabel: chainMeta?.label || project.chain || null,
+      chainColor: chainMeta?.color || null,
       tagline: t('header.tagline'),
+      url: shareUrl,
       timestamp: `${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`,
     };
     renderTrustCard(project, labels)
@@ -5401,40 +5435,55 @@ function TrustCardShare({ project }) {
         if (!cancelled) setStatus('error');
       });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project.id, project.trustScore, language]);
 
-  const onDownload = () => {
-    if (!canvasRef.current) return;
-    const slug = slugify(project.ticker || project.name || 'token');
-    downloadCanvas(canvasRef.current, `khan-trust-${slug}.png`);
+  const onDownload = async () => {
+    if (status !== 'ready' || !canvasRef.current || busy) return;
+    setBusy('download');
+    try {
+      const slug = slugify(project.ticker || project.name || 'token');
+      await downloadCardPng(canvasRef.current, `khan-trust-${slug}.png`);
+      toast('success', t('trustCard.toast.downloaded'));
+    } catch {
+      toast('error', t('trustCard.toast.downloadError'));
+    } finally {
+      setBusy('');
+    }
   };
 
   const onCopyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      setCopied(false);
-    }
+    if (busy) return;
+    setBusy('copyLink');
+    const res = await copyTextToClipboard(shareUrl);
+    toast(res.ok ? 'success' : 'error', res.ok ? t('trustCard.toast.linkCopied') : t('trustCard.toast.copyError'));
+    setBusy('');
   };
 
-  // Native share with the actual image where supported (mobile), else fall back
-  // to opening the X/Telegram intent with the token URL + text.
-  const onNativeShare = async () => {
-    if (!canvasRef.current || !navigator.share) return false;
-    try {
-      const blob = await canvasToBlob(canvasRef.current);
-      const file = new File([blob], 'khan-trust-card.png', { type: 'image/png' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], text: shareText, url: shareUrl });
-        return true;
-      }
-      await navigator.share({ text: shareText, url: shareUrl });
-      return true;
-    } catch {
-      return false;
+  const onCopyText = async () => {
+    if (busy) return;
+    setBusy('copyText');
+    const res = await copyTextToClipboard(`${shareText} ${shareUrl}`);
+    toast(res.ok ? 'success' : 'error', res.ok ? t('trustCard.toast.textCopied') : t('trustCard.toast.copyError'));
+    setBusy('');
+  };
+
+  const onShareX = async () => {
+    if (busy) return;
+    setBusy('x');
+    // On mobile, prefer the OS share sheet with the actual image; fall back to
+    // the X web intent when it isn't available or the user dismisses it.
+    let handled = false;
+    if (isMobileDevice()) {
+      handled = await shareCardImage({ canvas: canvasRef.current, text: shareText, url: shareUrl });
     }
+    if (!handled) openIntent(xIntentUrl({ text: shareText, url: shareUrl, hashtags }));
+    setBusy('');
+  };
+
+  const onShareTelegram = () => {
+    if (busy) return;
+    openIntent(telegramIntentUrl({ text: shareText, url: shareUrl }));
   };
 
   return (
@@ -5449,26 +5498,27 @@ function TrustCardShare({ project }) {
             : <div className="trust-card-skeleton" aria-hidden="true">{t('trustCard.rendering')}</div>}
       </div>
       <div className="trust-card-actions">
-        <a
-          className="secondary-button"
-          href={xShareUrl(shareText, shareUrl)}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => { if (navigator.share) { e.preventDefault(); onNativeShare().then((ok) => { if (!ok) window.open(xShareUrl(shareText, shareUrl), '_blank', 'noopener'); }); } }}
-        >
+        <button className="secondary-button" type="button" onClick={onShareX} disabled={busy === 'x'}>
           <Share2 size={16} /> {t('trustCard.shareX')}
-        </a>
-        <a className="secondary-button" href={telegramShareUrl(shareText, shareUrl)} target="_blank" rel="noopener noreferrer">
-          <Send size={16} /> {t('trustCard.shareTelegram')}
-        </a>
-        <button className="secondary-button" type="button" onClick={onDownload} disabled={status !== 'ready'}>
-          <Download size={16} /> {t('trustCard.download')}
         </button>
-        <button className="secondary-button" type="button" onClick={onCopyLink}>
-          <Link2 size={16} /> {copied ? t('common.copied') : t('trustCard.copyLink')}
+        <button className="secondary-button" type="button" onClick={onShareTelegram}>
+          <Send size={16} /> {t('trustCard.shareTelegram')}
+        </button>
+        <button className="secondary-button" type="button" onClick={onDownload} disabled={status !== 'ready' || busy === 'download'}>
+          <Download size={16} /> {busy === 'download' ? t('trustCard.downloading') : t('trustCard.download')}
+        </button>
+        <button className="secondary-button" type="button" onClick={onCopyLink} disabled={busy === 'copyLink'}>
+          <Link2 size={16} /> {t('trustCard.copyLink')}
+        </button>
+        <button className="secondary-button" type="button" onClick={onCopyText} disabled={busy === 'copyText'}>
+          <Copy size={16} /> {t('trustCard.copyText')}
         </button>
       </div>
-      <small className="trust-card-hint">{t('trustCard.attachHint')}</small>
+      <div className="trust-card-feedback-row" aria-live="polite">
+        {feedback
+          ? <span className={`trust-card-feedback ${feedback.type}`}>{feedback.message}</span>
+          : <small className="trust-card-hint">{t('trustCard.attachHint')}</small>}
+      </div>
     </section>
   );
 }

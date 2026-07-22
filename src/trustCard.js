@@ -35,17 +35,6 @@ const HEIGHT = 630;
 
 export const KHAN_WEBSITE = 'https://khantrust.net';
 
-// The public token page — the best share target because it renders an OG
-// preview and an "Open live report" CTA. Falls back to the site root when the
-// project has no usable contract.
-export function trustCardShareUrl(project = {}) {
-  const contract = project.contract;
-  const hasContract = contract && !['Not provided', 'Not available', 'Missing'].includes(contract);
-  return hasContract
-    ? `${KHAN_WEBSITE}/token/${encodeURIComponent(contract)}`
-    : KHAN_WEBSITE;
-}
-
 export function riskColor(level) {
   const l = String(level || '').toLowerCase();
   if (l === 'low') return BRAND.success;
@@ -215,13 +204,91 @@ function drawStatCell(ctx, x, y, w, label, value) {
   ctx.restore();
 }
 
+function clampScore(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+}
+
+function defaultTimestamp() {
+  return `${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+}
+
+// The resolved, display-ready values that go on the card, separated from the
+// pixel drawing so it is unit-testable without a DOM/canvas (see the card tests)
+// and so the exact same values are used by the preview and the exported PNG.
+// Every value comes from the computed project; a missing one becomes "—" or is
+// omitted, never invented — the same grounding doctrine as the scanner.
+export function buildCardModel(project = {}, labels = {}) {
+  const data = project.realData || {};
+  const scam = project.scamRisk || {};
+  const topPct = Number(data.topHolderPercent);
+  const holderRisk = Number.isFinite(topPct) && topPct > 0
+    ? `${Math.round(topPct)}%`
+    : (formatCount(data.holderCount ?? project.holders) || '—');
+  return {
+    name: String(project.name || labels.unknownToken || 'Unknown token').slice(0, 26),
+    ticker: project.ticker ? String(project.ticker).toUpperCase() : null,
+    chainLabel: labels.chainLabel || project.chain || null,
+    chainColor: labels.chainColor || BRAND.gold,
+    trustScore: clampScore(project.trustScore),
+    riskLevel: project.riskLevel || 'Medium',
+    riskText: labels.riskLevelValue || project.riskLevel || 'Medium',
+    holderRisk,
+    liquidity: formatUsdShort(data.totalLiquidityUsd ?? data.liquidityUsd) || '—',
+    marketCap: formatUsdShort(data.marketCapUsd) || '—',
+    scamProbability: Number.isFinite(Number(scam.riskScore)) ? `${Math.round(scam.riskScore)}%` : '—',
+    securityVerdict: labels.securityVerdict || null,
+    securityColor: labels.securityColor || BRAND.muted,
+    isVerified: Boolean(labels.isVerified),
+    timestamp: labels.timestamp || defaultTimestamp(),
+    url: labels.url || '',
+    logoUrl: data.logoUrl || project.logoUrl || null,
+  };
+}
+
+// A small coloured chain pill next to the token name (chain badge, spec 1).
+function drawChainBadge(ctx, x, y, label, color) {
+  ctx.save();
+  ctx.font = '700 22px Inter, system-ui, sans-serif';
+  const text = String(label).toUpperCase();
+  const dot = 9;
+  const padX = 16;
+  const w = ctx.measureText(text).width + padX * 2 + dot + 8;
+  const h = 38;
+  roundRect(ctx, x, y, w, h, h / 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.05)';
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = 0.6;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.beginPath();
+  ctx.arc(x + padX + dot / 2, y + h / 2, dot / 2, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.fillStyle = BRAND.text;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + padX + dot + 8, y + h / 2 + 1);
+  ctx.restore();
+  return w;
+}
+
 /**
  * Renders the Trust Card to an offscreen canvas at 2× and returns it.
  * `labels` supplies already-translated strings so the card matches the UI
- * language. Every value comes from the computed project; nothing is invented.
+ * language. Awaits font readiness first so text never renders with a
+ * fallback-then-swap flash, giving byte-stable output across browsers.
  */
 export async function renderTrustCard(project = {}, labels = {}) {
-  const data = project.realData || {};
+  const model = buildCardModel(project, labels);
+  // Ensure any web font is ready before measuring/drawing text — prevents the
+  // "wrong font, then correct font" swap that would make the PNG differ from the
+  // live preview. Resolves immediately when only system fonts are used.
+  if (typeof document !== 'undefined' && document.fonts?.ready) {
+    try { await document.fonts.ready; } catch { /* fonts API unavailable — proceed with system stack */ }
+  }
+
   const dpr = 2;
   const canvas = document.createElement('canvas');
   canvas.width = WIDTH * dpr;
@@ -251,32 +318,35 @@ export async function renderTrustCard(project = {}, labels = {}) {
 
   const padL = 64;
 
-  // Header: logo + name/ticker
-  const logo = await loadImageSafe(data.logoUrl);
+  // Header: logo + name/ticker + chain badge
+  const logo = await loadImageSafe(model.logoUrl);
   const logoSize = 84;
-  if (logo) drawLogoDisc(ctx, padL, 60, logoSize, logo);
-  else drawInitialsDisc(ctx, padL, 60, logoSize, project.ticker || project.name || '?');
+  if (logo) drawLogoDisc(ctx, padL, 52, logoSize, logo);
+  else drawInitialsDisc(ctx, padL, 52, logoSize, model.ticker || model.name || '?');
 
   const nameX = padL + logoSize + 24;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = BRAND.text;
-  ctx.font = '700 46px Inter, system-ui, sans-serif';
-  const name = String(project.name || 'Unknown token').slice(0, 26);
-  ctx.fillText(name, nameX, 98);
+  ctx.font = '700 44px Inter, system-ui, sans-serif';
+  ctx.fillText(model.name, nameX, 90);
   ctx.fillStyle = BRAND.muted;
-  ctx.font = '600 26px Inter, system-ui, sans-serif';
-  const sub = [project.ticker ? `$${project.ticker}` : null, project.chain].filter(Boolean).join('  ·  ');
-  ctx.fillText(sub, nameX, 134);
+  ctx.font = '600 25px Inter, system-ui, sans-serif';
+  const tickerText = model.ticker ? `$${model.ticker}` : '';
+  ctx.fillText(tickerText, nameX, 126);
+  if (model.chainLabel) {
+    const tickerW = tickerText ? ctx.measureText(tickerText).width + 18 : 0;
+    drawChainBadge(ctx, nameX + tickerW, 104, model.chainLabel, model.chainColor);
+  }
 
   // Verified badge (top-right) — only when actually verified.
-  if (labels.isVerified) {
+  if (model.isVerified) {
     ctx.save();
     ctx.font = '700 24px Inter, system-ui, sans-serif';
     const vText = labels.verified || 'Verified';
     const vW = ctx.measureText(vText).width + 60;
     const vX = WIDTH - padL - vW;
-    roundRect(ctx, vX, 66, vW, 44, 22);
+    roundRect(ctx, vX, 58, vW, 44, 22);
     ctx.fillStyle = 'rgba(103,211,156,0.12)';
     ctx.fill();
     ctx.strokeStyle = 'rgba(103,211,156,0.5)';
@@ -284,56 +354,82 @@ export async function renderTrustCard(project = {}, labels = {}) {
     ctx.stroke();
     ctx.fillStyle = BRAND.success;
     ctx.textBaseline = 'middle';
-    ctx.fillText('✓', vX + 20, 89);
-    ctx.fillText(vText, vX + 44, 89);
+    ctx.fillText('✓', vX + 20, 81);
+    ctx.fillText(vText, vX + 44, 81);
     ctx.restore();
   }
 
   // Score dial (left) + risk pill under it
-  const dialCx = padL + 110;
-  const dialCy = 330;
-  drawScoreDial(ctx, dialCx, dialCy, 96, project.trustScore);
+  const dialCx = padL + 108;
+  const dialCy = 300;
+  drawScoreDial(ctx, dialCx, dialCy, 92, model.trustScore);
   ctx.fillStyle = BRAND.muted;
   ctx.font = '600 24px Inter, system-ui, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(labels.trustScore || 'Trust Score', dialCx, dialCy + 118);
+  ctx.fillText(labels.trustScore || 'Trust Score', dialCx, dialCy + 114);
 
-  const riskLevel = project.riskLevel || 'Medium';
-  const riskText = labels.riskLevel ? `${labels.riskLevel}: ${labels.riskLevelValue || riskLevel}` : String(riskLevel);
-  drawPill(ctx, dialCx - 96, dialCy + 140, riskText, riskColor(riskLevel));
+  const riskText = labels.riskLevel ? `${labels.riskLevel}: ${model.riskText}` : String(model.riskText);
+  // Measure the pill width first (font matches drawPill's) so it can be centred
+  // under the dial without drawing a throwaway pill.
+  ctx.save();
+  ctx.font = '700 26px Inter, system-ui, sans-serif';
+  const pillW = ctx.measureText(riskText).width + 44;
+  ctx.restore();
+  drawPill(ctx, dialCx - pillW / 2, dialCy + 136, riskText, riskColor(model.riskLevel));
 
-  // Stat grid (right of dial): Scam Probability, Liquidity, Holders, Verified
+  // Stat grid (right of dial): Holder risk, Liquidity, Market cap, Scam prob.
   const gridX = padL + 300;
   const gridW = WIDTH - gridX - padL;
   const colW = (gridW - 24) / 2;
-  const scam = project.scamRisk || {};
-  const scamPct = Number.isFinite(Number(scam.riskScore)) ? `${Math.round(scam.riskScore)}%` : '—';
-  const liq = formatUsdShort(data.totalLiquidityUsd ?? data.liquidityUsd) || '—';
-  const holders = formatCount(data.holderCount ?? project.holders) || '—';
-  const verifiedVal = labels.isVerified ? (labels.verified || 'Verified') : (labels.unverified || 'Unverified');
-
-  const gy0 = 246;
+  const gy0 = 200;
   const gy1 = gy0 + 134;
-  drawStatCell(ctx, gridX, gy0, colW, labels.scamProbability || 'Scam Probability', scamPct);
-  drawStatCell(ctx, gridX + colW + 24, gy0, colW, labels.liquidity || 'Liquidity', liq);
-  drawStatCell(ctx, gridX, gy1, colW, labels.holders || 'Holders', holders);
-  drawStatCell(ctx, gridX + colW + 24, gy1, colW, labels.verifiedStatus || 'Status', verifiedVal);
+  drawStatCell(ctx, gridX, gy0, colW, labels.holderRisk || 'Holder risk', model.holderRisk);
+  drawStatCell(ctx, gridX + colW + 24, gy0, colW, labels.liquidity || 'Liquidity', model.liquidity);
+  drawStatCell(ctx, gridX, gy1, colW, labels.marketCap || 'Market cap', model.marketCap);
+  drawStatCell(ctx, gridX + colW + 24, gy1, colW, labels.scamProbability || 'Scam probability', model.scamProbability);
 
-  // Footer: brand + tagline (left), timestamp (right)
+  // Main security verdict — a full-width bar, coloured by risk (spec 1).
+  if (model.securityVerdict) {
+    const barY = 492;
+    const barW = WIDTH - padL * 2;
+    roundRect(ctx, padL, barY, barW, 52, 14);
+    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+    ctx.fill();
+    ctx.strokeStyle = model.securityColor;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.beginPath();
+    ctx.arc(padL + 26, barY + 26, 6, 0, Math.PI * 2);
+    ctx.fillStyle = model.securityColor;
+    ctx.fill();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = BRAND.text;
+    ctx.font = '600 24px Inter, system-ui, sans-serif';
+    ctx.fillText(`${labels.securityLabel || 'Security'}: ${model.securityVerdict}`, padL + 44, barY + 27);
+  }
+
+  // Footer: brand + tagline (left), URL + timestamp (right)
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = BRAND.gold;
   ctx.font = '800 30px Inter, system-ui, sans-serif';
-  ctx.fillText('KHAN Trust', padL, HEIGHT - 56);
+  ctx.fillText('KHAN Trust', padL, HEIGHT - 54);
   ctx.fillStyle = BRAND.muted;
   ctx.font = '600 22px Inter, system-ui, sans-serif';
-  ctx.fillText(labels.tagline || 'Trust before hype', padL, HEIGHT - 28);
+  ctx.fillText(labels.tagline || 'Trust before hype', padL, HEIGHT - 26);
 
-  const ts = labels.timestamp || new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
   ctx.textAlign = 'right';
+  if (model.url) {
+    ctx.fillStyle = BRAND.gold;
+    ctx.font = '600 22px Inter, system-ui, sans-serif';
+    ctx.fillText(model.url.replace(/^https?:\/\//, ''), WIDTH - padL, HEIGHT - 54);
+  }
   ctx.fillStyle = BRAND.muted;
   ctx.font = '600 22px Inter, system-ui, sans-serif';
-  ctx.fillText(ts, WIDTH - padL, HEIGHT - 28);
+  ctx.fillText(model.timestamp, WIDTH - padL, HEIGHT - 26);
 
   return canvas;
 }
@@ -347,22 +443,6 @@ export function canvasToBlob(canvas) {
   });
 }
 
-export function downloadCanvas(canvas, filename) {
-  const url = canvas.toDataURL('image/png');
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename || 'khan-trust-card.png';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-}
-
-export function xShareUrl(text, url) {
-  const params = new URLSearchParams({ text, url });
-  return `https://twitter.com/intent/tweet?${params.toString()}`;
-}
-
-export function telegramShareUrl(text, url) {
-  const params = new URLSearchParams({ url, text });
-  return `https://t.me/share/url?${params.toString()}`;
-}
+// The share-action helpers (copy, download, X/Telegram intents, native share)
+// live in src/shareApi.js — the single home for sharing logic (requirement 6).
+// This module stays focused on rendering the card + its data model.

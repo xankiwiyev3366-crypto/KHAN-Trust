@@ -11427,6 +11427,31 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
   text-decoration: none;
 }
 .trust-card-hint { color: var(--muted); font-size: 0.8rem; }
+.trust-card-feedback-row { min-height: 1.2em; display: flex; align-items: center; }
+.trust-card-feedback {
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: 999px;
+  animation: trust-card-feedback-in 0.18s ease;
+}
+.trust-card-feedback.success {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success) 40%, transparent);
+}
+.trust-card-feedback.error {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
+}
+@keyframes trust-card-feedback-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .trust-card-feedback { animation: none; }
+}
 @media (max-width: 560px) {
   .trust-card-actions .secondary-button { flex-basis: 100%; }
 }

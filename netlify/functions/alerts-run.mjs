@@ -33,6 +33,7 @@ import { listSubscriptions, saveSubscription } from './_alertsStore.mjs';
 import { getWatchSnapshot } from './_watchSnapshotStore.mjs';
 import { RESCAN_ENGINE_VERSION } from './_rescanEngine.mjs';
 import { sendEmail, isEmailConfigured } from './_email.mjs';
+import { sendTelegram, isTelegramConfigured } from './_telegram.mjs';
 import { addNotifications, riskAlertId } from './_notificationStore.mjs';
 import { changeReasonCodes, hasCriticalReason } from './_watchSignals.mjs';
 import { isComparableBaseline } from './_watchtowerBaseline.mjs';
@@ -176,6 +177,7 @@ export async function handler() {
     // would think to look for. Observation and baselining now always run; each
     // delivery channel opts in for itself.
     const emailReady = isEmailConfigured();
+    const telegramReady = isTelegramConfigured();
 
     const subscriptions = await listSubscriptions();
     let notified = 0;
@@ -258,6 +260,17 @@ export async function handler() {
             text: buildDigest(changes),
           });
           notified += 1;
+        }
+
+        // Telegram: a second push channel that opts in for itself. Only fires
+        // for a user who has linked a chat id AND when the bot is configured;
+        // otherwise silently skipped, exactly like email. Never blocks the
+        // in-app write above — that channel already succeeded unconditionally.
+        if (telegramReady && sub.telegramChatId) {
+          await sendTelegram({
+            chatId: sub.telegramChatId,
+            text: `⚠️ KHAN Trust alert\n${changes.length} watched token${changes.length > 1 ? 's' : ''} got riskier.\n\n${buildDigest(changes)}`,
+          });
         }
       }
 

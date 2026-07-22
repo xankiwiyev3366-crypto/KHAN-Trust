@@ -212,6 +212,7 @@ import {
   xShareUrl,
   telegramShareUrl,
 } from './trustCard.js';
+import HolderClusterMap from './HolderClusterMap.jsx';
 import { buildInvestmentThesis } from './investmentThesis.js';
 import { fetchMyManualPremium, fetchPremiumUsers, fetchPremiumAudit, submitPremiumAction, submitBulkPremiumAction, fetchUserActivity, fetchUserActivityDetail } from './premiumAdmin.js';
 import { recordWalletLink } from './walletLink.js';
@@ -1110,6 +1111,10 @@ async function lookupSolanaTokenUncached(address, report) {
       holderCount,
       topHolderPercent: holderAnalytics?.topHolderPercent ?? rpc?.topHolderPercent ?? goPlus?.topHolderPercent ?? null,
       topTenHolderPercent: holderAnalytics?.topTenHolderPercent ?? rpc?.topTenHolderPercent ?? jupiter?.topHoldersPercentage ?? goPlus?.topTenHolderPercent ?? null,
+      // Real observed top-holder distribution for the Holder Cluster Map. Prefer
+      // the fuller RPC token-account scan; fall back to largest-accounts. Never
+      // fabricated — null when no real distribution was observed.
+      topHolders: holderAnalytics?.topHolders ?? rpc?.topHolders ?? null,
       holderGrowthPercent: jupiter?.holderGrowthPercent ?? null,
       supply: rpc?.supply || jupiter?.totalSupply || geckoTerminal?.totalSupply || coingecko?.circulatingSupply || null,
       maxSupply: coingecko?.maxSupply ?? null,
@@ -2032,6 +2037,7 @@ async function fetchSolanaRpcToken(address) {
     topHolderPercent,
     topTenHolderPercent,
     topAccountCount: topAccounts.length,
+    topHolders: buildTopHolders(topAccounts, supply),
   };
 }
 
@@ -2055,6 +2061,7 @@ async function fetchSolanaHolderAnalytics(address) {
     holderCount: balances.length,
     topHolderPercent: supply ? roundPercent((balances[0] || 0) / supply) : null,
     topTenHolderPercent: supply ? roundPercent(balances.slice(0, 10).reduce((total, value) => total + value, 0) / supply) : null,
+    topHolders: buildTopHolders(balances.map((amount) => ({ uiAmount: amount })), supply),
     source: `Solana RPC token-account scan (${mintInfo.programId === 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb' ? 'Token-2022' : 'SPL Token'})`,
   };
 }
@@ -2987,6 +2994,30 @@ function shareText(project = {}, channel = 'x') {
 
 function roundPercent(ratio) {
   return Math.round(ratio * 10000) / 100;
+}
+
+// Builds the real top-holder distribution used by the Holder Cluster Map. Each
+// entry is a genuine observed balance as a percentage of supply — no synthetic
+// holders, no invented links. `accounts` is [{ uiAmount, address? }]. Returns
+// null when there is nothing real to draw, so the map stays honest about a gap.
+function buildTopHolders(accounts, supply, limit = 20) {
+  const total = Number(supply) || 0;
+  if (!total || !Array.isArray(accounts) || !accounts.length) return null;
+  const holders = accounts
+    .map((account) => ({
+      amount: Number(account.uiAmount ?? account.amount ?? 0),
+      address: account.address || account.owner || null,
+    }))
+    .filter((holder) => holder.amount > 0)
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, limit)
+    .map((holder, index) => ({
+      rank: index + 1,
+      pct: roundPercent(holder.amount / total),
+      address: holder.address,
+    }))
+    .filter((holder) => holder.pct > 0);
+  return holders.length ? holders : null;
 }
 
 function readStorage(key, fallback) {
@@ -5680,6 +5711,27 @@ function ResearchList({ items, tone = 'neutral' }) {
   );
 }
 
+// ── Premium feature: Holder Cluster Map (Task 4) ──────────────────────────────
+// BubbleMap-style view of the REAL observed top-holder distribution. Rendered
+// only when the scan actually observed a distribution — no empty premium tease
+// on tokens where we have no holder data. Free users get the teaser skeleton via
+// PremiumLock; the paid view is the interactive map (see HolderClusterMap.jsx),
+// which never fabricates a wallet relationship.
+function HolderClusterCard({ project, navigate }) {
+  const { t } = useTranslation();
+  const holders = project.realData?.topHolders;
+  if (!Array.isArray(holders) || !holders.length) return null;
+  return (
+    <section className="detail-section holder-cluster-section">
+      <SectionTitle icon={Users} eyebrow={t('clusterMap.eyebrow')} title={t('clusterMap.title')} />
+      <p className="inline-note">{t('clusterMap.subtitle')}</p>
+      <PremiumLock feature="holderClusterMap">
+        <HolderClusterMap project={project} />
+      </PremiumLock>
+    </section>
+  );
+}
+
 // ── Premium feature 1: Advanced AI Research ───────────────────────────────────
 // Premium-only deep dive built deterministically from the same data the free
 // analysis uses (see premiumResearch.js). Free users see an upgrade CTA.
@@ -6833,6 +6885,7 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
           <TrustBreakdown project={project} />
           {project.realData && <RealDataSection project={project} data={project.realData} />}
           <ScamRiskCard project={project} />
+          <HolderClusterCard project={project} navigate={navigate} />
           <DeepRiskAnalysisCard project={project} />
           <AdvancedResearchCard project={project} navigate={navigate} />
           <PremiumAnalysisCard project={project} navigate={navigate} />

@@ -549,6 +549,20 @@ export default {
     factorsTitle: 'Gerçek Solana Sinyal Açıklamaları',
   },
 
+  clusterMap: {
+    eyebrow: 'Holder istihbaratı',
+    title: 'Holder Küme Haritası',
+    subtitle: 'Gözlemlenen en büyük sahipler, arzdaki paylarına göre boyutlandırılmıştır. Baloncuklar kanıtlanmış cüzdan bağlantılarına göre değil, büyüklüğe göre gruplanır.',
+    noData: 'Bu token için en büyük sahip dağılımı gözlemlenmedi, bu nedenle küme haritası çizilemez.',
+    ariaLabel: 'En büyük token sahiplerinin baloncuk haritası',
+    zoomIn: 'Yakınlaştır',
+    zoomOut: 'Uzaklaştır',
+    tier: { whale: 'Balina', large: 'Büyük', mid: 'Orta', small: 'Küçük' },
+    topTenLine: 'İlk 10 sahip arzın %{{pct}} kadarını kontrol ediyor.',
+    coverageLine: 'Toplam {{total}} sahipten en büyük {{shown}} tanesi gösteriliyor.',
+    coverageLineNoTotal: 'Gözlemlenen en büyük {{shown}} sahip gösteriliyor.',
+    relationshipConfidence: 'Güven notu: baloncuklar gerçek zincir üstü bakiyelere göre boyutlandırılır. KHAN Trust cüzdanlar arasında bağlantı çizmez — iki cüzdanın ilişkili olduğunu kanıtlamak, kamuya açık kaynaklarda bulunmayan işlem grafiği verisi gerektirir; bu nedenle burada hiçbir ilişki ima edilmez veya uydurulmaz.',
+  },
   trustCard: {
     eyebrow: 'Paylaş',
     title: 'Trust Kartı',
@@ -605,6 +619,7 @@ export default {
     aiRecommendations: 'Yapay Zekâ Önerileri',
     investmentThesis: 'Yapay Zekâ Yatırım Tezi',
     holderAnalytics: 'Ayrıntılı Holder Analitiği',
+    holderClusterMap: 'Holder Küme Haritası',
     securityAnalysis: 'Ayrıntılı Güvenlik Analizi',
     scoreHistory: 'Trust Score Geçmişi',
     compareProjects: 'Projeleri Karşılaştır',

@@ -64,6 +64,7 @@ export const FEATURES = {
   aiRecommendations: { tier: 'premium', labelKey: 'features.aiRecommendations', teaser: true, group: 'analysis' },
   investmentThesis: { tier: 'premium', labelKey: 'features.investmentThesis', teaser: true, group: 'analysis' },
   holderAnalytics: { tier: 'premium', labelKey: 'features.holderAnalytics', teaser: true, group: 'holders' },
+  holderClusterMap: { tier: 'premium', labelKey: 'features.holderClusterMap', teaser: true, group: 'holders' },
   securityAnalysis: { tier: 'premium', labelKey: 'features.securityAnalysis', teaser: true, group: 'security' },
   scoreHistory: { tier: 'premium', labelKey: 'features.scoreHistory', teaser: true, group: 'monitoring' },
   compareProjects: { tier: 'premium', labelKey: 'features.compareProjects', teaser: true, group: 'tools' },

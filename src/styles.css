@@ -11430,3 +11430,41 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
 @media (max-width: 560px) {
   .trust-card-actions .secondary-button { flex-basis: 100%; }
 }
+
+/* ── Holder Cluster Map (Task 4) ───────────────────────────────────────────── */
+.holder-cluster-section .cluster-map { display: flex; flex-direction: column; gap: 12px; }
+.cluster-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.cluster-legend { display: flex; flex-wrap: wrap; gap: 14px; }
+.cluster-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--muted); }
+.cluster-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.cluster-zoom { display: inline-flex; gap: 6px; }
+.cluster-zoom button {
+  width: 34px; height: 34px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+  font-size: 1.2rem; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+}
+.cluster-zoom button:hover { border-color: var(--gold); }
+.cluster-canvas {
+  position: relative;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-soft);
+  background: radial-gradient(circle at 50% 40%, rgba(224,183,92,0.06), transparent 70%), var(--panel);
+  overflow: hidden;
+}
+.cluster-svg { width: 100%; height: auto; display: block; aspect-ratio: 1 / 1; }
+.cluster-bubble-label { fill: #050505; font-weight: 700; font-size: 15px; pointer-events: none; }
+.cluster-tooltip {
+  position: absolute; top: 12px; left: 12px;
+  background: rgba(5,5,5,0.9); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 12px; display: flex; flex-direction: column; gap: 3px;
+  pointer-events: none; backdrop-filter: blur(6px);
+}
+.cluster-tooltip strong { color: var(--text); font-size: 0.95rem; }
+.cluster-tooltip-tier { font-size: 0.78rem; font-weight: 600; }
+.cluster-tooltip-addr { font-size: 0.75rem; color: var(--muted); }
+.cluster-summary { display: flex; flex-direction: column; gap: 6px; }
+.cluster-confidence {
+  font-size: 0.78rem; color: var(--muted); line-height: 1.5;
+  border-left: 2px solid var(--border); padding-left: 12px; margin-top: 4px;
+}
+.cluster-empty { padding: 24px; text-align: center; }

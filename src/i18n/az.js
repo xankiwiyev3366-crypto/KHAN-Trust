@@ -549,6 +549,20 @@ export default {
     factorsTitle: 'Real Solana Siqnal İzahları',
   },
 
+  clusterMap: {
+    eyebrow: 'Holder kəşfiyyatı',
+    title: 'Holder Klaster Xəritəsi',
+    subtitle: 'Müşahidə olunan ən böyük sahiblər, tədarükdəki paylarına görə ölçülənib. Qabarcıqlar sübut olunmuş cüzdan əlaqələrinə görə deyil, böyüklüyə görə qruplaşdırılıb.',
+    noData: 'Bu token üçün ən böyük sahib bölgüsü müşahidə olunmadı, ona görə klaster xəritəsi çəkilə bilməz.',
+    ariaLabel: 'Ən böyük token sahiblərinin qabarcıq xəritəsi',
+    zoomIn: 'Yaxınlaşdır',
+    zoomOut: 'Uzaqlaşdır',
+    tier: { whale: 'Balina', large: 'Böyük', mid: 'Orta', small: 'Kiçik' },
+    topTenLine: 'İlk 10 sahib tədarükün {{pct}}%-ni idarə edir.',
+    coverageLine: 'Ümumi {{total}} sahibdən ən böyük {{shown}} göstərilir.',
+    coverageLineNoTotal: 'Müşahidə olunan ən böyük {{shown}} sahib göstərilir.',
+    relationshipConfidence: 'Etibar qeydi: qabarcıqlar real zəncirüstü balanslara görə ölçülür. KHAN Trust cüzdanlar arasında əlaqə çəkmir — iki cüzdanın əlaqəli olduğunu sübut etmək üçün ictimai mənbələrdə olmayan tranzaksiya qrafiki məlumatı lazımdır, ona görə burada heç bir əlaqə nəzərdə tutulmur və uydurulmur.',
+  },
   trustCard: {
     eyebrow: 'Paylaş',
     title: 'Trust Kartı',
@@ -605,6 +619,7 @@ export default {
     aiRecommendations: 'AI Tövsiyələri',
     investmentThesis: 'AI İnvestisiya Tezisi',
     holderAnalytics: 'Ətraflı Holder Analitikası',
+    holderClusterMap: 'Holder Klaster Xəritəsi',
     securityAnalysis: 'Ətraflı Təhlükəsizlik Analizi',
     scoreHistory: 'Trust Score Tarixçəsi',
     compareProjects: 'Layihələri Müqayisə Et',

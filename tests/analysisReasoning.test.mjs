@@ -10,7 +10,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { computeScoreDrivers, LIVE_SCORE_WEIGHTS, calculateLiveScores } from '../src/lib/trustScore.js';
-import { detectSignalConflicts, runRiskAnalysis } from '../src/scoringEngine.js';
+import {
+  detectSignalConflicts, runRiskAnalysis,
+  rankEvidence, weightForEvidenceKey, EVIDENCE_WEIGHTS,
+} from '../src/scoringEngine.js';
 import { buildFacts } from '../netlify/functions/_groundedAnalyst.mjs';
 import { rejectFabricatedFindings } from '../netlify/functions/_aiValidator.mjs';
 
@@ -167,6 +170,94 @@ test('a real citation — the actual concentration and volume ratio — survives
     ['text'],
   );
   assert.equal(kept.length, 1, 'figures that trace to the engine are allowed through');
+});
+
+// ── Evidence weighting: the analyst's attention budget ───────────────────────
+
+test('a live mint authority outweighs a missing social link', () => {
+  // The whole point of the five-tier weight: these are not the same order of
+  // concern, and the narrative must not treat them as equals.
+  assert.equal(weightForEvidenceKey('mintAuthorityEnabled'), 'critical');
+  assert.equal(weightForEvidenceKey('noPublicPresence'), 'medium');
+  assert.equal(weightForEvidenceKey('contractSecurityUnknown'), 'low');
+});
+
+test('an unclassified positive is weak by default; an unclassified risk is not trivialised', () => {
+  assert.equal(weightForEvidenceKey('somethingNew', 'positive'), 'low');
+  assert.equal(weightForEvidenceKey('somethingNew', 'negative'), 'medium');
+});
+
+test('rankEvidence splits bull/bear and orders each strongest-first', () => {
+  const { bull, bear } = rankEvidence({
+    positiveKeys: ['activePublicPresence', 'authoritiesDisabled'],
+    positiveTexts: ['Has public links', 'Mint and freeze disabled'],
+    riskKeys: ['shallowLiquidity', 'mintAuthorityEnabled'],
+    riskTexts: ['Liquidity is shallow', 'Mint authority is enabled'],
+    scamKeys: ['topHolderConcentration'],
+    scamTexts: ['Largest holder controls 61% of supply'],
+  });
+  // Bull: the loss-vector-removing signal outranks mere link presence.
+  assert.equal(bull[0].key, 'authoritiesDisabled');
+  assert.equal(bull[bull.length - 1].weight, 'low');
+  // Bear: two 'critical' items (mint authority, 61% holder) lead the shallow one.
+  assert.equal(bear[0].weight, 'critical');
+  assert.equal(bear[bear.length - 1].key, 'shallowLiquidity');
+});
+
+test('rankEvidence dedups a concern surfaced by two detectors', () => {
+  // The same text arriving from both the hidden-risk and scam lists is one
+  // piece of evidence, not two — otherwise the narrative double-counts it.
+  const { bear } = rankEvidence({
+    riskKeys: ['topTenCentralization'], riskTexts: ['Top 10 hold a majority'],
+    scamKeys: ['topTenConcentration'], scamTexts: ['Top 10 hold a majority'],
+  });
+  assert.equal(bear.length, 1);
+});
+
+test('every classified evidence weight is a real tier', () => {
+  const tiers = new Set(['critical', 'high', 'medium', 'low', 'noise']);
+  for (const [key, weight] of Object.entries(EVIDENCE_WEIGHTS)) {
+    assert.ok(tiers.has(weight), `${key} has an unknown tier ${weight}`);
+  }
+});
+
+// ── Score drivers: the single biggest lever ──────────────────────────────────
+
+test('computeScoreDrivers names the single most influential signal', () => {
+  const { biggest } = computeScoreDrivers({
+    topHolderScore: 12,   // 18 * -38 = -684 → dominant
+    liquidityScore: 84,   // 16 * +34 = +544
+  });
+  assert.equal(biggest.key, 'topHolderScore');
+  assert.equal(biggest.direction, 'negative');
+});
+
+// ── buildFacts surfaces the new reasoning layers ─────────────────────────────
+
+test('buildFacts carries the bull/bear ledger, the biggest lever, and a cap note', () => {
+  const facts = buildFacts({
+    ...concentrated,
+    positiveSignalKeys: ['tradedOverYear', 'coingeckoVerified'],
+    scamRiskReasonKeys: [{ key: 'mintAuthorityEnabled' }],
+    scamRiskReasons: ['Mint authority is still enabled'],
+    // Force the cap to bite so biggestInfluence must report the ceiling.
+    assetTypeRiskModifier: { label: 'New / unproven memecoin', cap: 35, rawScore: 61, adjustedScore: 35, capApplied: true, isSpeculative: true },
+  });
+  assert.ok(Array.isArray(facts.evidence.bull) && Array.isArray(facts.evidence.bear));
+  // The critical mint-authority evidence must lead the bear case.
+  assert.equal(facts.evidence.bear[0].weight, 'critical');
+  // When the cap bites, it is reported as the biggest influence, not a signal.
+  assert.match(facts.scoreDrivers.biggestInfluence, /ceiling/);
+  assert.equal(facts.scoreDrivers.cappedBy, 'New / unproven memecoin');
+});
+
+test('peerComparison is present only when the engine has enough peers', () => {
+  const withPeers = buildFacts({ ...concentrated, peerBenchmark: { category: 'DeFi', peerCount: 9, percentile: 30, median: 55, comparison: 'below' } });
+  assert.equal(withPeers.peerComparison.percentile, 30);
+  assert.equal(withPeers.peerComparison.comparison, 'below');
+  // No benchmark → no comparison, so the model cannot invent peers.
+  const withoutPeers = buildFacts(concentrated);
+  assert.equal(withoutPeers.peerComparison, null);
 });
 
 // ── The full engine still produces conflicts end-to-end ──────────────────────

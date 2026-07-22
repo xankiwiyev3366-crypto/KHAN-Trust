@@ -313,6 +313,113 @@ export function rankSignalsBySeverity(keys = []) {
     .sort((a, b) => order[a.severity] - order[b.severity]);
 }
 
+// ── Evidence weighting (analyst layer, NOT the UI) ────────────────────────────
+//
+// The UI's three-tier severity chip (above) is deliberately coarse. The analyst
+// prose, by contrast, should spend its attention in PROPORTION to how much each
+// piece of evidence actually moves a buyer's decision — a mint authority that
+// lets the deployer print unlimited supply is not the same order of concern as
+// a missing Telegram link. This five-tier weighting exists only to shape the
+// reasoning; it never renders a chip and never touches a score.
+//
+//   critical — a live loss vector or active manipulation (infinite mint, a
+//              majority holder, wash-traded volume, no exit liquidity).
+//   high     — a serious structural weakness (freeze authority, extreme
+//              volatility, deep top-10 centralisation, an upgradeable contract).
+//   medium   — a real but survivable concern (thin liquidity, a young token).
+//   low      — weak evidence worth a mention but not weight (mere link presence).
+//   noise    — cosmetic; the analyst is told to ignore it entirely.
+//
+// Keyed by the SAME stable signal keys the rest of the engine emits (hidden
+// risks, manipulation flags, scam reasons, and positive signals), so it is
+// language-independent and cannot drift from the detectors.
+export const EVIDENCE_WEIGHTS = {
+  // Negative — live loss vectors / active manipulation.
+  mintAuthorityEnabled: 'critical',
+  topHolderConcentration: 'critical',
+  noLiquidityFound: 'critical',
+  volumeLiquidityMismatch: 'critical',
+  extremeSwingThinLiquidity: 'critical',
+  newTokenPriceSpike: 'critical',
+  // Negative — serious structural weaknesses.
+  freezeAuthorityEnabled: 'high',
+  contractUpgradeable: 'high',
+  topTenConcentration: 'high',
+  topTenCentralization: 'high',
+  extremeVolatility: 'high',
+  extremelyLowLiquidity: 'high',
+  // Negative — real but survivable.
+  shallowLiquidity: 'medium',
+  volumeInconsistent: 'medium',
+  largestHolderModerate: 'medium',
+  veryNewProject: 'medium',
+  veryNewToken: 'medium',
+  noSocialPresence: 'medium',
+  noPublicPresence: 'medium',
+  // Negative — absence of confirmation, not a positive finding.
+  contractSecurityUnknown: 'low',
+
+  // Positive — removes a loss vector or proves resilience.
+  authoritiesDisabled: 'high',
+  deepLiquidity: 'high',
+  tradedOverYear: 'high',
+  wellDistributedSupply: 'high',
+  // Positive — supportive but not decisive.
+  coingeckoVerified: 'medium',
+  holderGrowth: 'medium',
+  stablePrice: 'medium',
+  // Positive — necessary hygiene, weak on its own.
+  activePublicPresence: 'low',
+};
+
+export const EVIDENCE_TIER_ORDER = { critical: 0, high: 1, medium: 2, low: 3, noise: 4 };
+
+// Weight for a positive key defaults to 'low' (a new positive is weak until
+// classified); a negative key defaults to 'medium' (a new risk is never
+// silently trivialised). `kind` disambiguates the default only.
+export function weightForEvidenceKey(key, kind = 'negative') {
+  return EVIDENCE_WEIGHTS[key] || (kind === 'positive' ? 'low' : 'medium');
+}
+
+// Turns the engine's raw signal lists into a single, impact-ranked evidence
+// ledger split into the BULL and BEAR case — the pre-work an analyst does before
+// writing a word. Each side is ordered strongest-first so the narrative can lead
+// with what matters and, per the "ignore cosmetic signals" rule, the model is
+// handed the weights it needs to do exactly that. Text + keys arrive parallel
+// from the detectors; dedup is on text so the same concern surfaced by two
+// detectors (e.g. a hidden-risk AND a scam reason) is weighed once.
+export function rankEvidence({
+  positiveKeys = [], positiveTexts = [],
+  riskKeys = [], riskTexts = [],
+  scamKeys = [], scamTexts = [],
+} = {}) {
+  const pack = (keys, texts, kind) => {
+    const seen = new Set();
+    const out = [];
+    const max = Math.max(keys.length, texts.length);
+    for (let i = 0; i < max; i += 1) {
+      const text = (texts[i] || '').trim();
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      out.push({ kind, key: keys[i] || null, text, weight: weightForEvidenceKey(keys[i], kind) });
+    }
+    return out;
+  };
+  const sort = (list) => list.sort((a, b) => EVIDENCE_TIER_ORDER[a.weight] - EVIDENCE_TIER_ORDER[b.weight]);
+
+  const bull = sort(pack(positiveKeys, positiveTexts, 'positive'));
+  // Bear pools hidden-risk signals and scam reasons, then dedups by text so an
+  // overlap between the two detectors is never double-counted in the narrative.
+  const bearRaw = [...pack(riskKeys, riskTexts, 'negative'), ...pack(scamKeys, scamTexts, 'negative')];
+  const bearSeen = new Set();
+  const bear = sort(bearRaw.filter((entry) => {
+    if (bearSeen.has(entry.text)) return false;
+    bearSeen.add(entry.text);
+    return true;
+  }));
+  return { bull, bear };
+}
+
 // Conflicting-signal detection — the part a generic summary misses. A real
 // analyst's value is not listing strengths and risks side by side; it is
 // noticing when they point in OPPOSITE directions and saying which one wins.

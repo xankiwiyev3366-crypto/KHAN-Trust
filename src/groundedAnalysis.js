@@ -43,7 +43,7 @@ function authToken() {
 // The subset of the computed project the analyst is shown. Sent explicitly
 // rather than posting the whole project so nothing incidental (stored notes,
 // UI state, other users' data merged into the object) can leave the browser.
-function analysisPayload(project = {}) {
+function analysisPayload(project = {}, peerBenchmark = null) {
   return {
     name: project.name,
     ticker: project.ticker,
@@ -58,26 +58,33 @@ function analysisPayload(project = {}) {
     communitySize: project.communitySize,
     positiveSignals: project.positiveSignals,
     hiddenRiskSignals: project.hiddenRiskSignals,
-    // Signal keys let the server rank risks by severity and re-detect conflicts
-    // without re-implementing the engine; the asset-type modifier lets it
-    // explain a capped score. All engine output, never model input.
+    // Signal keys let the server rank risks by severity, weight the evidence
+    // ledger, and re-detect conflicts without re-implementing the engine; the
+    // asset-type modifier lets it explain a capped score. All engine output,
+    // never model input.
     positiveSignalKeys: project.positiveSignalKeys,
     hiddenRiskSignalKeys: project.hiddenRiskSignalKeys,
     assetTypeRiskModifier: project.assetTypeRiskModifier,
     scamRiskReasons: project.scamRisk?.reasons,
+    // Reason keys (not just English text) so the server can weight scam findings
+    // in the evidence ledger by their stable identity.
+    scamRiskReasonKeys: project.scamRisk?.reasonKeys,
     missingDataFields: project.missingDataFields,
     scoreBreakdown: project.scoreBreakdown,
+    // Verified same-category comparison, when the engine has enough peers. Null
+    // most of the time (small corpora) — the server makes no comparison then.
+    peerBenchmark: peerBenchmark || null,
   };
 }
 
-export async function fetchAnalysis({ project, identity, language }) {
+export async function fetchAnalysis({ project, identity, language, peerBenchmark }) {
   const token = authToken();
   if (!token || !identity) return null;
   try {
     const response = await fetch(ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ identity, language, project: analysisPayload(project) }),
+      body: JSON.stringify({ identity, language, project: analysisPayload(project, peerBenchmark) }),
     });
     if (!response.ok) return null;
     const data = await response.json();
@@ -114,7 +121,7 @@ export function mergeAnalysis(deterministic, aiFields) {
 //
 // `enabled` gates on Premium: a free user must not trigger a paid call, and the
 // server refuses them anyway.
-export function useGroundedAnalysis({ project, identity, language, enabled }) {
+export function useGroundedAnalysis({ project, identity, language, enabled, peerBenchmark = null }) {
   const [state, setState] = useState({ fields: null, loading: false });
 
   useEffect(() => {
@@ -124,14 +131,15 @@ export function useGroundedAnalysis({ project, identity, language, enabled }) {
     }
     let cancelled = false;
     setState({ fields: null, loading: true });
-    fetchAnalysis({ project, identity, language }).then((fields) => {
+    fetchAnalysis({ project, identity, language, peerBenchmark }).then((fields) => {
       if (!cancelled) setState({ fields, loading: false });
     });
     return () => { cancelled = true; };
-    // Re-fetches when the token or the reader's language changes. Deliberately
-    // NOT keyed on the whole project object, which is a new reference on every
-    // render and would loop.
-  }, [enabled, identity, language, project?.trustScore, project?.confidenceScore]);
+    // Re-fetches when the token, language, or peer comparison changes.
+    // Deliberately NOT keyed on the whole project object, which is a new
+    // reference on every render and would loop; peer percentile captures the
+    // only part of the benchmark that changes the prose.
+  }, [enabled, identity, language, project?.trustScore, project?.confidenceScore, peerBenchmark?.percentile]);
 
   return state;
 }

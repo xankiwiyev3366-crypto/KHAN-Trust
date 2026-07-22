@@ -368,7 +368,17 @@ export function computeScoreDrivers(scoreBreakdown = {}, { weights = LIVE_SCORE_
     .filter((entry) => entry.contribution < 0)
     .sort((a, b) => a.contribution - b.contribution)
     .slice(0, limit);
-  return { positives, negatives };
+  // The single most influential signal in EITHER direction — the honest answer
+  // to "what mattered most" — by absolute weighted contribution. Lets the
+  // analyst name the biggest lever instead of listing movers flatly.
+  const biggest = contributions
+    .slice()
+    .sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution))[0] || null;
+  return {
+    positives,
+    negatives,
+    biggest: biggest ? { key: biggest.key, label: biggest.label, direction: biggest.contribution > 0 ? 'positive' : 'negative' } : null,
+  };
 }
 
 export function calculateLiveScores(project = {}, data = {}) {

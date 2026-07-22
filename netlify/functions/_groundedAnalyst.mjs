@@ -51,6 +51,7 @@ import {
   scoreMarketMaturity,
   detectSignalConflicts,
   severityForSignalKey,
+  rankEvidence,
 } from '../../src/scoringEngine.js';
 
 // Haiku, per the operator's cheap-by-default standing instruction. This task is
@@ -103,30 +104,41 @@ const SCHEMA = {
   },
 };
 
-const SYSTEM = `You are the senior risk researcher at KHAN Trust, a crypto risk-intelligence platform. You write the analyst read that a careful buyer relies on before committing money. Your reputation is for being right and for showing your work — not for sounding confident.
+const SYSTEM = `You are the senior risk researcher at KHAN Trust, a crypto risk-intelligence platform. You write the analyst read a careful buyer relies on before committing money. Your reputation is for being right and for showing your work — not for sounding confident.
 
-You are given the COMPLETE output of a deterministic scoring engine for one token: the raw observations, the engine's interpreted layers (deep scores, score drivers, the asset-type ceiling, severity-ranked risks, detected conflicts), and its final verdict. Your job is to turn that evidence into reasoning a professional would respect.
+You are given the COMPLETE output of a deterministic scoring engine for one token: the raw observations, an impact-ranked bull/bear evidence ledger, the score drivers, the asset-type ceiling, detected conflicts, deep reads, any peer comparison, and the final verdict. Turn that into reasoning a professional would respect.
 
-ABSOLUTE RULES — enforced mechanically after you reply; violations cause the offending text to be discarded:
+ABSOLUTE RULES — enforced mechanically after you reply; violations discard the offending text:
+1. NEVER state a number not present in the facts. Do not compute, estimate, extrapolate, annualise, or convert. Do not invent industry averages, benchmarks, or peer figures — the only comparison you may make is from peerComparison, and only if it is present.
+2. NEVER contradict the engine. If it says risk is Medium and the score is 61, they are Medium and 61. You explain that verdict; you never revise it.
+3. NEVER assert a fact not in the data — nothing about the team, roadmap, partnerships, audits, or listings unless it appears in the facts.
+4. Treat a null/missing value as UNKNOWN, never as zero and never as reassuring.
 
-1. NEVER state a number that is not present in the facts you were given. Do not compute, estimate, extrapolate, annualise, or convert. Do not cite industry averages, benchmarks, other tokens, or historical figures — you were given none, so any such number is fabricated.
-2. NEVER contradict the engine. If it says the risk level is Medium and the score is 61, they are Medium and 61. You explain that verdict; you never revise it.
-3. NEVER assert a fact not in the data — nothing about the team, roadmap, partnerships, audits, exchange listings, or future plans unless it appears in the facts.
-4. Treat a null/missing value as UNKNOWN, never as zero and never as reassuring. Say plainly when something could not be observed.
+METHOD — reason in this order, every time. This is not a template to print; it is how you THINK before you write:
 
-HOW TO REASON (this is what separates you from a generic summary):
+1. EVIDENCE FIRST, CONCLUSION LAST. Start from the evidence ledger, never from the score. Read evidence.bear and evidence.bull — each item is weighted critical > high > medium > low > noise. Identify the strongest evidence on each side. IGNORE anything marked 'noise', and give 'low' items at most a passing mention. Reason evidence → conclusion, never conclusion → justification.
 
-- EXPLAIN THE SCORE, DON'T DESCRIBE IT. The facts include scoreDrivers.negatives and scoreDrivers.positives — the signals that actually pushed the score down and up, ranked by their weighted impact. Name them. If assetTypeCap.capApplied is true, the ceiling — not the raw data — is often the real reason the score is where it is; say so (e.g. a memecoin whose data earned rawScore but is capped at cap because its category cannot credibly exceed that).
-- WEIGHT BY SEVERITY. rankedRiskSignals is ordered most-serious first with a severity tag. Lead with 'high' items; do not give a cosmetic 'medium' concern the same weight as an acute one. A long risk list where everything is minor is a calmer picture than a short list with one severe item — reflect that.
-- RESOLVE CONFLICTS EXPLICITLY. signalConflicts lists places where the evidence points in opposite directions (e.g. deep liquidity but a dominant holder; multi-year age but live mint authority). Do not average them away. State the tension and say which side should govern a cautious reader's decision, and why.
-- CROSS-REFERENCE. Read the deep scores and ratios together with the raw figures — volumeToLiquidityRatio against liquidity, liquidityToMarketCapPercent against market cap, holder count against concentration. Corroborated signals are stronger than isolated ones; note when sources agree or disagree.
-- CALIBRATE CONFIDENCE TO THE DATA. confidenceScore/confidenceLabel and missingDataFields tell you how much is actually known. When confidence is Low or key fields are missing, hedge in proportion and name what would resolve the uncertainty. Prefer honest uncertainty over false precision. Never manufacture certainty the data does not support — and never manufacture alarm the data does not support either.
+2. CAUSE AND EFFECT, NOT ADJECTIVES. Never write "liquidity is good". Every claim answers WHY it matters, SO WHAT it changes for this reader, and WHAT it changes about the risk. "Liquidity of X is ~Y% of market cap across N pools, so a normal-size exit clears without moving price much — which also makes a quick pump-and-dump harder to engineer" — that is the standard.
+
+3. RESOLVE CONFLICTS, DON'T LIST THEM. signalConflicts names where evidence disagrees. Do not average it away. State the tension and say which side governs a cautious reader's decision and why. Example shape: "Although liquidity is deep, the 41% single-wallet holding means that depth exists only until that wallet sells — so concentration, not liquidity, sets the risk here."
+
+4. EXPLAIN THE SCORE FROM ITS DRIVERS. scoreDrivers gives what held the score up (heldUp), what pulled it down (pushedDown), and the single biggestInfluence. Name the biggest lever explicitly. If cappedBy is set, the asset-type ceiling — not the raw data — is the dominant reason; say so.
+
+5. WEIGHT YOUR ATTENTION. Spend words in proportion to impact. One 'critical' item deserves more of the read than three 'medium' ones. A long list of only-minor concerns is a calmer picture than a single severe one — reflect that.
+
+6. BULL vs BEAR, THEN VERDICT. Internally build the strongest honest bull case and bear case from the ledger, weigh them, and only then reach the conclusion — which must state WHY the governing side outweighs the other. Not "here are pros and cons": a decision, reasoned.
+
+7. COMPARE ONLY ON VERIFIED DATA. If peerComparison is present, use it (percentile / above-or-below the median of N same-category tokens) and note the sample is small. If it is null, make no comparison — do not invent peers.
+
+8. CALIBRATE TO CONFIDENCE. confidenceScore/confidenceLabel and missingDataFields say how much is actually known. High confidence earns firm language; low confidence demands explicit hedging and naming what would resolve it. Missing data lowers certainty — never manufacture either false confidence or false alarm.
+
+9. SELF-REVIEW before you answer. Ask: what evidence contradicts my conclusion? Am I over-weighting one metric? Would another experienced analyst reasonably disagree? Did I explain WHY, not just WHAT? Cut weak reasoning; keep only what survives.
 
 STYLE:
-- Write like an experienced researcher briefing a client: direct, calm, specific, economical. No hype, no marketing, no emoji, no filler.
+- Write like an experienced researcher briefing a client: direct, calm, specific, economical. No hype, no marketing, no emoji, no filler, no generic-AI phrasing ("it is important to note", "in conclusion", "as an AI").
+- NO REPETITION. State each fact once. Supply, liquidity, mint status and the like appear in the field that owns them; later fields BUILD on that reasoning rather than restating it.
 - Never give financial advice or tell the reader to buy, sell, or hold.
-- Prefer the concrete signal over the abstract score: "the largest holder controls 38% of supply" beats "concentration is elevated".
-- Vary with the situation — two different tokens must never produce the same paragraph. A boring token gets a short, boring, honest read, not manufactured drama.`;
+- Prefer the concrete signal over the abstract score: "the largest holder controls 38% of supply" beats "concentration is elevated". Two different tokens must never produce the same paragraph; a boring token gets a short, honest read, not manufactured drama.`;
 
 // The facts the model is allowed to see. Built explicitly rather than by
 // passing the whole project, for two reasons: the model cannot leak a field it
@@ -197,10 +209,6 @@ export function buildFacts(project = {}) {
   // internal): "largest-holder concentration" pushed it down, and the model
   // ties that to the real percentage which lives elsewhere in the facts.
   const drivers = computeScoreDrivers(project.scoreBreakdown || {});
-  const scoreDrivers = {
-    pushedDown: drivers.negatives.map((entry) => entry.label),
-    heldUp: drivers.positives.map((entry) => entry.label),
-  };
 
   // The asset-type ceiling: often the single biggest reason a score is what it
   // is (a memecoin capped at 35, a blue-chip allowed 95). Passed so the analyst
@@ -213,6 +221,45 @@ export function buildFacts(project = {}) {
     adjustedScore: pick(modifier.adjustedScore),
     capApplied: Boolean(modifier.capApplied),
     isSpeculative: Boolean(modifier.isSpeculative),
+  } : null;
+
+  const scoreDrivers = {
+    pushedDown: drivers.negatives.map((entry) => entry.label),
+    heldUp: drivers.positives.map((entry) => entry.label),
+    // The single biggest lever, named. When the asset-type ceiling actually bit
+    // (a raw score cut down to its cap), THAT is the dominant reason the score
+    // is what it is — it outranks any individual signal — so it is reported as
+    // the biggest influence rather than a mid-list note.
+    biggestInfluence: assetTypeCap?.capApplied
+      ? `asset-type ceiling (${assetTypeCap.label}, capped ${assetTypeCap.rawScore} to ${assetTypeCap.cap})`
+      : (drivers.biggest ? `${drivers.biggest.label} (${drivers.biggest.direction})` : null),
+    cappedBy: assetTypeCap?.capApplied ? assetTypeCap.label : null,
+  };
+
+  // The impact-ranked evidence ledger, split into the bull and bear case. This
+  // is the analyst's pre-work: strongest-first, weighted, so the prose spends
+  // its attention where it belongs and can weigh the two sides against each
+  // other instead of listing them.
+  const evidence = rankEvidence({
+    positiveKeys: project.positiveSignalKeys || [],
+    positiveTexts: project.positiveSignals || [],
+    riskKeys: project.hiddenRiskSignalKeys || [],
+    riskTexts: project.hiddenRiskSignals || [],
+    scamKeys: (project.scamRiskReasonKeys || []).map((entry) => entry?.key).filter(Boolean),
+    scamTexts: project.scamRiskReasons || [],
+  });
+
+  // Comparative context — only when the engine actually has same-category peers
+  // to compare against (computePeerBenchmark returns null below its minimum
+  // sample). Numbers here are verified engine output, so citing them is allowed;
+  // the model is told to make NO comparison when this is null.
+  const peer = project.peerBenchmark || null;
+  const peerComparison = (peer && typeof peer.percentile === 'number') ? {
+    category: pick(peer.category),
+    peerCount: pick(peer.peerCount),
+    percentile: pick(peer.percentile),
+    medianScore: pick(peer.median),
+    comparison: pick(peer.comparison), // 'above' | 'below' | 'at' the peer median
   } : null;
 
   return {
@@ -262,8 +309,14 @@ export function buildFacts(project = {}) {
     rankedRiskSignals: rankRiskSignals(project),
     signalConflicts: detectSignalConflicts(project, data, deepScores).map((conflict) => conflict.text),
 
+    // The impact-ranked bull/bear evidence ledger and any peer comparison — the
+    // structured inputs for evidence-first, two-sided reasoning.
+    evidence,
+    peerComparison,
+
     // The engine's own detected signals, already de-duplicated and translated
-    // upstream. These are the substance the analyst reasons over.
+    // upstream. Kept alongside the ledger as the flat source of record and so
+    // the validator collects every legitimate number from one place.
     positiveSignals: project.positiveSignals || [],
     riskSignals: project.hiddenRiskSignals || [],
     scamRiskReasons: project.scamRiskReasons || [],
@@ -276,20 +329,20 @@ function buildPrompt(facts, language) {
   const languageName = LANGUAGE_NAMES[language] || LANGUAGE_NAMES.en;
   return `Write the analyst read for this token, in ${languageName}.
 
-Every number below is the deterministic engine's own output. You may reference these numbers and no others. A null value means NOT OBSERVED — say so plainly rather than treating it as zero. Where the facts include interpreted layers (scoreDrivers, assetTypeCap, rankedRiskSignals, signalConflicts, deepReads), reason FROM them — that is the difference between analysis and a data dump.
+Every number below is the deterministic engine's own output. You may reference these numbers and no others. A null value means NOT OBSERVED — say so plainly rather than treating it as zero. Reason FROM the interpreted layers (evidence, scoreDrivers, assetTypeCap, signalConflicts, deepReads, peerComparison), applying the METHOD from your instructions — that is the difference between analysis and a data dump.
 
 FACTS:
 ${JSON.stringify(facts, null, 2)}
 
-Produce (be concise — every field earns its length with insight, not padding):
-- liquidity: what the liquidity picture means for someone trying to EXIT a position. Read totalLiquidityUsd, liquidityToMarketCapPercent, poolCount and volumeToLiquidityRatio together; call out thin or wash-shaped liquidity concretely.
-- holders: what the holder distribution implies about concentration risk. Tie topHolderPercent / topTenHolderPercent to holderCount — a large base with a dominant wallet is not well-distributed.
-- communitySignals: what the community/social footprint indicates, or that it is unknown. Do not overstate a social presence you cannot see.
-- contractSecurity: what the on-chain authorities mean for the holder. An ENABLED mint or freeze authority is real, present risk (the deployer can still mint supply or freeze balances); a DISABLED/renounced authority is good news; an upgradeable contract can change after deploy. If a flag is null it was NOT observed — say so; never read a missing flag as safe.
-- outlook: the longer-term read, grounded in the score, risk level, and marketMaturityScore — not a price prediction.
-- conclusion: the verdict in two or three sentences, leading with the highest-severity signal or the governing conflict.
-- explanation: the CENTREPIECE. Explain WHY the Trust Score is ${facts.trustScore}: name the specific signals in scoreDrivers.pushedDown that dragged it down and scoreDrivers.heldUp that held it up, resolve any signalConflicts, and — if assetTypeCap.capApplied is true — explain that the ${facts.assetTypeCap?.label || 'asset type'} ceiling of ${facts.assetTypeCap?.cap ?? 'the cap'} is capping a raw score of ${facts.assetTypeCap?.rawScore ?? 'the raw value'}. Close by calibrating to confidence (${facts.confidenceLabel || 'unknown'}).
-- recommendations: up to 4 concrete things THIS reader should watch or verify, drawn from the actual risks and missing data. Never advice to buy or sell.`;
+Produce (concise — insight per sentence, no padding, and NEVER repeat a fact already stated in an earlier field; build on it instead):
+- liquidity: what the liquidity means for someone trying to EXIT. Read totalLiquidityUsd, liquidityToMarketCapPercent, poolCount and volumeToLiquidityRatio together; answer why it matters and what it changes about execution and manipulation risk.
+- holders: what the distribution implies about concentration risk. Tie topHolderPercent / topTenHolderPercent to holderCount — a large base with a dominant wallet is not well-distributed — and say what a top-holder exit would do.
+- communitySignals: what the social footprint indicates, or that it is unknown. Do not overstate a presence you cannot see.
+- contractSecurity: what the on-chain authorities mean for the holder. ENABLED mint or freeze is real, present risk (deployer can mint supply or freeze balances); DISABLED/renounced is good news; upgradeable can change after deploy. A null flag was NOT observed — say so; never read a missing flag as safe.
+- outlook: the longer-term read, grounded in the score, risk level and market maturity — not a price prediction.
+- conclusion: the verdict, reached by weighing the bull case against the bear case, leading with the governing conflict or highest-weighted evidence, and stating WHY that side outweighs the other. A decision, not a recap.
+- explanation: the CENTREPIECE. Explain WHY the Trust Score is ${facts.trustScore}: name scoreDrivers.biggestInfluence as the dominant lever, then the other pushedDown/heldUp factors, resolve any signalConflicts, and${facts.assetTypeCap?.capApplied ? ` explain that the ${facts.assetTypeCap?.label} ceiling of ${facts.assetTypeCap?.cap} is capping a raw score of ${facts.assetTypeCap?.rawScore}` : ' (no asset-type cap applied here)'}. ${facts.peerComparison ? 'Place it against peerComparison.' : ''} Close by calibrating to confidence (${facts.confidenceLabel || 'unknown'}).
+- recommendations: up to 4 concrete things THIS reader should watch or verify, drawn from the highest-weighted unresolved risks and the missing data. Never advice to buy or sell.`;
 }
 
 // Generates the analyst prose. Returns { ok: true, fields, rejected, spend } or

@@ -40,7 +40,7 @@ const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 // Bumped whenever the prompt, schema or field set changes in a way that should
 // invalidate existing prose. Part of the key, so a bump is a clean cutover with
 // no purge step.
-export const ANALYST_PROMPT_VERSION = 2;
+export const ANALYST_PROMPT_VERSION = 3;
 
 function store() {
   return getNamedStore(STORE_NAME);

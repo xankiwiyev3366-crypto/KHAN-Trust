@@ -5911,7 +5911,7 @@ function HolderClusterCard({ project, navigate }) {
 // ── Premium feature 1: Advanced AI Research ───────────────────────────────────
 // Premium-only deep dive built deterministically from the same data the free
 // analysis uses (see premiumResearch.js). Free users see an upgrade CTA.
-function AdvancedResearchCard({ project, navigate }) {
+function AdvancedResearchCard({ project, navigate, peerBenchmark = null }) {
   const { t, language } = useTranslation();
   const { hasPremium, entitlement } = usePremiumEntitlement();
   // Hooks run before the early return below, unconditionally, as they must.
@@ -5921,6 +5921,7 @@ function AdvancedResearchCard({ project, navigate }) {
     identity: historyKeyFor(project),
     language,
     enabled: hasPremium && Boolean(project.assetCategory),
+    peerBenchmark,
   });
   if (!project.assetCategory) return null; // nothing to analyze yet
   return (
@@ -5962,7 +5963,7 @@ function AdvancedResearchCard({ project, navigate }) {
 
 // ── Premium feature 2: Premium AI Analysis ────────────────────────────────────
 // An ADDITIONAL section alongside (never replacing) the free AI Risk Summary.
-function PremiumAnalysisCard({ project, navigate }) {
+function PremiumAnalysisCard({ project, navigate, peerBenchmark = null }) {
   const { t, language } = useTranslation();
   const { hasPremium, entitlement } = usePremiumEntitlement();
   // Same overlay, same cache. Two cards asking for one token in one language
@@ -5972,6 +5973,7 @@ function PremiumAnalysisCard({ project, navigate }) {
     identity: historyKeyFor(project),
     language,
     enabled: hasPremium && Boolean(project.assetCategory),
+    peerBenchmark,
   });
   if (!project.assetCategory) return null;
   return (
@@ -7063,8 +7065,8 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
           <ScamRiskCard project={project} />
           <HolderClusterCard project={project} navigate={navigate} />
           <DeepRiskAnalysisCard project={project} />
-          <AdvancedResearchCard project={project} navigate={navigate} />
-          <PremiumAnalysisCard project={project} navigate={navigate} />
+          <AdvancedResearchCard project={project} navigate={navigate} peerBenchmark={peerBenchmark} />
+          <PremiumAnalysisCard project={project} navigate={navigate} peerBenchmark={peerBenchmark} />
           <InvestmentThesisCard project={project} navigate={navigate} />
           <RiskFlags flags={project.riskFlags} />
           <Timeline items={project.timeline} />

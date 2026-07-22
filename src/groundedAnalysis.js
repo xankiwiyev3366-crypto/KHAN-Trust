@@ -58,6 +58,12 @@ function analysisPayload(project = {}) {
     communitySize: project.communitySize,
     positiveSignals: project.positiveSignals,
     hiddenRiskSignals: project.hiddenRiskSignals,
+    // Signal keys let the server rank risks by severity and re-detect conflicts
+    // without re-implementing the engine; the asset-type modifier lets it
+    // explain a capped score. All engine output, never model input.
+    positiveSignalKeys: project.positiveSignalKeys,
+    hiddenRiskSignalKeys: project.hiddenRiskSignalKeys,
+    assetTypeRiskModifier: project.assetTypeRiskModifier,
     scamRiskReasons: project.scamRisk?.reasons,
     missingDataFields: project.missingDataFields,
     scoreBreakdown: project.scoreBreakdown,

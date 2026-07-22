@@ -313,6 +313,63 @@ export function rankSignalsBySeverity(keys = []) {
     .sort((a, b) => order[a.severity] - order[b.severity]);
 }
 
+// Conflicting-signal detection — the part a generic summary misses. A real
+// analyst's value is not listing strengths and risks side by side; it is
+// noticing when they point in OPPOSITE directions and saying which one wins.
+// Each rule fires only when BOTH sides of the tension are actually observed
+// (never on missing data), and is tagged with the side that should dominate the
+// read. Pure and deterministic: it reasons over numbers the engine already
+// produced, and invents nothing. Returns [{ key, severity, text }].
+export function detectSignalConflicts(project = {}, data = {}, scores = {}) {
+  const conflicts = [];
+  const liq = Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0);
+  const topHolder = typeof data.topHolderPercent === 'number' ? data.topHolderPercent : null;
+  const holders = Number(data.holderCount ?? project.holders ?? 0);
+  const age = typeof data.tokenAgeDays === 'number' ? data.tokenAgeDays : null;
+  const liqQ = scores.liquidityQualityScore;
+  const volC = scores.volumeConsistencyScore;
+  const vol = scores.volatilityScore;
+
+  // Deep-looking pool sitting under a dominant wallet: the exit depth is real
+  // only until that wallet sells into it.
+  if (liqQ !== null && liqQ !== undefined && liqQ >= 70 && topHolder !== null && topHolder > 35) {
+    conflicts.push({
+      key: 'deepLiquidityVsConcentration',
+      severity: 'high',
+      text: `Liquidity looks healthy, but a single wallet controls ${topHolder.toFixed(1)}% of supply — that exit depth could evaporate if the top holder sells, so the concentration risk dominates the read.`,
+    });
+  }
+  // An established token that never gave up deployer control is anomalous —
+  // legitimate long-lived projects almost always renounce.
+  if (age !== null && age >= 365 && (data.mintAuthorityEnabled === true || data.freezeAuthorityEnabled === true)) {
+    const which = data.mintAuthorityEnabled === true && data.freezeAuthorityEnabled === true
+      ? 'mint and freeze'
+      : data.mintAuthorityEnabled === true ? 'mint' : 'freeze';
+    conflicts.push({
+      key: 'establishedVsLiveAuthority',
+      severity: 'high',
+      text: `The token has traded for over a year yet still leaves ${which} authority enabled — unusual for an established project, and a control risk that offsets the reassurance of its age.`,
+    });
+  }
+  // A broad holder base does not make wash-shaped volume organic.
+  if (holders >= 1000 && volC !== null && volC !== undefined && volC < 40) {
+    conflicts.push({
+      key: 'holderBaseVsWashVolume',
+      severity: 'medium',
+      text: `A broad holder base coexists with volume far out of line with liquidity — the trading activity may be inorganic despite the healthy holder count, so treat the volume as unverified.`,
+    });
+  }
+  // Calm price on a shallow pool is fragile calm, not stability.
+  if (vol !== null && vol !== undefined && vol >= 74 && liqQ !== null && liqQ !== undefined && liqQ < 40) {
+    conflicts.push({
+      key: 'stablePriceVsThinLiquidity',
+      severity: 'medium',
+      text: `Recent price looks stable, but it sits on shallow liquidity — that calm is fragile, and a single sizeable trade could move the price sharply.`,
+    });
+  }
+  return conflicts;
+}
+
 export function detectPositiveSignals(project = {}, data = {}, scores = {}) {
   const positives = [];
   if (typeof data.topHolderPercent === 'number' && data.topHolderPercent <= 10) {
@@ -528,6 +585,7 @@ export function runRiskAnalysis(project = {}, data = {}, scoreBreakdown = {}, ri
   const hiddenRiskSignalKeys = detectHiddenRiskKeys(project, data, extraScores, manipulationFlagKeys);
   const positiveSignals = detectPositiveSignals(project, data, extraScores);
   const positiveSignalKeys = detectPositiveSignalKeys(project, data, extraScores);
+  const signalConflicts = detectSignalConflicts(project, data, extraScores);
   const assetTypeModifier = scoreInfo
     ? applyAssetTypeRiskModifier(category, project, data, scoreInfo.rawScore)
     : getAssetTypeRiskModifier(category, project, data);
@@ -544,6 +602,7 @@ export function runRiskAnalysis(project = {}, data = {}, scoreBreakdown = {}, ri
     hiddenRiskSignalKeys,
     positiveSignals,
     positiveSignalKeys,
+    signalConflicts,
     aiRiskSummary,
     deepScores: extraScores,
   };

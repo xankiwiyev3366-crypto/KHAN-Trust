@@ -295,6 +295,82 @@ export function riskPenalty(notes = '', { excludeLiveDataDupes = false } = {}) {
 
 // ── The engine ────────────────────────────────────────────────────────────────
 
+// The weighted signals and their weights, extracted as a single ordered table
+// so that (a) calculateLiveScores composes the score from it and (b)
+// computeScoreDrivers can explain the score from the SAME numbers. Keeping both
+// readers on one table is what guarantees the "why" can never drift from the
+// maths. The order and weights are byte-identical to the original inline call.
+export const LIVE_SCORE_WEIGHTS = [
+  ['holderScore', 16],
+  ['topHolderScore', 18],
+  ['topTenHolderScore', 14],
+  ['tokenAgeScore', 10],
+  ['liquidityScore', 16],
+  ['marketCapScore', 6],
+  ['securityScore', 8],
+  ['marketActivityScore', 6],
+  ['websiteScore', 6],
+  ['twitterScore', 6],
+  ['telegramScore', 5],
+  ['githubScore', 3],
+  ['coingeckoScore', 4],
+  ['founderActivity', 7],
+  ['roadmapClarity', 6],
+  ['communityActivity', 5],
+  ['transparency', 3],
+];
+
+// Plain-language names for each weighted signal, used only to EXPLAIN the score
+// (never to compute it). Lives beside the weights so a renamed signal is caught
+// here too.
+export const SCORE_DRIVER_LABELS = {
+  holderScore: 'holder base size',
+  topHolderScore: 'largest-holder concentration',
+  topTenHolderScore: 'top-10 holder concentration',
+  tokenAgeScore: 'token age / track record',
+  liquidityScore: 'liquidity depth',
+  marketCapScore: 'market capitalization',
+  securityScore: 'contract authorities (mint/freeze/upgrade)',
+  marketActivityScore: 'trading activity',
+  websiteScore: 'website presence',
+  twitterScore: 'X/Twitter presence',
+  telegramScore: 'Telegram presence',
+  githubScore: 'public code repository',
+  coingeckoScore: 'independent listing (CoinGecko)',
+  founderActivity: 'founder transparency',
+  roadmapClarity: 'roadmap clarity',
+  communityActivity: 'community size',
+  transparency: 'project description / transparency',
+};
+
+// Explains WHY a Trust Score landed where it did, from the same weighted table
+// that produced it. Each available signal's signed contribution is its weight ×
+// its distance from a neutral 50: strongly positive when a signal is both
+// heavily weighted AND well above neutral, strongly negative when heavily
+// weighted and well below. Returns the biggest upward and downward movers so a
+// reader (or the analyst LLM) can say "the score is what it is BECAUSE of X and
+// Y", grounded in the engine's own arithmetic rather than a guess. Signals the
+// engine never observed (null) are omitted, never treated as neutral or bad.
+export function computeScoreDrivers(scoreBreakdown = {}, { weights = LIVE_SCORE_WEIGHTS, limit = 4 } = {}) {
+  const contributions = [];
+  for (const [key, weight] of weights) {
+    const value = scoreBreakdown[key];
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) continue;
+    const contribution = Math.round(weight * (Number(value) - 50));
+    if (contribution === 0) continue;
+    contributions.push({ key, label: SCORE_DRIVER_LABELS[key] || key, score: Number(value), weight, contribution });
+  }
+  const positives = contributions
+    .filter((entry) => entry.contribution > 0)
+    .sort((a, b) => b.contribution - a.contribution)
+    .slice(0, limit);
+  const negatives = contributions
+    .filter((entry) => entry.contribution < 0)
+    .sort((a, b) => a.contribution - b.contribution)
+    .slice(0, limit);
+  return { positives, negatives };
+}
+
 export function calculateLiveScores(project = {}, data = {}) {
   const holderCount = Number(data.holderCount || project.holders || project.communitySize || 0);
   const websiteScore = scorePresence(socialPresenceState('website', project, data));
@@ -340,25 +416,9 @@ export function calculateLiveScores(project = {}, data = {}) {
     securityScore: scoreSecurity(data.mintAuthorityEnabled, data.freezeAuthorityEnabled, data.upgradeable),
     marketActivityScore: scoreMarketActivity(data.volume24hUsd, data.totalLiquidityUsd ?? data.liquidityUsd),
   };
-  const weighted = weightedAverage([
-    [scores.holderScore, 16],
-    [scores.topHolderScore, 18],
-    [scores.topTenHolderScore, 14],
-    [scores.tokenAgeScore, 10],
-    [scores.liquidityScore, 16],
-    [scores.marketCapScore, 6],
-    [scores.securityScore, 8],
-    [scores.marketActivityScore, 6],
-    [scores.websiteScore, 6],
-    [scores.twitterScore, 6],
-    [scores.telegramScore, 5],
-    [scores.githubScore, 3],
-    [scores.coingeckoScore, 4],
-    [scores.founderActivity, 7],
-    [scores.roadmapClarity, 6],
-    [scores.communityActivity, 5],
-    [scores.transparency, 3],
-  ]);
+  // Composed from LIVE_SCORE_WEIGHTS — the same table computeScoreDrivers reads
+  // to explain the result, so the score and its explanation cannot drift.
+  const weighted = weightedAverage(LIVE_SCORE_WEIGHTS.map(([key, weight]) => [scores[key], weight]));
   const livePenaltyValue = liveDataPenalty(data, holderCount);
   const riskPenaltyValue = riskPenalty(project.riskNotes, { excludeLiveDataDupes: true });
   // Cap total penalty so a project with a complete profile (social links, founder

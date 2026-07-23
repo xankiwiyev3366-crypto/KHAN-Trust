@@ -14,6 +14,7 @@
 // per-token blob is), so a lost index update self-heals on that token's next
 // scan and never corrupts a token's real record.
 import { getNamedStore, jsonResponse } from './_blobsClient.mjs';
+import { mirrorCorpusToken } from './_pgMirror.mjs';
 
 const STORE_NAME = 'khan-trust-corpus';
 const INDEX_KEY = 'index.json';
@@ -55,6 +56,11 @@ export async function upsertCorpusToken(identity, record) {
   // Authoritative per-token write first - this must succeed for the record to
   // count as stored.
   await store().setJSON(tokenKey(identity), record);
+
+  // Phase 1 dual-write: mirror to Postgres, best-effort. Blobs is the source of
+  // truth; a mirror failure must never fail this write (same posture as the
+  // discovery index below).
+  try { await mirrorCorpusToken(identity, record); } catch { /* non-fatal */ }
 
   // Best-effort discovery index. A failure here is swallowed on purpose: the
   // token's real record is already saved above, and the index self-heals on

@@ -10,6 +10,8 @@
     "verify:functions": "node scripts/verify-functions.mjs",
     "verify:i18n": "node scripts/verify-i18n.mjs",
     "verify:stripe": "node scripts/verify-stripe-pricing.mjs",
+    "db:migrate": "node scripts/db-migrate.mjs",
+    "db:backfill": "node scripts/db-backfill.mjs",
     "preview": "vite preview",
     "test": "node --experimental-test-module-mocks --test"
   },
@@ -26,6 +28,7 @@
     "bs58": "^6.0.0",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.468.0",
+    "pg": "^8.22.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "stripe": "^17.4.0",

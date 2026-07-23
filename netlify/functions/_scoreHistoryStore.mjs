@@ -4,6 +4,7 @@
 // as _userDataStore.mjs since this dataset is small (one entry per key per
 // day, capped per key below).
 import { getNamedStore, jsonResponse } from './_blobsClient.mjs';
+import { mirrorScoreHistory } from './_pgMirror.mjs';
 
 const STORE_NAME = 'khan-trust-score-history';
 const DATA_KEY = 'score-history.json';
@@ -39,6 +40,9 @@ export async function appendSnapshot(key, snapshot) {
     .slice(-MAX_ENTRIES_PER_KEY);
   all[key] = next;
   await writeAllHistory(all);
+  // Phase 1 dual-write: mirror this snapshot to Postgres, best-effort. Blobs is
+  // the source of truth — a mirror failure must never affect this write.
+  try { await mirrorScoreHistory(key, snapshot); } catch { /* non-fatal */ }
   return next;
 }
 

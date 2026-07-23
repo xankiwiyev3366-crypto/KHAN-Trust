@@ -103,6 +103,13 @@ try {
     entryPoints,
     bundle: true,
     platform: 'node',
+    // The `pg` driver (used by _db.mjs for the Postgres mirror) carries optional
+    // native/edge shims — `pg-native` (only if the compiled addon is installed)
+    // and `pg-cloudflare`'s virtual `cloudflare:sockets` import. Netlify's real
+    // bundler leaves these unresolved at build time and pg guards them at
+    // runtime. This check is about OUR functions compiling to CJS, not about
+    // bundling the driver's optionals, so mark them external here too.
+    external: ['pg-native', 'cloudflare:sockets'],
     // Matches Netlify's function runtime and, critically, the CJS output format
     // that top-level await is illegal in.
     target: 'node18',

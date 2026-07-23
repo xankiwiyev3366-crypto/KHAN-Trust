@@ -17,6 +17,7 @@
 // writes to different tokens cannot collide. There is no index — this store is
 // only ever read by identity, by the alert worker.
 import { getNamedStore } from './_blobsClient.mjs';
+import { mirrorWatchSnapshot } from './_pgMirror.mjs';
 
 const STORE_NAME = 'khan-trust-watch-snapshots';
 
@@ -35,6 +36,9 @@ export async function getWatchSnapshot(identity) {
 
 export async function putWatchSnapshot(identity, snapshot) {
   await store().setJSON(snapshotKey(identity), snapshot);
+  // Phase 1 dual-write: append this observation to Postgres, best-effort. The
+  // Blob keeps only the latest; Postgres keeps the full series. Never fatal.
+  try { await mirrorWatchSnapshot(identity, snapshot); } catch { /* non-fatal */ }
   return snapshot;
 }
 

@@ -7,7 +7,7 @@
 import { translate } from '../i18n/index.js';
 import { firstPresent, hasValue, scoreToRisk } from '../lib/trustScore.js';
 import { runRiskAnalysis, classifyAsset, applyAssetTypeRiskModifier } from '../scoringEngine.js';
-import { normalizeVerificationStatus } from '../verification.js';
+import { VERIFICATION_STATUS, normalizeVerificationStatus } from '../verification.js';
 import { slugify } from '../format.js';
 import { roadmapToText, roadmapFromText, buildUpdatesTimeline } from '../roadmap.js';
 import { buildCanonicalRiskNotes, mergeRiskNotes } from '../providers/lookups.js';

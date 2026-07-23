@@ -3,6 +3,7 @@
 // only on i18n translate. The on-chain mint flow (createLaunchpadSplToken) and
 // profile builder stay in main.jsx and import these back.
 import { translate } from './i18n/index.js';
+import { SOLANA_RPC_URL, SOLANA_DEVNET_RPC_URL } from './constants/endpoints.js';
 
 export function parseTokenAmount(value, decimals) {
   const raw = String(value || '').trim();

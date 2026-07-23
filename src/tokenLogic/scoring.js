@@ -6,6 +6,7 @@
 import { translate } from '../i18n/index.js';
 import { clamp, calculateLiveScores, calculateManualScores, hasValue } from '../lib/trustScore.js';
 import { formatPercent } from '../format.js';
+import { TRUST_CATEGORIES } from '../riskHistory.js';
 
 export function calculateTrustScore(project, liveData = project?.realData) {
   if (liveData) {

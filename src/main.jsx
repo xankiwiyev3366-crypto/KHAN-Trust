@@ -3631,29 +3631,46 @@ function App() {
     });
   };
 
-  // Deep-link entry for the SEO token pages (Direction 2): a visitor arriving
-  // from Google at /token/<contract> gets an "Open live report" CTA pointing
-  // to /?scan=<contract>. This runs the existing handleTokenCheck() once on
-  // load and strips the param so a refresh doesn't re-scan. ADDITIVE: when the
-  // param is absent this does nothing, so normal home/hash routing is
-  // completely unaffected; any failure falls back silently to the home page.
+  // Deep-link entry for the shared/SEO token pages (Direction 2). Two forms
+  // arrive here, both loading the live report via the existing handleTokenCheck:
+  //   1. /?scan=<contract> — the "Open live report" CTA on the SEO page and any
+  //      legacy links. The param is stripped after firing so a refresh doesn't
+  //      re-scan.
+  //   2. /token/<contract> — the canonical shared link. For human browsers the
+  //      edge function (netlify/edge-functions/token-router.js) serves this SPA
+  //      at that exact URL, so the contract lives in the pathname, not a query
+  //      string. The path is PRESERVED (not stripped) so the shared URL stays
+  //      intact; the once-per-mount guard prevents a double scan.
+  // ADDITIVE: when neither form is present this does nothing, so normal
+  // home/hash routing is completely unaffected; any failure falls back silently.
   const scanDeepLinkFired = useRef(false);
   useEffect(() => {
     if (scanDeepLinkFired.current) return;
     let contract = '';
+    let fromQuery = false;
     try {
       contract = new URLSearchParams(window.location.search).get('scan') || '';
+      if (contract) {
+        fromQuery = true;
+      } else {
+        const match = window.location.pathname.match(/^\/token\/([^/?#]+)\/?$/i);
+        if (match) {
+          try { contract = decodeURIComponent(match[1]); } catch { contract = match[1]; }
+        }
+      }
     } catch {
       contract = '';
     }
     if (!contract) return;
     scanDeepLinkFired.current = true;
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('scan');
-      window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
-    } catch {
-      // best effort - stripping the param is cosmetic
+    if (fromQuery) {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('scan');
+        window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+      } catch {
+        // best effort - stripping the param is cosmetic
+      }
     }
     Promise.resolve(handleTokenCheck(contract)).catch(() => {});
   }, []);

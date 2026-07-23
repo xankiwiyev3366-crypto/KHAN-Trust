@@ -6,5 +6,9 @@ dist/
 # Local Netlify folder
 .netlify
 
+# Deno lockfile generated locally by `netlify dev` edge bundling; Netlify
+# regenerates its own during deploy, so this is a local-only artifact.
+deno.lock
+
 # Local Claude Code tooling
 .claude/

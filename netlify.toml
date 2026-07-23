@@ -104,6 +104,15 @@
 # SPA (served as the static index.html at "/") is completely untouched. Status
 # 200 = transparent rewrite, so the clean /token/<contract> and /sitemap.xml
 # URLs are what users and crawlers see.
+#
+# The /token/* surface is fronted by the edge function
+# netlify/edge-functions/token-router.js, which runs BEFORE these redirects and
+# does User-Agent negotiation: human browsers get the React SPA at the same URL,
+# link-preview crawlers get this function's SEO/OG HTML. This redirect remains
+# as an explicit fallback (and for direct ?contract= calls) — if the edge layer
+# is ever unavailable, /token/<contract> still resolves to server-rendered HTML
+# rather than 404ing. The function reads the contract from the path or the
+# ?contract= query (see resolveContract in token-page.mjs).
 [[redirects]]
   from = "/token/:contract"
   to = "/.netlify/functions/token-page?contract=:contract"

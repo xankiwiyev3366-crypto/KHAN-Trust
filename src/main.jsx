@@ -308,6 +308,11 @@ import {
   readStorage, writeStorage, readProjectStorage, writeProjectStorage, looksLikeSolanaAddress,
 } from './lib/storage.js';
 import {
+  SOLANA_RPC_URL, SOLANA_DEVNET_RPC_URL, DEXSCREENER_TOKEN_PAIRS_BASE_URL,
+  DEXSCREENER_SEARCH_URL, JUPITER_TOKEN_SEARCH_URL, COINGECKO_API_BASE,
+  GECKOTERMINAL_API_BASE, GOPLUS_API_BASE,
+} from './constants/endpoints.js';
+import {
   fetchHolders,
   fetchTransactions,
   fetchHolderStats,
@@ -331,23 +336,6 @@ const OFFICIAL_KHAN_LINKS = {
 // from browser-origin traffic. Setting VITE_SOLANA_RPC_URL to a dedicated
 // provider (Helius, QuickNode, Alchemy, ...) makes holder counts, mint
 // authority checks, and mint-creation lookups dramatically more reliable.
-const SOLANA_RPC_URL = import.meta.env?.VITE_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
-const SOLANA_DEVNET_RPC_URL = clusterApiUrl('devnet');
-const DEXSCREENER_TOKEN_PAIRS_BASE_URL = 'https://api.dexscreener.com/token-pairs/v1';
-const DEXSCREENER_SEARCH_URL = 'https://api.dexscreener.com/latest/dex/search';
-const JUPITER_TOKEN_SEARCH_URL = 'https://lite-api.jup.ag/tokens/v2/search';
-// Free, no-key public APIs used to widen coverage beyond Dexscreener/Jupiter:
-// CoinGecko's contract lookup gives an authoritative circulating market cap,
-// a real genesis_date for established assets, and curated social links.
-// GeckoTerminal fills in pool/liquidity data for chains or pairs Dexscreener
-// hasn't indexed yet. Both are read-only public endpoints with no API key.
-const COINGECKO_API_BASE = 'https://api.coingecko.com/api/v3';
-const GECKOTERMINAL_API_BASE = 'https://api.geckoterminal.com/api/v2';
-// GoPlus Security - free, no-key public token-security API. Used only as a
-// fallback for holder count / concentration when our existing sources
-// (Solana RPC scan, Jupiter index, EVM block explorers) have nothing, so it
-// never overrides a real on-chain/indexed measurement that's already present.
-const GOPLUS_API_BASE = 'https://api.gopluslabs.io/api/v1';
 const GOPLUS_EVM_CHAIN_IDS = {
   ethereum: '1',
   bsc: '56',

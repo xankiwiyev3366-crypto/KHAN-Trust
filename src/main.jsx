@@ -350,6 +350,7 @@ import {
 import {
   normalizeProject, applyVerificationStatus, linkPresenceState, syncSocialData,
 } from './tokenLogic/project.js';
+import { findStoredProject, mergeStoredMetadata, upsertProject } from './tokenLogic/projectStore.js';
 import {
   fetchHolders,
   fetchTransactions,
@@ -1267,62 +1268,6 @@ function launchpadProfileFromForm(form, walletAddress, result, network = 'devnet
   };
 }
 
-function hasSavedRoadmap(project = {}) {
-  if (hasValue(project.roadmapText)) return true;
-  return Boolean(project.roadmap?.some((item) => hasValue(item.phase) && item.phase !== 'Roadmap proof needed'));
-}
-
-// Native chain coins (BTC, ETH, SOL, BNB, ...) all share the same literal
-// placeholder contract string (see lookupNativeCoinGeckoAsset) since they
-// have no real contract address - that string must never be used to match
-// two stored projects as "the same token", or scanning e.g. ETH after BTC
-// would overwrite Bitcoin's stored profile with Ethereum's. Their id (e.g.
-// "native-bitcoin") is already the real unique identity for these.
-const NON_DEDUPABLE_CONTRACTS = new Set(['not provided', 'native asset (no contract)']);
-
-function dedupableContract(contract) {
-  const normalized = contract?.toLowerCase();
-  return normalized && !NON_DEDUPABLE_CONTRACTS.has(normalized) ? normalized : null;
-}
-
-function findStoredProject(items = [], project = {}) {
-  const normalizedContract = dedupableContract(project.contract);
-  return items.find((item) => {
-    const sameId = item.id === project.id;
-    const sameContract = normalizedContract && dedupableContract(item.contract) === normalizedContract;
-    return sameId || sameContract;
-  });
-}
-
-function mergeStoredMetadata(liveProject = {}, storedProject = null) {
-  if (!storedProject) return liveProject;
-
-  const merged = {
-    ...liveProject,
-    id: storedProject.id || liveProject.id,
-    verificationStatus: storedProject.verificationStatus || liveProject.verificationStatus,
-  };
-  ['website', 'twitter', 'telegram', 'github', 'founderStatus', 'description', 'riskNotes'].forEach((field) => {
-    const savedValue = storedMetadataValue(storedProject[field]);
-    if (savedValue !== undefined && !hasValue(merged[field])) merged[field] = savedValue;
-  });
-
-  const savedCommunitySize = storedMetadataValue(storedProject.communitySize);
-  if (savedCommunitySize !== undefined && !Number(merged.communitySize || merged.realData?.holderCount || 0)) {
-    merged.communitySize = Number(savedCommunitySize);
-  }
-
-  if (!hasSavedRoadmap(merged) && hasSavedRoadmap(storedProject)) {
-    merged.roadmapText = storedProject.roadmapText || roadmapToText(storedProject.roadmap);
-    merged.roadmap = storedProject.roadmap;
-  }
-
-  if (merged.realData) {
-    merged.realData = syncSocialData(merged.realData, merged);
-  }
-
-  return merged;
-}
 
 
 const PDF_LOCALE_MAP = { en: 'en-US', az: 'az-AZ', tr: 'tr-TR', ru: 'ru-RU' };
@@ -1460,22 +1405,6 @@ function shareText(project = {}, channel = 'x') {
 
 
 
-function upsertProject(items, project) {
-  const normalizedContract = dedupableContract(project.contract);
-  const existing = findStoredProject(items, project);
-  const mergedProject = normalizeProject(mergeStoredMetadata(project, existing));
-  const projectWithGrowth = applyHolderGrowth(mergedProject, existing);
-  const withoutExisting = items.filter((item) => {
-    const sameId = item.id === projectWithGrowth.id;
-    const sameContract = normalizedContract && dedupableContract(item.contract) === normalizedContract;
-    return !sameId && !sameContract;
-  });
-  return [projectWithGrowth, ...withoutExisting];
-}
-
-function applyHolderGrowth(project, existing) {
-  return project;
-}
 
 // Pages that require authentication before the user can enter.
 // Clicking these in the nav shows the gate modal rather than navigating.

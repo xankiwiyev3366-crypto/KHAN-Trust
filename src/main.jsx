@@ -303,6 +303,7 @@ import { qrToSvg } from './lib/qrcode.js';
 import {
   translateRiskLevel, daysSince, slugify, formatCurrency, formatTinyOrCurrency,
   formatNumber, formatAge, formatPercent, formatScore, displayValue, storedMetadataValue,
+  roundPercent,
 } from './format.js';
 import {
   readStorage, writeStorage, readProjectStorage, writeProjectStorage, looksLikeSolanaAddress,
@@ -2659,9 +2660,6 @@ function shareText(project = {}, channel = 'x') {
   return translate(key, { name, score, risk, contract });
 }
 
-function roundPercent(ratio) {
-  return Math.round(ratio * 10000) / 100;
-}
 
 // Builds the real top-holder distribution used by the Holder Cluster Map. Each
 // entry is a genuine observed balance as a percentage of supply — no synthetic

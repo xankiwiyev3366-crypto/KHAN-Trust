@@ -72,3 +72,7 @@ export function storedMetadataValue(value) {
   if (Array.isArray(value)) return value.length ? value : undefined;
   return hasValue(value) ? value : undefined;
 }
+
+export function roundPercent(ratio) {
+  return Math.round(ratio * 10000) / 100;
+}

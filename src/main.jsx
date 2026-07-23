@@ -329,6 +329,7 @@ import {
   cleanLink, mergeSocialLinks, extractSocialLinksFromDexInfo,
   extractSocialLinksFromMetadata, assignSocialLink,
 } from './socialLinks.js';
+import { buildUpdatesTimeline, roadmapToText, roadmapFromText } from './roadmap.js';
 import {
   fetchHolders,
   fetchTransactions,
@@ -743,20 +744,6 @@ function deriveRiskFlags(project, holders, communitySize) {
   return factorFlags.length ? factorFlags : [translate('scoring.riskFlags.none')];
 }
 
-function buildUpdatesTimeline(project, now) {
-  const date = project.launchDate || now;
-  const updates = [{ label: translate('timeline.projectSubmitted'), date: now }];
-  if (hasValue(project.website)) updates.push({ label: translate('timeline.websiteAdded'), date });
-  if (hasValue(project.twitter)) updates.push({ label: translate('timeline.xAdded'), date });
-  if (hasValue(project.telegram)) updates.push({ label: translate('timeline.telegramAdded'), date });
-  if (hasValue(project.github)) updates.push({ label: translate('timeline.githubAdded'), date });
-  if (hasValue(project.roadmapText) || project.roadmap?.length) updates.push({ label: translate('timeline.roadmapAdded'), date });
-  return updates;
-}
-
-function roadmapToText(roadmap = []) {
-  return roadmap.map((item) => item.phase).join('\n');
-}
 
 // Short-lived in-memory cache for live lookups. A single scan already fans
 // out to ~8 APIs in parallel; without this, re-opening the same token (back
@@ -1963,17 +1950,6 @@ function mergeRiskNotes(...notes) {
   return unique.length ? unique.join(', ') : translate('scoring.riskNotes.liveDataAvailable');
 }
 
-function roadmapFromText(text) {
-  if (!text) {
-    return [{ phase: translate('scoring.roadmapNeeded'), status: 'Planned' }];
-  }
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .slice(0, 6)
-    .map((phase, index) => ({ phase, status: index === 0 ? 'In progress' : 'Planned' }));
-}
 
 
 async function createLaunchpadSplToken({ walletAddress, decimals, totalSupply, network, signTransaction }) {

@@ -301,6 +301,13 @@ import {
 } from './referral.js';
 import { qrToSvg } from './lib/qrcode.js';
 import {
+  translateRiskLevel, daysSince, slugify, formatCurrency, formatTinyOrCurrency,
+  formatNumber, formatAge, formatPercent, formatScore, displayValue, storedMetadataValue,
+} from './format.js';
+import {
+  readStorage, writeStorage, readProjectStorage, writeProjectStorage, looksLikeSolanaAddress,
+} from './lib/storage.js';
+import {
   fetchHolders,
   fetchTransactions,
   fetchHolderStats,
@@ -308,7 +315,6 @@ import {
   triggerManualSync,
 } from './khanHolderAnalytics.js';
 
-const PROJECTS_KEY = 'khan-trust-projects-v1';
 const WATCHLIST_KEY = 'khan-trust-watchlist-v1';
 const CRYPTO_PAYMENT_WALLET = import.meta.env.VITE_KHAN_PAYMENT_WALLET || '';
 const WALLET_DOWNLOAD_URLS = { Phantom: 'https://phantom.com/download', Solflare: 'https://solflare.com/download' };
@@ -2363,72 +2369,6 @@ function launchpadProfileFromForm(form, walletAddress, result, network = 'devnet
   };
 }
 
-function translateRiskLevel(level = '') {
-  return translate(`common.${level.toLowerCase()}`) || level;
-}
-
-function daysSince(date) {
-  return Math.floor((Date.now() - new Date(date).getTime()) / 86400000);
-}
-
-function slugify(value) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-}
-
-function formatCurrency(value) {
-  const number = Number(value || 0);
-  if (!number) return translate('common.notAvailable');
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: number >= 1000 ? 0 : 2,
-  }).format(number);
-}
-
-// formatCurrency rounds sub-cent prices to "$0.00", which looks like
-// missing data for memecoin-range prices that are very real (e.g. PEPE's
-// $0.0000028 ATH). Use full precision below $1 instead of silently
-// truncating to zero.
-function formatTinyOrCurrency(value) {
-  const number = Number(value || 0);
-  if (!number) return translate('common.notAvailable');
-  if (number >= 1) return formatCurrency(number);
-  return `$${number.toPrecision(4)}`;
-}
-
-function formatNumber(value) {
-  const number = Number(value || 0);
-  if (!number) return translate('common.notAvailable');
-  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(number);
-}
-
-function formatAge(days) {
-  if (days === null || days === undefined) return translate('common.notAvailable');
-  if (days < 1) return translate('common.ageLessThanDay');
-  if (days < 30) return translate('common.ageDays', { count: days });
-  if (days < 365) return translate('common.ageMonths', { count: Math.round(days / 30) });
-  return translate('common.ageYears', { count: Math.round(days / 365) });
-}
-
-function formatPercent(value) {
-  if (value === null || value === undefined) return translate('common.notAvailable');
-  return `${Number(value).toFixed(2)}%`;
-}
-
-function formatScore(value) {
-  return value === null || value === undefined ? translate('common.notAvailable') : `${value}/100`;
-}
-
-function displayValue(value) {
-  return hasValue(value) ? value : translate('common.notAvailable');
-}
-
-function storedMetadataValue(value) {
-  if (typeof value === 'number') return value > 0 ? value : undefined;
-  if (Array.isArray(value)) return value.length ? value : undefined;
-  return hasValue(value) ? value : undefined;
-}
-
 function hasSavedRoadmap(project = {}) {
   if (hasValue(project.roadmapText)) return true;
   return Boolean(project.roadmap?.some((item) => hasValue(item.phase) && item.phase !== 'Roadmap proof needed'));
@@ -3081,35 +3021,6 @@ function buildTopHolders(accounts, supply, limit = 20) {
     }))
     .filter((holder) => holder.pct > 0);
   return holders.length ? holders : null;
-}
-
-function readStorage(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeStorage(key, value) {
-  localStorage.setItem(key, JSON.stringify(value));
-}
-
-// Legacy purge: earlier builds could persist fabricated ("demo") reports to
-// localStorage when live APIs failed. That behaviour is gone — but we still
-// strip any such records on read/write so no user ever sees a stale fabricated
-// Trust Score. Live data unavailable now returns an honest error instead.
-function readProjectStorage() {
-  return readStorage(PROJECTS_KEY, []).filter((project) => !project?.realData?.isDemo);
-}
-
-function writeProjectStorage(projects) {
-  writeStorage(PROJECTS_KEY, projects.filter((project) => !project?.realData?.isDemo));
-}
-
-function looksLikeSolanaAddress(value) {
-  return /^[1-9A-HJ-NP-Za-km-z]{32,48}$/.test(value.trim());
 }
 
 function upsertProject(items, project) {

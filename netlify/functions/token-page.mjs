@@ -25,6 +25,30 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+// Resolve the token contract from the request. Shared links are the pretty
+// path /token/<contract> with NO query string. The netlify.toml rewrite points
+// them at this function with `?contract=:contract`, but Netlify populates a
+// function's `event.queryStringParameters` from the ORIGINAL client request —
+// not from the query string written into the redirect `to` — so on a real
+// shared link the query string is empty. The contract must therefore be read
+// from the path (which Netlify preserves through the rewrite); the query string
+// is only a fallback for direct /.netlify/functions/token-page?contract= calls
+// and local dev.
+export function resolveContract(event) {
+  const source = event.path || event.rawUrl || '';
+  const match = source.match(/\/token\/([^/?#]+)/i);
+  let fromPath = '';
+  if (match) {
+    try {
+      fromPath = decodeURIComponent(match[1]);
+    } catch {
+      fromPath = match[1];
+    }
+  }
+  const fromQuery = event.queryStringParameters?.contract || '';
+  return (fromPath || fromQuery).trim();
+}
+
 function normalizeIdentity(raw) {
   const value = String(raw || '').trim();
   if (!value) return '';
@@ -139,7 +163,7 @@ export async function handler(event) {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });
     }
-    const contract = (event.queryStringParameters?.contract || '').trim();
+    const contract = resolveContract(event);
     if (!contract) {
       return { statusCode: 400, headers: { 'Content-Type': 'text/plain' }, body: 'Missing token' };
     }

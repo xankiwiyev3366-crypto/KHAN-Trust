@@ -45,6 +45,8 @@ import {
   Clock3,
   Copy,
   Crown,
+  Droplet,
+  Radio,
   Download,
   ExternalLink,
   Eye,
@@ -140,6 +142,7 @@ import { useCorpusRecord } from './tokenCorpus.js';
 import { ANALYST_QUESTIONS, answerQuestion, translateSignalKeys, translatedCategory } from './khanAnalyst.js';
 import { detectRiskAlerts, useWatchlistAlertCount } from './riskAlerts.js';
 import { TRUST_CATEGORIES, buildRiskHistory, validHistory, describeChange } from './riskHistory.js';
+import { buildTrustGraph, filterPointsByRange, scoreExtent, TRUST_GRAPH_RANGES, MARKER_TYPES } from './trustGraph.js';
 import { useSinceLastVisit } from './sinceLastVisit.js';
 import { useWatchtowerReport, describeReason, describeCadence, MONITORED_DIMENSIONS, STATUS_TONE } from './watchtower.js';
 import { computePeerBenchmark, peerLabelFor } from './peerBenchmark.js';
@@ -5351,6 +5354,7 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
         <div className="main-column">
           <VerifiedBadgeEmbed project={project} />
           <RiskSummary project={project} peerBenchmark={peerBenchmark} />
+          <TrustGraphCard project={project} history={history} />
           <RiskHistoryTimeline history={history} />
           <InfoGrid project={project} />
           <LiveMarketChart project={project} data={project.realData} />
@@ -9596,6 +9600,339 @@ function RiskHistoryTimeline({ history }) {
         </ol>
       )}
     </section>
+  );
+}
+
+// ── Trust Graph ──────────────────────────────────────────────────────────────
+//
+// The interactive historical Trust Score visualization (Premium). It renders
+// the SAME snapshot stream the Risk History timeline reads (buildTrustGraph
+// reuses validHistory + buildRiskHistory), so the two can never disagree — the
+// graph is the picture, the timeline is the log. It adds NO network calls: the
+// `history` is the copy already fetched once at the page level (useScoreHistory).
+//
+// Gating reuses the existing `scoreHistory` Premium feature, whose server
+// endpoint (score-history-get) already refuses a Free caller and returns an
+// empty history. So a Free user genuinely has no data to draw and instead sees a
+// crowned teaser in this slot; a Premium user with a brand-new token sees the
+// "start monitoring" empty state; only a Premium user with real drift sees the
+// chart. That three-way split is deliberate — a blank card can't tell a user
+// whether the feature is paid or simply new.
+
+// One marker's icon + i18n label key, in MARKER_TYPES order. Kept beside the
+// component (not in trustGraph.js) because it carries React/lucide, which the
+// pure model must never import.
+const TRUST_GRAPH_MARKER_META = {
+  liquidity: { Icon: Droplet, labelKey: 'trustGraph.markers.liquidity' },
+  holder: { Icon: Users, labelKey: 'trustGraph.markers.holder' },
+  contract: { Icon: ShieldCheck, labelKey: 'trustGraph.markers.contract' },
+  social: { Icon: Radio, labelKey: 'trustGraph.markers.social' },
+  verification: { Icon: BadgeCheck, labelKey: 'trustGraph.markers.verification' },
+};
+
+function TrustGraphCard({ project, history }) {
+  const { t, language } = useTranslation();
+  const { can, openUpgrade } = usePremiumGate();
+
+  const model = useMemo(() => buildTrustGraph(history, language), [history, language]);
+  const [range, setRange] = useState('all');
+  const points = useMemo(() => filterPointsByRange(model.points, range), [model.points, range]);
+
+  // Free user: a crowned teaser in the card's slot rather than the full chart.
+  // The heading still communicates the value; clicking opens the upgrade modal
+  // naming this exact feature.
+  if (!can('scoreHistory')) {
+    return (
+      <section className="detail-section trust-graph trust-graph-locked">
+        <SectionTitle icon={LineChart} eyebrow={t('trustGraph.eyebrow')} title={t('trustGraph.title')} />
+        <button
+          type="button"
+          className="trust-graph-lock"
+          onClick={() => openUpgrade('scoreHistory')}
+          aria-label={t('premiumGate.unlockAria', { feature: t('trustGraph.title') })}
+        >
+          <span className="trust-graph-lock-shimmer" aria-hidden="true">
+            <TrustGraphSkeleton />
+          </span>
+          <span className="trust-graph-lock-overlay">
+            <PremiumCrown size={20} />
+            <strong>{t('trustGraph.title')}</strong>
+            <span>{t('trustGraph.lockedDescription')}</span>
+          </span>
+        </button>
+      </section>
+    );
+  }
+
+  // Premium user, but nothing recorded yet — the premium empty state.
+  if (!model.hasHistory) {
+    return (
+      <section className="detail-section trust-graph">
+        <SectionTitle icon={LineChart} eyebrow={t('trustGraph.eyebrow')} title={t('trustGraph.title')} />
+        <div className="trust-graph-empty">
+          <span className="trust-graph-empty-glyph" aria-hidden="true"><LineChart size={30} /></span>
+          <p>{t('trustGraph.empty')}</p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="detail-section trust-graph">
+      <div className="trust-graph-head">
+        <SectionTitle icon={LineChart} eyebrow={t('trustGraph.eyebrow')} title={t('trustGraph.title')} />
+        <div className="trust-graph-ranges" role="group" aria-label={t('trustGraph.rangeLabel')}>
+          {TRUST_GRAPH_RANGES.map((entry) => (
+            <button
+              key={entry.key}
+              type="button"
+              className={`trust-graph-range${range === entry.key ? ' is-active' : ''}`}
+              aria-pressed={range === entry.key}
+              onClick={() => setRange(entry.key)}
+            >
+              {t(`trustGraph.ranges.${entry.key}`)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="trust-graph-subtitle">{t('trustGraph.subtitle')}</p>
+
+      <TrustGraphChart points={points} range={range} />
+
+      <div className="trust-graph-legend">
+        <span className="trust-graph-legend-title">{t('trustGraph.legendBands')}</span>
+        <span className="trust-graph-band green"><i />{t('trustGraph.bands.green')}</span>
+        <span className="trust-graph-band yellow"><i />{t('trustGraph.bands.yellow')}</span>
+        <span className="trust-graph-band orange"><i />{t('trustGraph.bands.orange')}</span>
+        <span className="trust-graph-band red"><i />{t('trustGraph.bands.red')}</span>
+      </div>
+    </section>
+  );
+}
+
+// A few inert score-line silhouettes behind the Free teaser lock — shaped like a
+// chart so the locked card reads as "there is a real graph here", never real
+// data (there is none for a Free user anyway).
+function TrustGraphSkeleton() {
+  return (
+    <svg className="trust-graph-skeleton" viewBox="0 0 300 120" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points="0,90 40,70 80,80 120,45 160,55 200,30 240,40 300,20" fill="none" strokeWidth="3" />
+      <polyline points="0,105 60,95 120,100 180,80 240,88 300,70" fill="none" strokeWidth="2" opacity="0.4" />
+    </svg>
+  );
+}
+
+// The SVG chart itself. Kept as its own component so it is reusable and so its
+// hover/measure state doesn't re-run the parent's gate logic. Measures its own
+// width (ResizeObserver) and draws crisp, non-distorted dots in real pixels; the
+// line is a per-point gradient so it changes colour as the score crosses a band
+// boundary. The path animates in on mount and on every range change (keyed by
+// range), driven by SVG pathLength normalization.
+function TrustGraphChart({ points, range }) {
+  const { t, language } = useTranslation();
+  const wrapRef = useRef(null);
+  const [width, setWidth] = useState(720);
+  const [active, setActive] = useState(null); // index of hovered/focused point
+
+  useEffect(() => {
+    const node = wrapRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect?.width;
+      if (w) setWidth(Math.max(280, Math.round(w)));
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  // Reset the active point whenever the plotted set changes so a stale index
+  // from the previous range can't point past the end of the new array.
+  useEffect(() => { setActive(null); }, [range, points.length]);
+
+  const height = 240;
+  const pad = { top: 22, right: 16, bottom: 30, left: 34 };
+  const chartW = Math.max(1, width - pad.left - pad.right);
+  const chartH = height - pad.top - pad.bottom;
+
+  const geometry = useMemo(() => {
+    const extent = scoreExtent(points);
+    const span = Math.max(1, extent.max - extent.min);
+    const times = points.map((p) => p.dateMs);
+    const minMs = Math.min(...times);
+    const maxMs = Math.max(...times);
+    const timeSpan = maxMs - minMs;
+    const xFor = (point, index) => {
+      if (points.length === 1) return pad.left + chartW / 2;
+      const frac = timeSpan > 0 ? (point.dateMs - minMs) / timeSpan : index / Math.max(1, points.length - 1);
+      return pad.left + frac * chartW;
+    };
+    const yFor = (score) => pad.top + (1 - (score - extent.min) / span) * chartH;
+    const plotted = points.map((point, index) => ({
+      ...point,
+      x: xFor(point, index),
+      y: yFor(point.score),
+    }));
+    return { plotted, extent };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [points, width]);
+
+  const { plotted } = geometry;
+  const linePoints = plotted.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+  const gradientId = `trust-graph-line-${range}`;
+  const areaId = `trust-graph-area-${range}`;
+  const activePoint = active != null ? plotted[active] : null;
+
+  return (
+    <div className="trust-graph-chart" ref={wrapRef}>
+      <svg
+        className="trust-graph-svg"
+        viewBox={`0 0 ${width} ${height}`}
+        width="100%"
+        height={height}
+        role="img"
+        aria-label={t('trustGraph.chartAria', { count: points.length })}
+        onMouseLeave={() => setActive(null)}
+      >
+        <defs>
+          {/* The line's colour follows the score across band boundaries: one
+              gradient stop per point, positioned by its x fraction. */}
+          <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1={pad.left} y1="0" x2={width - pad.right} y2="0">
+            {plotted.map((p, index) => {
+              const offset = chartW > 0 ? Math.min(1, Math.max(0, (p.x - pad.left) / chartW)) : 0;
+              return <stop key={index} offset={offset} stopColor={p.color} />;
+            })}
+          </linearGradient>
+          <linearGradient id={areaId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="var(--gold)" stopOpacity="0.16" />
+            <stop offset="1" stopColor="var(--gold)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* Baseline */}
+        <line
+          className="trust-graph-baseline"
+          x1={pad.left}
+          y1={height - pad.bottom}
+          x2={width - pad.right}
+          y2={height - pad.bottom}
+        />
+
+        {plotted.length >= 2 && (
+          <>
+            {/* Soft area fill under the line for depth. */}
+            <polygon
+              className="trust-graph-fill"
+              points={`${pad.left},${height - pad.bottom} ${linePoints} ${width - pad.right},${height - pad.bottom}`}
+              fill={`url(#${areaId})`}
+            />
+            {/* The animated, band-coloured line. Keyed by range so switching
+                filters replays the draw-on animation. */}
+            <polyline
+              key={range}
+              className="trust-graph-line"
+              points={linePoints}
+              fill="none"
+              stroke={`url(#${gradientId})`}
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              pathLength={1}
+            />
+          </>
+        )}
+
+        {/* Event markers: a small ring above any day that carried a change. */}
+        {plotted.map((point, index) => (
+          point.markers.length > 0 ? (
+            <g key={`m-${index}`} className="trust-graph-marker" transform={`translate(${point.x.toFixed(2)}, ${(point.y - 14).toFixed(2)})`}>
+              <line x1="0" y1="4" x2="0" y2="12" className="trust-graph-marker-stem" />
+              <circle cx="0" cy="0" r="3.4" className="trust-graph-marker-dot" />
+            </g>
+          ) : null
+        ))}
+
+        {/* The data points. Each is focusable + hoverable and drives the tooltip. */}
+        {plotted.map((point, index) => (
+          <g key={`p-${index}`}>
+            {/* Generous invisible hit target for easy hover/tap. */}
+            <circle
+              className="trust-graph-hit"
+              cx={point.x}
+              cy={point.y}
+              r="14"
+              tabIndex={0}
+              role="button"
+              aria-label={`${formatHistoryDate(point.date, language)}: ${point.score}`}
+              onMouseEnter={() => setActive(index)}
+              onFocus={() => setActive(index)}
+              onBlur={() => setActive((current) => (current === index ? null : current))}
+            />
+            <circle
+              className={`trust-graph-dot${active === index ? ' is-active' : ''}`}
+              cx={point.x}
+              cy={point.y}
+              r={active === index ? 5.5 : 3.5}
+              style={{ fill: point.color, stroke: point.color }}
+            />
+          </g>
+        ))}
+
+        {/* Vertical guide at the active point. */}
+        {activePoint && (
+          <line
+            className="trust-graph-guide"
+            x1={activePoint.x}
+            y1={pad.top}
+            x2={activePoint.x}
+            y2={height - pad.bottom}
+          />
+        )}
+      </svg>
+
+      {/* Tooltip: kept mounted and toggled so it can fade OUT as well as in. Its
+          left/top track the active dot; it flips to the left half when the point
+          is on the right so it never spills off the edge. */}
+      <div
+        className={`trust-graph-tooltip${activePoint ? ' is-visible' : ''}${activePoint && activePoint.x > width / 2 ? ' flip' : ''}`}
+        style={activePoint ? { left: `${(activePoint.x / width) * 100}%`, top: `${(activePoint.y / height) * 100}%` } : undefined}
+        aria-hidden={activePoint ? undefined : true}
+      >
+        {activePoint && (
+          <>
+            <div className="trust-graph-tooltip-head">
+              <span className="trust-graph-tooltip-date">{formatHistoryDate(activePoint.date, language)}</span>
+              <span className={`trust-graph-tooltip-score band-${activePoint.band}`}>{activePoint.score}<small>/100</small></span>
+            </div>
+            {activePoint.riskLevel && (
+              <div className="trust-graph-tooltip-risk">
+                {t('trustGraph.tooltip.risk')}: <strong>{t(`common.${String(activePoint.riskLevel).toLowerCase()}`)}</strong>
+              </div>
+            )}
+            <p className="trust-graph-tooltip-why">
+              {activePoint.explanation || t('trustGraph.tooltip.noChange')}
+            </p>
+            {activePoint.markers.length > 0 && (
+              <div className="trust-graph-tooltip-markers">
+                {activePoint.markers.map((markerKey) => {
+                  const meta = TRUST_GRAPH_MARKER_META[markerKey];
+                  if (!meta) return null;
+                  const MarkerIcon = meta.Icon;
+                  return (
+                    <span key={markerKey} className="trust-graph-tooltip-marker">
+                      <MarkerIcon size={12} aria-hidden="true" /> {t(meta.labelKey)}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {plotted.length < 2 && (
+        <p className="trust-graph-thin">{t('trustGraph.notEnoughInRange')}</p>
+      )}
+    </div>
   );
 }
 

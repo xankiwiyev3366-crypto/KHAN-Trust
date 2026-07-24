@@ -1411,6 +1411,36 @@ export default {
       socialBetter: 'social score increased {{points}} pts',
     },
   },
+  // Trust Graph — the interactive historical Trust Score chart (Premium).
+  trustGraph: {
+    eyebrow: 'Trust over time',
+    title: 'Trust Graph',
+    subtitle: 'An interactive history of this project\'s Trust Score, with the reason behind every shift.',
+    rangeLabel: 'Select time range',
+    ranges: { '24h': '24H', '7d': '7D', '30d': '30D', '90d': '90D', all: 'All' },
+    legendBands: 'Trust level',
+    bands: {
+      green: 'Strong (80–100)',
+      yellow: 'Fair (60–79)',
+      orange: 'Weak (40–59)',
+      red: 'High risk (0–39)',
+    },
+    markers: {
+      liquidity: 'Liquidity changed',
+      holder: 'Holder concentration changed',
+      contract: 'Contract updated',
+      social: 'Social activity increased',
+      verification: 'Verification completed',
+    },
+    tooltip: {
+      risk: 'Risk',
+      noChange: 'No significant change on this day — the Trust Score held steady.',
+    },
+    chartAria: 'Trust Score history chart with {{count}} data points',
+    empty: 'No historical Trust Score available yet. Start monitoring this project to build its Trust Graph.',
+    notEnoughInRange: 'Not enough history in this range yet — try a longer window.',
+    lockedDescription: 'See how this project\'s Trust Score has moved over time.',
+  },
   // Watchtower Report (Phase 1). Every dimension listed under `dimensions` is
   // one the re-scan worker GENUINELY observes every cycle — this list is the
   // product's promise about what it checks, so nothing may be added here that

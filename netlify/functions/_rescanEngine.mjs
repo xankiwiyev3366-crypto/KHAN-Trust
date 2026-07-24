@@ -134,6 +134,12 @@ export async function rescanToken(token, options = {}) {
         totalLiquidityUsd: signals.value.totalLiquidityUsd,
         poolCount: signals.value.poolCount,
         volume24hUsd: signals.value.volume24hUsd,
+        // Rides along as evidence, NOT a new scored input: the volatile score
+        // already consumes tokenAgeDays (it is in signals.value above), so
+        // copying it here changes no score input and needs no engine bump. It
+        // lets the score-history bridge (src/lib/monitoredScore.js) rebuild the
+        // full-methodology point without a second fetch.
+        tokenAgeDays: signals.value.tokenAgeDays,
         holderCount: signals.value.holderCount,
         topHolderPercent: signals.value.topHolderPercent,
         topTenHolderPercent: signals.value.topTenHolderPercent,

@@ -13,6 +13,7 @@
 // this module back, so there is no import cycle.
 import { useEffect } from 'react';
 import { historyKeyFor } from './scoreHistory.js';
+import { extractScoreInputs } from './lib/monitoredScore.js';
 
 const LAST_RECORDED_KEY = 'khan-trust-corpus-lastrecorded-v1';
 
@@ -74,6 +75,11 @@ export async function recordTokenSnapshot(project = {}) {
         riskLevel: project.riskLevel || 'Medium',
         category: project.assetCategory || '',
         confidenceLabel: project.confidenceLabel || '',
+        // The STABLE half of this token's scoring inputs (profile + market cap +
+        // listing), so the re-scan worker can rebuild a full-methodology Trust
+        // Score History point while the user is away — the volatile half it
+        // refetches itself. See src/lib/monitoredScore.js.
+        scoreInputs: extractScoreInputs(project),
       }),
     }).catch(() => {}); // includes the no-Functions-server case; corpus is best-effort
 

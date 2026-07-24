@@ -25,6 +25,35 @@ import { putWatchSnapshot, getWatchSnapshots } from './_watchSnapshotStore.mjs';
 import { distinctWatchedTokens, rescanAll, selectDueTokens } from './_rescanEngine.mjs';
 import { recordRun } from './_watchtowerStore.mjs';
 import { resolveTiers, TIER } from './_watchTiers.mjs';
+import { getCorpusToken } from './_tokenCorpusStore.mjs';
+import { appendSnapshotIfDateAbsent } from './_scoreHistoryStore.mjs';
+import { buildMonitoredHistoryPoint } from '../../src/lib/monitoredScore.js';
+
+// One UTC day key (YYYY-MM-DD). Score history is a daily series stamped in UTC
+// (see src/scoreHistory.js), so the worker must stamp the same way or a
+// monitored point could land on the wrong day relative to a client-written one.
+function utcDateKey(now = new Date()) {
+  return now.toISOString().slice(0, 10);
+}
+
+// Bridges one genuine observation into the Trust Score History series the Trust
+// Graph draws. Best-effort and fully isolated: it reads the token's persisted
+// stable inputs from the corpus, rebuilds the FULL-methodology score with this
+// cycle's fresh volatile signals, and fills the day's gap. Any failure — no
+// corpus profile yet, an outage-thin observation, an unwritable blob — returns a
+// reason and is swallowed by the caller, because score history is a read-time
+// product and must never jeopardise the alert-critical watch-snapshot write.
+async function recordMonitoredHistory(result, date) {
+  const corpus = await getCorpusToken(result.identity).catch(() => null);
+  const built = buildMonitoredHistoryPoint({
+    scoreInputs: corpus?.scoreInputs || null,
+    freshSignals: result.snapshot?.signals || null,
+    date,
+  });
+  if (!built.recordable) return built.reason;
+  const { written } = await appendSnapshotIfDateAbsent(result.identity, built.snapshot);
+  return written ? 'written' : 'already_recorded';
+}
 
 export async function handler(event) {
   // Same posture as growth-analyze-background: this does real network work and
@@ -76,7 +105,9 @@ export async function handler(event) {
     // Persist only genuine observations. A declined token keeps its previous
     // snapshot, so the next comparison is still like-for-like against a real
     // past observation rather than against a hole.
+    const historyDate = utcDateKey();
     let written = 0;
+    let historyWritten = 0;
     for (const result of results) {
       if (!result.ok) continue;
       try {
@@ -85,6 +116,18 @@ export async function handler(event) {
       } catch (error) {
         // One unwritable blob must not lose the rest of the run.
         console.warn(`[watch-rescan] failed to store ${result.identity}: ${error.message}`);
+      }
+
+      // Fill the Trust Score History for the Trust Graph. STRICTLY SECONDARY to
+      // the watch-snapshot write above and never allowed to affect it: this is
+      // the "we watch for you" chart filling itself while the user is away, but
+      // a history-store hiccup must never cost an alert. Its own try/catch, after
+      // the snapshot is durably stored.
+      try {
+        const outcome = await recordMonitoredHistory(result, historyDate);
+        if (outcome === 'written') historyWritten += 1;
+      } catch (error) {
+        console.warn(`[watch-rescan] history bridge failed for ${result.identity}: ${error.message}`);
       }
     }
 
@@ -131,7 +174,7 @@ export async function handler(event) {
 
     console.log(
       `[watch-rescan] ${tokens.length} watched tokens, observed ${observed}, wrote ${written}, `
-      + `declined ${declined} in ${Date.now() - startedAt}ms.`
+      + `history +${historyWritten}, declined ${declined} in ${Date.now() - startedAt}ms.`
     );
     return { statusCode: 200 };
   } catch (error) {

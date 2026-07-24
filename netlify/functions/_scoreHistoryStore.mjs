@@ -46,4 +46,27 @@ export async function appendSnapshot(key, snapshot) {
   return next;
 }
 
+// Adds a snapshot ONLY if this key has no entry for that date yet, and reports
+// whether it wrote. This is the monitored-observation path (watch-rescan-
+// background): the client's view path uses appendSnapshot(), which upserts so a
+// human re-viewing a token refreshes today's point with the freshest full scan.
+// The worker instead FILLS GAPS — it must never overwrite a client point (which
+// carries a live market cap the server cannot fetch), and a token observed many
+// times in one UTC day must yield exactly one point (the first), not one per
+// cycle. So an existing same-day entry, from either source, is left untouched.
+export async function appendSnapshotIfDateAbsent(key, snapshot) {
+  const all = await readAllHistory();
+  const existing = all[key] || [];
+  if (existing.some((entry) => entry.date === snapshot.date)) {
+    return { written: false, history: existing };
+  }
+  const next = [...existing, snapshot]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-MAX_ENTRIES_PER_KEY);
+  all[key] = next;
+  await writeAllHistory(all);
+  try { await mirrorScoreHistory(key, snapshot); } catch { /* non-fatal */ }
+  return { written: true, history: next };
+}
+
 export { jsonResponse };

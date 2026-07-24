@@ -12,6 +12,8 @@ import {
   buildTrustGraph,
   filterPointsByRange,
   scoreExtent,
+  timeExtent,
+  downsamplePoints,
 } from './trustGraph.js';
 
 const dayMs = 86400000;
@@ -131,4 +133,49 @@ test('scoreExtent: pads and clamps to [0, 100]', () => {
   const { min, max } = scoreExtent([{ score: 95 }, { score: 90 }]);
   assert.ok(min >= 0 && min < 90);
   assert.equal(max, 100); // clamped
+});
+
+test('scoreExtent: handles a huge array without spread stack overflow', () => {
+  // Math.min(...array) throws "Maximum call stack size exceeded" here; the
+  // loop-based implementation must not. 200k points ≈ well past the spread limit.
+  const big = Array.from({ length: 200000 }, (_, i) => ({ score: i % 100 }));
+  const { min, max } = scoreExtent(big);
+  assert.equal(min, 0);
+  assert.ok(max <= 100 && max > 0);
+});
+
+test('timeExtent: min/max timestamps, empty-safe', () => {
+  assert.deepEqual(timeExtent([]), { minMs: 0, maxMs: 0 });
+  const { minMs, maxMs } = timeExtent([{ dateMs: 30 }, { dateMs: 10 }, { dateMs: 20 }]);
+  assert.equal(minMs, 10);
+  assert.equal(maxMs, 30);
+});
+
+test('downsamplePoints: returns input untouched when within budget', () => {
+  const pts = [{ score: 1, markers: [] }, { score: 2, markers: [] }];
+  assert.equal(downsamplePoints(pts, 160), pts);
+});
+
+test('downsamplePoints: caps a huge series and keeps first, last and event points', () => {
+  const n = 5000;
+  const pts = Array.from({ length: n }, (_, i) => ({ score: i % 100, dateMs: i, markers: [] }));
+  // Plant a couple of event points that must survive the downsample.
+  pts[1234].markers = ['liquidity'];
+  pts[4321].markers = ['contract'];
+  const out = downsamplePoints(pts, 160);
+  assert.ok(out.length <= 160, `expected <=160, got ${out.length}`);
+  assert.equal(out[0], pts[0]); // first kept
+  assert.equal(out[out.length - 1], pts[n - 1]); // last kept
+  assert.ok(out.includes(pts[1234]), 'event point 1234 must survive');
+  assert.ok(out.includes(pts[4321]), 'event point 4321 must survive');
+  // Strictly ascending by original order.
+  for (let i = 1; i < out.length; i += 1) {
+    assert.ok(out[i].dateMs > out[i - 1].dateMs, 'downsample must preserve order');
+  }
+});
+
+test('downsamplePoints: never drops a genuinely small event-dense series', () => {
+  const pts = Array.from({ length: 20 }, (_, i) => ({ score: i, dateMs: i, markers: ['liquidity'] }));
+  const out = downsamplePoints(pts, 160);
+  assert.equal(out.length, 20);
 });

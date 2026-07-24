@@ -1935,6 +1935,10 @@ main {
 .trust-graph-chart {
   position: relative;
   width: 100%;
+  /* Let the chart shrink freely inside its flex column. Without min-width:0 a
+     100%-width SVG can refuse to shrink, pushing the column wider and toggling a
+     scrollbar — which would feed the ResizeObserver and thrash the layout. */
+  min-width: 0;
 }
 
 .trust-graph-svg {

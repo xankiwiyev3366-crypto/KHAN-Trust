@@ -158,11 +158,22 @@ export function filterPointsByRange(points, rangeKey, now = Date.now()) {
 // The min/max score span used to scale the Y axis. Padded a little and clamped
 // to [0, 100] so a flat line doesn't collapse to zero height and a near-100
 // score still leaves headroom for its dot. Returns whole numbers.
+//
+// Uses a single reduce rather than Math.min(...scores) / Math.max(...scores):
+// the spread form passes every score as a function ARGUMENT, which throws
+// "Maximum call stack size exceeded" once the array is large (tens of
+// thousands of points) — a hard freeze. The loop is O(n) and allocation-free.
 export function scoreExtent(points) {
-  const scores = (points || []).map((point) => point.score).filter(Number.isFinite);
-  if (!scores.length) return { min: 0, max: 100 };
-  const rawMin = Math.min(...scores);
-  const rawMax = Math.max(...scores);
+  const list = Array.isArray(points) ? points : [];
+  let rawMin = Infinity;
+  let rawMax = -Infinity;
+  for (const point of list) {
+    const score = point?.score;
+    if (!Number.isFinite(score)) continue;
+    if (score < rawMin) rawMin = score;
+    if (score > rawMax) rawMax = score;
+  }
+  if (rawMin === Infinity) return { min: 0, max: 100 };
   // Always show at least a 20-point window so small real movements are visible
   // without exaggerating noise into a cliff.
   const pad = Math.max(6, Math.round((rawMax - rawMin) * 0.2));
@@ -170,4 +181,51 @@ export function scoreExtent(points) {
     min: Math.max(0, rawMin - pad),
     max: Math.min(100, rawMax + pad),
   };
+}
+
+// The earliest/latest timestamp across the points, via a loop for the same
+// large-array-safety reason as scoreExtent (never Math.min(...times)).
+export function timeExtent(points) {
+  const list = Array.isArray(points) ? points : [];
+  let minMs = Infinity;
+  let maxMs = -Infinity;
+  for (const point of list) {
+    const ms = point?.dateMs;
+    if (!Number.isFinite(ms)) continue;
+    if (ms < minMs) minMs = ms;
+    if (ms > maxMs) maxMs = ms;
+  }
+  if (minMs === Infinity) return { minMs: 0, maxMs: 0 };
+  return { minMs, maxMs };
+}
+
+// Caps how many points the chart actually draws. A token monitored for years
+// could accumulate thousands of daily snapshots; rendering an SVG node (plus an
+// invisible hit target) for every one makes the DOM huge and every hover
+// re-render O(n) — the difference between a crisp chart and a frozen tab. The
+// human eye cannot resolve more than ~1 point per horizontal pixel anyway, so a
+// wider series is downsampled to `maxPoints` WITHOUT losing the story:
+//
+//   * the first and last points are always kept (the line spans the full range);
+//   * every point that carries an event marker is kept, so no "liquidity
+//     changed" / "contract updated" moment silently disappears;
+//   * the remaining budget is filled with an even time-stride.
+//
+// Pure and order-preserving. Returns the input untouched when it already fits.
+export function downsamplePoints(points, maxPoints = 160) {
+  const list = Array.isArray(points) ? points : [];
+  const n = list.length;
+  if (n <= maxPoints) return list;
+  const keep = new Set([0, n - 1]);
+  for (let i = 0; i < n && keep.size < maxPoints; i += 1) {
+    if (list[i]?.markers?.length) keep.add(i);
+  }
+  const remaining = maxPoints - keep.size;
+  if (remaining > 0) {
+    const stride = n / (remaining + 1);
+    for (let s = 1; s <= remaining; s += 1) {
+      keep.add(Math.min(n - 1, Math.round(s * stride)));
+    }
+  }
+  return Array.from(keep).sort((a, b) => a - b).map((index) => list[index]);
 }

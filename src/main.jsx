@@ -142,7 +142,7 @@ import { useCorpusRecord } from './tokenCorpus.js';
 import { ANALYST_QUESTIONS, answerQuestion, translateSignalKeys, translatedCategory } from './khanAnalyst.js';
 import { detectRiskAlerts, useWatchlistAlertCount } from './riskAlerts.js';
 import { TRUST_CATEGORIES, buildRiskHistory, validHistory, describeChange } from './riskHistory.js';
-import { buildTrustGraph, filterPointsByRange, scoreExtent, TRUST_GRAPH_RANGES, MARKER_TYPES } from './trustGraph.js';
+import { buildTrustGraph, filterPointsByRange, scoreExtent, timeExtent, downsamplePoints, TRUST_GRAPH_RANGES, MARKER_TYPES } from './trustGraph.js';
 import { useSinceLastVisit } from './sinceLastVisit.js';
 import { useWatchtowerReport, describeReason, describeCadence, MONITORED_DIMENSIONS, STATUS_TONE } from './watchtower.js';
 import { computePeerBenchmark, peerLabelFor } from './peerBenchmark.js';
@@ -9722,77 +9722,115 @@ function TrustGraphSkeleton() {
   );
 }
 
-// The SVG chart itself. Kept as its own component so it is reusable and so its
-// hover/measure state doesn't re-run the parent's gate logic. Measures its own
-// width (ResizeObserver) and draws crisp, non-distorted dots in real pixels; the
-// line is a per-point gradient so it changes colour as the score crosses a band
-// boundary. The path animates in on mount and on every range change (keyed by
-// range), driven by SVG pathLength normalization.
-function TrustGraphChart({ points, range }) {
+// Chart geometry constants — the fixed internal coordinate box. Height is
+// fixed; only the width is measured. Declared at module scope so they are not
+// re-allocated every render and can be shared by the pure geometry helper.
+const TRUST_GRAPH_HEIGHT = 240;
+const TRUST_GRAPH_PAD = { top: 22, right: 16, bottom: 30, left: 34 };
+// Hard cap on rendered points. Above this the series is downsampled so the DOM
+// and per-hover reconciliation stay cheap regardless of how long a token has
+// been monitored (see downsamplePoints).
+const TRUST_GRAPH_MAX_RENDER_POINTS = 160;
+
+// Pure: turns the (possibly huge) point list into at most MAX_RENDER_POINTS
+// screen-space points. No array spreads anywhere on the hot path, so it is safe
+// and O(n) for any dataset size. Kept outside the component so it never closes
+// over render state.
+function computeTrustGraphGeometry(points, width) {
+  const pad = TRUST_GRAPH_PAD;
+  const chartW = Math.max(1, width - pad.left - pad.right);
+  const chartH = TRUST_GRAPH_HEIGHT - pad.top - pad.bottom;
+  const sampled = downsamplePoints(points, TRUST_GRAPH_MAX_RENDER_POINTS);
+  const extent = scoreExtent(sampled);
+  const span = Math.max(1, extent.max - extent.min);
+  const { minMs, maxMs } = timeExtent(sampled);
+  const timeSpan = maxMs - minMs;
+  const count = sampled.length;
+  const plotted = sampled.map((point, index) => {
+    const frac = count <= 1
+      ? 0.5
+      : timeSpan > 0
+        ? (point.dateMs - minMs) / timeSpan
+        : index / Math.max(1, count - 1);
+    return {
+      ...point,
+      x: pad.left + frac * chartW,
+      y: pad.top + (1 - (point.score - extent.min) / span) * chartH,
+    };
+  });
+  return { plotted, chartW };
+}
+
+// The SVG chart itself. Kept as its own component (and React.memo'd) so the
+// parent's gate logic and the page's other re-renders never re-run it, and so
+// its own hover state can be isolated.
+//
+// PERFORMANCE MODEL (why this is split the way it is):
+//   * The STATIC layer — line, area, gradient, markers, dots and their hit
+//     targets — is built in a useMemo keyed only on [plotted, range]. Hovering
+//     changes `active`, NOT that memo, so React reuses the identical element
+//     tree and skips reconciling every point. Without this, a token with 150
+//     points reconciled 300+ SVG nodes on every mousemove — the freeze.
+//   * The DYNAMIC layer — the enlarged active dot, the vertical guide and the
+//     tooltip — is the only thing that re-renders on hover, and it is a handful
+//     of nodes.
+//   * The hit-target handlers use index-bound / functional setState only, so
+//     they never depend on `active` and can live safely in the static memo.
+const TrustGraphChart = React.memo(function TrustGraphChart({ points, range }) {
   const { t, language } = useTranslation();
   const wrapRef = useRef(null);
   const [width, setWidth] = useState(720);
   const [active, setActive] = useState(null); // index of hovered/focused point
 
+  // Width measurement, hardened against ResizeObserver oscillation without
+  // depending on requestAnimationFrame (a backgrounded/offscreen tab pauses rAF,
+  // which would leave the chart stuck at its default width). The update is
+  // written synchronously but guarded two ways so it can never storm:
+  //   * a hysteresis threshold ignores sub-2px / scrollbar jitter, and
+  //   * React bails out when the value is unchanged (functional-set guard).
+  // A feedback loop is structurally impossible anyway: changing `width` only
+  // rescales a width:100% / fixed-height SVG inside a min-width:0 container, so
+  // the observed element's own size never changes as a result.
   useEffect(() => {
     const node = wrapRef.current;
-    if (!node || typeof ResizeObserver === 'undefined') return undefined;
+    if (!node) return undefined;
+    const apply = (measured) => {
+      if (!measured) return;
+      const next = Math.max(280, Math.round(measured));
+      setWidth((current) => (Math.abs(next - current) < 2 ? current : next));
+    };
+    // Measure once, synchronously, on mount. getBoundingClientRect forces layout
+    // and returns the real width immediately — so the chart is correctly sized on
+    // first paint even where ResizeObserver notifications are delayed or never
+    // delivered (offscreen/non-composited contexts). The observer then only
+    // handles subsequent size changes.
+    apply(node.getBoundingClientRect().width);
+    if (typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect?.width;
-      if (w) setWidth(Math.max(280, Math.round(w)));
+      apply(entries[0]?.contentRect?.width);
     });
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
 
+  const geometry = useMemo(() => computeTrustGraphGeometry(points, width), [points, width]);
+  const { plotted, chartW } = geometry;
+
   // Reset the active point whenever the plotted set changes so a stale index
   // from the previous range can't point past the end of the new array.
-  useEffect(() => { setActive(null); }, [range, points.length]);
+  useEffect(() => { setActive(null); }, [range, plotted.length]);
 
-  const height = 240;
-  const pad = { top: 22, right: 16, bottom: 30, left: 34 };
-  const chartW = Math.max(1, width - pad.left - pad.right);
-  const chartH = height - pad.top - pad.bottom;
-
-  const geometry = useMemo(() => {
-    const extent = scoreExtent(points);
-    const span = Math.max(1, extent.max - extent.min);
-    const times = points.map((p) => p.dateMs);
-    const minMs = Math.min(...times);
-    const maxMs = Math.max(...times);
-    const timeSpan = maxMs - minMs;
-    const xFor = (point, index) => {
-      if (points.length === 1) return pad.left + chartW / 2;
-      const frac = timeSpan > 0 ? (point.dateMs - minMs) / timeSpan : index / Math.max(1, points.length - 1);
-      return pad.left + frac * chartW;
-    };
-    const yFor = (score) => pad.top + (1 - (score - extent.min) / span) * chartH;
-    const plotted = points.map((point, index) => ({
-      ...point,
-      x: xFor(point, index),
-      y: yFor(point.score),
-    }));
-    return { plotted, extent };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [points, width]);
-
-  const { plotted } = geometry;
-  const linePoints = plotted.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+  const height = TRUST_GRAPH_HEIGHT;
+  const pad = TRUST_GRAPH_PAD;
   const gradientId = `trust-graph-line-${range}`;
   const areaId = `trust-graph-area-${range}`;
-  const activePoint = active != null ? plotted[active] : null;
 
-  return (
-    <div className="trust-graph-chart" ref={wrapRef}>
-      <svg
-        className="trust-graph-svg"
-        viewBox={`0 0 ${width} ${height}`}
-        width="100%"
-        height={height}
-        role="img"
-        aria-label={t('trustGraph.chartAria', { count: points.length })}
-        onMouseLeave={() => setActive(null)}
-      >
+  // The static, hover-independent SVG body. Rebuilt only when the plotted
+  // geometry or the range changes — never on hover.
+  const staticLayer = useMemo(() => {
+    const linePoints = plotted.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ');
+    return (
+      <>
         <defs>
           {/* The line's colour follows the score across band boundaries: one
               gradient stop per point, positioned by its x fraction. */}
@@ -9851,7 +9889,9 @@ function TrustGraphChart({ points, range }) {
           ) : null
         ))}
 
-        {/* The data points. Each is focusable + hoverable and drives the tooltip. */}
+        {/* The data points. Each is focusable + hoverable and drives the tooltip.
+            Handlers are index-bound / functional only, so this layer never has
+            to re-render when `active` changes. */}
         {plotted.map((point, index) => (
           <g key={`p-${index}`}>
             {/* Generous invisible hit target for easy hover/tap. */}
@@ -9868,24 +9908,59 @@ function TrustGraphChart({ points, range }) {
               onBlur={() => setActive((current) => (current === index ? null : current))}
             />
             <circle
-              className={`trust-graph-dot${active === index ? ' is-active' : ''}`}
+              className="trust-graph-dot"
               cx={point.x}
               cy={point.y}
-              r={active === index ? 5.5 : 3.5}
+              r={3.5}
               style={{ fill: point.color, stroke: point.color }}
             />
           </g>
         ))}
+      </>
+    );
+    // `t`/`language` only affect the aria-labels; depending on `language` keeps
+    // the memo stable within a language (t is identical per-language), while
+    // `active` is deliberately excluded so hover never rebuilds this layer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plotted, chartW, range, width, language]);
 
-        {/* Vertical guide at the active point. */}
+  const activePoint = active != null ? plotted[active] : null;
+  // Clamp the tooltip's horizontal position so it can never extend past the
+  // chart edges (which would add page horizontal scroll and, in turn, feed the
+  // ResizeObserver). Percent space, with an 8% margin either side.
+  const tipLeft = activePoint ? Math.min(92, Math.max(8, (activePoint.x / width) * 100)) : 0;
+
+  return (
+    <div className="trust-graph-chart" ref={wrapRef}>
+      <svg
+        className="trust-graph-svg"
+        viewBox={`0 0 ${width} ${height}`}
+        width="100%"
+        height={height}
+        role="img"
+        aria-label={t('trustGraph.chartAria', { count: points.length })}
+        onMouseLeave={() => setActive(null)}
+      >
+        {staticLayer}
+
+        {/* Dynamic overlay — the ONLY nodes that re-render on hover. */}
         {activePoint && (
-          <line
-            className="trust-graph-guide"
-            x1={activePoint.x}
-            y1={pad.top}
-            x2={activePoint.x}
-            y2={height - pad.bottom}
-          />
+          <>
+            <line
+              className="trust-graph-guide"
+              x1={activePoint.x}
+              y1={pad.top}
+              x2={activePoint.x}
+              y2={height - pad.bottom}
+            />
+            <circle
+              className="trust-graph-dot is-active"
+              cx={activePoint.x}
+              cy={activePoint.y}
+              r={5.5}
+              style={{ fill: activePoint.color, stroke: activePoint.color }}
+            />
+          </>
         )}
       </svg>
 
@@ -9894,7 +9969,7 @@ function TrustGraphChart({ points, range }) {
           is on the right so it never spills off the edge. */}
       <div
         className={`trust-graph-tooltip${activePoint ? ' is-visible' : ''}${activePoint && activePoint.x > width / 2 ? ' flip' : ''}`}
-        style={activePoint ? { left: `${(activePoint.x / width) * 100}%`, top: `${(activePoint.y / height) * 100}%` } : undefined}
+        style={activePoint ? { left: `${tipLeft}%`, top: `${(activePoint.y / height) * 100}%` } : undefined}
         aria-hidden={activePoint ? undefined : true}
       >
         {activePoint && (
@@ -9934,7 +10009,7 @@ function TrustGraphChart({ points, range }) {
       )}
     </div>
   );
-}
+});
 
 // Only 0-100 score dimensions become "prev -> current" chips; liquidity (shown
 // as a % in the explanation) and holder concentration (a % of supply, not a

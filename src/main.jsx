@@ -384,13 +384,26 @@ const navItems = [
   { id: 'support', label: 'Support', icon: LifeBuoy },
 ];
 
-const filters = ['All', 'Solana', 'Ethereum', 'BSC', 'Base', 'New Projects', 'High Risk', 'Strong Community'];
+// Chain filter tokens MUST equal the project.chain label a scan produces
+// (CHAIN_LABELS in src/chains/data.js), so 'BSC' stays the token even though it
+// renders as "BNB Chain" via i18n. Covers all 10 supported chains.
+const filters = [
+  'All',
+  'Solana', 'Ethereum', 'Base', 'BSC', 'Arbitrum', 'Optimism', 'Polygon', 'Avalanche', 'Sui', 'Aptos',
+  'New Projects', 'High Risk', 'Strong Community',
+];
 const FILTER_KEY_MAP = {
   All: 'all',
   Solana: 'solana',
   Ethereum: 'ethereum',
-  BSC: 'bsc',
   Base: 'base',
+  BSC: 'bsc',
+  Arbitrum: 'arbitrum',
+  Optimism: 'optimism',
+  Polygon: 'polygon',
+  Avalanche: 'avalanche',
+  Sui: 'sui',
+  Aptos: 'aptos',
   'New Projects': 'newProjects',
   'High Risk': 'highRisk',
   'Strong Community': 'strongCommunity',

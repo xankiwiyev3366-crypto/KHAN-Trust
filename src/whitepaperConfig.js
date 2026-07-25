@@ -4,7 +4,7 @@ export const WHITEPAPER = {
   fileUrl: '/whitepaper/khan-ecosystem-whitepaper.pdf',
   fileName: 'KHAN-Ecosystem-Whitepaper.pdf',
   title: 'KHAN Ecosystem Whitepaper',
-  subtitle: 'Next-Generation Trust & Analytics on Solana',
+  subtitle: 'Next-Generation Multi-Chain Trust & Analytics',
   version: '1.0',
   releaseDate: 'June 2026',
   lastUpdated: '2026-06-25',

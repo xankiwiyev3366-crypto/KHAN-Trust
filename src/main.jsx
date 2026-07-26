@@ -7533,6 +7533,7 @@ function DetailHistorySection({ title, count, children }) {
 // 'remove' is a bulk revoke.
 const BULK_ACTION_OPTIONS = [
   { value: '30d', kind: 'grant', duration: '30d' },
+  { value: '60d', kind: 'grant', duration: '60d' },
   { value: '90d', kind: 'grant', duration: '90d' },
   { value: '180d', kind: 'grant', duration: '180d' },
   { value: '365d', kind: 'grant', duration: '365d' },

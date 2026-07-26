@@ -2430,6 +2430,7 @@ export default {
       none: 'No Expiration',
       '7d': '7 Days',
       '30d': '30 Days',
+      '60d': '60 Days',
       '90d': '90 Days',
       '180d': '180 Days',
       '365d': '365 Days',
@@ -2457,6 +2458,7 @@ export default {
       choosePlaceholder: 'Choose an action...',
       options: {
         '30d': 'Grant 1 Month Premium',
+        '60d': 'Grant 2 Months Premium',
         '90d': 'Grant 3 Months Premium',
         '180d': 'Grant 6 Months Premium',
         '365d': 'Grant 12 Months Premium',

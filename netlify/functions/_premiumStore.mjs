@@ -27,7 +27,7 @@ export const REASONS = new Set([
   'giveaway_winner', 'early_supporter', 'investor', 'partner',
   'moderator', 'testing', 'promotion', 'other', '',
 ]);
-export const DURATIONS = new Set(['lifetime', 'none', '7d', '30d', '90d', '180d', '365d', 'custom']);
+export const DURATIONS = new Set(['lifetime', 'none', '7d', '30d', '60d', '90d', '180d', '365d', 'custom']);
 
 function store() {
   return getNamedStore(STORE_NAME);
@@ -66,6 +66,7 @@ export function computeExpiry(duration, customExpiry) {
   switch (duration) {
     case '7d': return new Date(Date.now() + 7 * DAY_MS).toISOString();
     case '30d': return new Date(Date.now() + 30 * DAY_MS).toISOString();
+    case '60d': return new Date(Date.now() + 60 * DAY_MS).toISOString();
     case '90d': return new Date(Date.now() + 90 * DAY_MS).toISOString();
     case '180d': return new Date(Date.now() + 180 * DAY_MS).toISOString();
     case '365d': return new Date(Date.now() + 365 * DAY_MS).toISOString();

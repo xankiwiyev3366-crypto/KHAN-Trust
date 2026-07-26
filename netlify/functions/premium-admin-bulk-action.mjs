@@ -23,7 +23,7 @@ function sanitize(value, maxLength) {
 // Bulk grants are always the plain "premium" plan for a fixed billing window;
 // the four durations the admin panel offers map straight onto the shared
 // computeExpiry() day-windows.
-const BULK_DURATIONS = new Set(['30d', '90d', '180d', '365d']);
+const BULK_DURATIONS = new Set(['30d', '60d', '90d', '180d', '365d']);
 
 export async function handler(event) {
   try {

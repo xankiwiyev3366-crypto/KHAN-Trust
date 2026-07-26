@@ -2811,6 +2811,7 @@ export default {
       none: 'Süresiz',
       '7d': '7 Gün',
       '30d': '30 Gün',
+      '60d': '60 Gün',
       '90d': '90 Gün',
       '180d': '180 Gün',
       '365d': '365 Gün',
@@ -2838,6 +2839,7 @@ export default {
       choosePlaceholder: 'Bir işlem seçin...',
       options: {
         '30d': '1 Ay Premium Ver',
+        '60d': '2 Ay Premium Ver',
         '90d': '3 Ay Premium Ver',
         '180d': '6 Ay Premium Ver',
         '365d': '12 Ay Premium Ver',

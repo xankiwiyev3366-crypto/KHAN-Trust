@@ -74,6 +74,7 @@ export default {
     approvals: 'Approvals',
     comparison: 'Comparison',
     topProjects: 'Top Projects',
+    trustMovers: 'Trust Movers',
     categories: 'Categories',
     referral: 'Refer & Earn',
     promoTitle: 'Join the KHAN Ecosystem',

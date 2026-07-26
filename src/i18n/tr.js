@@ -74,6 +74,7 @@ export default {
     approvals: 'Onaylar',
     comparison: 'Karşılaştırma',
     topProjects: 'En İyi Projeler',
+    trustMovers: 'Trust Movers',
     categories: 'Kategoriler',
     referral: 'Davet Et & Kazan',
     promoTitle: "KHAN Ekosistemine Katıl",

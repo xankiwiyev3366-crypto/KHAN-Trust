@@ -74,6 +74,7 @@ export default {
     approvals: 'İcazələr',
     comparison: 'Müqayisə',
     topProjects: 'Ən Yaxşı Layihələr',
+    trustMovers: 'Trust Movers',
     categories: 'Kateqoriyalar',
     referral: 'Dəvət et & Qazan',
     promoTitle: 'KHAN Ekosistemə Qoşulun',

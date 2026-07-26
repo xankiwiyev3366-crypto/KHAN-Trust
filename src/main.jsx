@@ -176,6 +176,11 @@ import { AuthModal } from './auth/AuthModal.jsx';
 // entire module (and its earlyStage.js client) out of the initial bundle; it
 // only downloads when a user opens an /early-stage* route. See EarlyStage.jsx.
 const EarlyStageFeature = lazy(() => import('./EarlyStage.jsx'));
+// Trust Movers - the premium analytics dashboard (biggest Trust Score movers +
+// grounded "why it moved"). Lazy like Early Stage: its code and the fetch it
+// drives only download when a user opens the /trust-movers route. See
+// TrustMovers.jsx and netlify/functions/trust-movers.mjs.
+const TrustMoversFeature = lazy(() => import('./TrustMovers.jsx'));
 // KHAN AI - the platform's security-intelligence entity. Statically imported
 // rather than lazy: it is a few KB of inline SVG with no external assets, and
 // it renders in the hero above the fold, where a lazy chunk would show up as a
@@ -2030,6 +2035,11 @@ function App() {
             />
           </Suspense>
         )}
+        {page === 'trust-movers' && (
+          <Suspense fallback={<section className="page-section"><p className="lookup-message">{t('common.loading')}</p></section>}>
+            <TrustMoversFeature navigate={navigate} />
+          </Suspense>
+        )}
         {page === 'add' && pageAuthReady && <AddProjectPage onAdd={addProject} navigate={navigate} />}
         {page === 'launchpad' && pageAuthReady && <LaunchpadPage onCreateProfile={saveProjectProfile} navigate={navigate} />}
         {page === 'pricing' && <PricingPage navigate={navigate} />}
@@ -2435,6 +2445,9 @@ const SIDEBAR_ITEMS = [
   { id: 'approvals', labelKey: 'sidebar.approvals', icon: Shield },
   { id: 'compare', labelKey: 'sidebar.comparison', icon: Scale },
   { id: 'top-projects', labelKey: 'sidebar.topProjects', icon: Trophy },
+  // The intelligence layer over the same longitudinal score data the leaderboard
+  // ranks — placed right after Top Projects, its natural neighbour.
+  { id: 'trust-movers', labelKey: 'sidebar.trustMovers', icon: TrendingUp },
   { id: 'categories', labelKey: 'sidebar.categories', icon: Tags },
   { id: 'referral', labelKey: 'sidebar.referral', icon: Gift },
 ];

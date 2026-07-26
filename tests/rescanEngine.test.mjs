@@ -109,7 +109,7 @@ test('a rug — every pool pulled — is observed, not skipped', async () => {
 
 test('an incomplete fetch produces NO snapshot', async () => {
   // The core safety property. tests/trustScore.test.mjs pins that an outage
-  // alone moves a healthy token 91 -> 72, past the 10-point alert threshold, so
+  // alone moves a healthy token 88 -> 58, past the 10-point alert threshold, so
   // a snapshot built from a partial fetch is a false alert waiting for a cron
   // tick. Declining costs one hour. Lying costs the user.
   const result = await rescanToken(WATCHED, {

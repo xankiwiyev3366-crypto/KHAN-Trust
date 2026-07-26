@@ -23,6 +23,7 @@ import {
   scoreSecurity,
   scoreLiquidity,
   scoreHolders,
+  scorePresence,
   isLargeVerifiedAsset,
   MAX_TRUST_SCORE_PENALTY,
 } from '../src/lib/trustScore.js';
@@ -89,7 +90,7 @@ test('scoring does not mutate its inputs', () => {
 
 test('a blue-chip native asset scores Low risk', () => {
   const score = calculateLiveScores(...BLUE_CHIP).finalTrustScore;
-  assert.equal(score, 82);
+  assert.equal(score, 79);
   assert.equal(scoreToRisk(score), 'Low');
 });
 
@@ -104,7 +105,7 @@ test('a rug-shaped token bottoms out at High risk', () => {
 
 test('a healthy mid-cap scores Low risk', () => {
   const score = calculateLiveScores(...HEALTHY_MIDCAP).finalTrustScore;
-  assert.equal(score, 91);
+  assert.equal(score, 88);
   assert.equal(scoreToRisk(score), 'Low');
 });
 
@@ -146,8 +147,13 @@ test('DANGER: a token with no data scores lower than the same token with good da
   // And with nothing known at all.
   const nothingKnown = calculateLiveScores({}, {}).finalTrustScore;
 
-  assert.equal(withData, 91);
-  assert.equal(providersDown, 72, 'profile signals hold the score up; market signals go null');
+  assert.equal(withData, 88);
+  // Presence-only signals (website/X/Telegram links) now cap out at 72 instead
+  // of 88, so a token carried purely by faked-cheap links lands in mid-Medium
+  // (58) rather than nearly-Low (was 72). The hazard this test guards is
+  // unchanged and, if anything, larger: a partial fetch still swings the score
+  // well past the alert threshold, so the re-scan worker must still refuse it.
+  assert.equal(providersDown, 58, 'soft profile links no longer prop a no-data token near Low risk');
   assert.equal(nothingKnown, 19, 'no profile and no data reads as High risk — fail-safe, by design');
 
   assert.ok(
@@ -201,6 +207,17 @@ test('security scoring counts live authorities, and unknown stays unknown', () =
   assert.equal(scoreSecurity(true, false, false), 52, 'one live authority is a real downgrade');
   assert.equal(scoreSecurity(true, true, false), 18, 'two is close to the floor');
   assert.equal(scoreSecurity(null, null, null), null, 'unknown authorities must not score as safe');
+});
+
+test('a merely-present public link is a positive but not a near-safe signal', () => {
+  // A working website/X/Telegram/GitHub link proves the project EXISTS; it does
+  // not prove it is safe, and it is one of the cheapest things a scam fakes. So
+  // presence tops out at 72 (a real positive, below the 78 Low-risk line),
+  // never 88 — otherwise soft, fakeable signals could carry a thin token into
+  // the Low band on their own. "Unavailable" and "Missing" keep the fail-safe.
+  assert.equal(scorePresence('Present'), 72, 'a present link is positive, not near-safe');
+  assert.equal(scorePresence('Data unavailable'), 44, 'an outage is an unknown, not a finding');
+  assert.equal(scorePresence('Missing'), 26, 'a confirmed-missing channel is a real gap');
 });
 
 test('liquidity and holder scores return null at zero rather than a bad score', () => {

@@ -103,12 +103,26 @@ export function socialPresenceState(kind, project = {}, data = {}) {
   return { state: 'Missing', value: 'Missing' };
 }
 
+// A public channel merely EXISTING is hygiene, not proof of safety: a website,
+// X, Telegram or GitHub link is trivial to stand up and is one of the first
+// things a scam project fakes. So "Present" is scored as a solid-but-not-safe
+// positive (72) rather than the near-"Low risk" 88 it used to earn. This matters
+// structurally, not just per-signal: weightedAverage() renormalizes over only
+// the signals that are present, so when the hard on-chain signals (holder
+// concentration, liquidity, authorities, age) are absent, these cheap presence
+// signals are ALL that remains and used to carry a soft-data-only token into the
+// mid-70s — reading as "almost Low risk" purely on links a fraudster controls.
+// Capping their upside is the single most direct correction for that inflation;
+// well-evidenced tokens (carried by the hard signals) barely move. The "Data
+// unavailable" (44) and "Missing" (26) rungs are unchanged, so the fail-safe
+// floor for a no-data token is preserved. Mirrors the deep-risk layer, which
+// already weights `activePublicPresence` as 'low' evidence.
 export function scorePresence(value) {
   const state = typeof value === 'string' ? value : value?.state;
-  if (state === 'Present') return 88;
+  if (state === 'Present') return 72;
   if (state === 'Data unavailable') return 44;
   if (state === 'Missing') return 26;
-  return hasValue(value) ? 88 : 44;
+  return hasValue(value) ? 72 : 44;
 }
 
 export function scoreSocial(project = {}, data = {}) {

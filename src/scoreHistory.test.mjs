@@ -2,7 +2,7 @@
 // and computeScoreDelta are pure; the network/React parts are not exercised.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { historyKeyFor, computeScoreDelta, assessSnapshot } from './scoreHistory.js';
+import { historyKeyFor, computeScoreDelta, assessSnapshot, fetchScoreHistory } from './scoreHistory.js';
 
 const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
 
@@ -106,4 +106,61 @@ test('assessSnapshot: confidence is null when the project has no confidenceScore
   const r = assessSnapshot({ realData: { liquidityUsd: 10000 } }, 50);
   assert.equal(r.recordable, true);
   assert.equal(r.confidence, null);
+});
+
+// ── The Premium-gated read must carry credentials (regression) ────────────────
+// score-history-get was gated server-side (requireFeature 'scoreHistory'), but
+// the client never sent the account JWT — so every read was answered 402 and the
+// Trust Graph went permanently empty even though snapshots were being written.
+// These pin that the read authenticates so a premium caller actually gets data.
+
+function withStubbedEnv(store, fetchImpl, run) {
+  const prevFetch = globalThis.fetch;
+  const prevLS = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: () => {},
+    removeItem: () => {},
+  };
+  globalThis.fetch = fetchImpl;
+  return Promise.resolve()
+    .then(run)
+    .finally(() => {
+      globalThis.fetch = prevFetch;
+      globalThis.localStorage = prevLS;
+    });
+}
+
+test('fetchScoreHistory sends the account JWT so the gated read is authorized', async () => {
+  let captured = null;
+  await withStubbedEnv(
+    { 'khan-trust-auth-token-v1': 'jwt-abc' },
+    async (url, options) => {
+      captured = { url, options };
+      return { ok: true, json: async () => ({ history: [{ date: '2026-07-20', score: 71, complete: true }] }) };
+    },
+    async () => {
+      const history = await fetchScoreHistory('c:abc');
+      assert.equal(captured.options.headers.Authorization, 'Bearer jwt-abc', 'the read must prove Premium via the JWT');
+      assert.ok(captured.url.includes('score-history-get?key=c%3Aabc'));
+      assert.equal(history.length, 1);
+    },
+  );
+});
+
+test('fetchScoreHistory attaches a cached wallet-session token for a legacy wallet user', async () => {
+  let captured = null;
+  const wallet = 'So1anaWa11etAddr';
+  const walletToken = JSON.stringify({ token: 'wsess-xyz', expires: Date.now() + 3_600_000 });
+  await withStubbedEnv(
+    { [`khan-trust-wallet-session-v1:${wallet}`]: walletToken },
+    async (url, options) => {
+      captured = { url, options };
+      return { ok: true, json: async () => ({ history: [] }) };
+    },
+    async () => {
+      await fetchScoreHistory('c:abc', wallet);
+      assert.equal(captured.options.headers['x-khan-wallet-auth'], 'wsess-xyz', 'a cached wallet token must ride along');
+    },
+  );
 });

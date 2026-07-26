@@ -5267,7 +5267,9 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
   const [reportModalOpen, setReportModalOpen] = useState(false);
   // Shared by the Phase 1 trend strip and the Phase 2 Ask KHAN analyst below,
   // so both read the same fetched history instead of each fetching its own.
-  const history = useScoreHistory(project);
+  // profileWallet lets a legacy wallet-only paid user prove Premium to the
+  // now-gated score-history read; account/admin-grant users prove it via the JWT.
+  const history = useScoreHistory(project, profileWallet);
   // Additive: mirror this token into the shared Trust Graph Corpus (best-effort,
   // never affects render - see tokenCorpus.js). The once/day/token throttle
   // means sharing this funnel with RiskReportPage causes no duplicate writes.

@@ -7,17 +7,50 @@
 // plain `vite dev` server with no Netlify Functions running.
 import { useEffect, useState } from 'react';
 import { snapshotMetrics, validHistory } from './riskHistory.js';
+import { getCachedWalletToken, walletAuthHeaders } from './walletSession.js';
 
 const FALLBACK_KEY = 'khan-trust-score-history-fallback-v1';
 const LAST_RECORDED_KEY = 'khan-trust-score-history-lastrecorded-v1';
+const AUTH_TOKEN_KEY = 'khan-trust-auth-token-v1';
 const MAX_ENTRIES = 180;
 
 function isFunctionUnavailable(error) {
   return Boolean(error) && (error.status === undefined || error.status === 404);
 }
 
-async function callFunction(path, options) {
-  const response = await fetch(`/.netlify/functions/${path}`, options);
+// The READ endpoint (score-history-get) is Premium-gated server-side
+// (requireFeature 'scoreHistory', added in the feature-gate commit), so a
+// request that carries no proof of entitlement is answered 402 and the Trust
+// Graph goes permanently empty. Identity is resolved exactly as everywhere else
+// (see _premiumAccess.mjs): the account/admin-grant JWT via Authorization, and —
+// for a legacy wallet-only paid user — a cached wallet-session token. Mirrors
+// userData.js / scanQuota.js so the score-history client can never drift from
+// the rest of the app on how a premium caller proves itself. The WRITE endpoint
+// stays public, but attaching these headers there too is harmless and keeps one
+// code path.
+function authHeaders() {
+  try {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
+// Passive premium credentials: the account JWT always, plus a wallet-session
+// token ONLY if one is already cached for `wallet` (never prompts a signature —
+// loading a page must not pop a wallet dialog). A wallet-keyed premium user is
+// recognised once they have taken any action that cached the token.
+function premiumHeaders(wallet) {
+  const walletToken = wallet ? getCachedWalletToken(wallet) : null;
+  return { ...authHeaders(), ...walletAuthHeaders(walletToken) };
+}
+
+async function callFunction(path, options = {}) {
+  const response = await fetch(`/.netlify/functions/${path}`, {
+    ...options,
+    headers: { ...authHeaders(), ...(options.headers || {}) },
+  });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     const error = new Error(body.message || `Request to ${path} failed (${response.status})`);
@@ -117,10 +150,13 @@ export function assessSnapshot(project = {}, score) {
   return { recordable: true, reason: 'ok', confidence };
 }
 
-export async function fetchScoreHistory(key) {
+export async function fetchScoreHistory(key, wallet) {
   if (!key) return [];
   try {
-    const result = await callFunction(`score-history-get?key=${encodeURIComponent(key)}`, { method: 'GET' });
+    const result = await callFunction(`score-history-get?key=${encodeURIComponent(key)}`, {
+      method: 'GET',
+      headers: premiumHeaders(wallet),
+    });
     return Array.isArray(result.history) ? result.history : [];
   } catch (error) {
     if (!isFunctionUnavailable(error)) throw error;
@@ -135,7 +171,7 @@ export async function fetchScoreHistory(key) {
 // just avoids the wasted calls. Also captures top-holder concentration and
 // liquidity alongside the score (when known) - Phase 3's risk-change alerts
 // need day-over-day deltas on those, not just the score.
-export async function recordScoreSnapshot(project, score, riskLevel) {
+export async function recordScoreSnapshot(project, score, riskLevel, wallet) {
   const key = historyKeyFor(project);
   if (!key) return;
 
@@ -182,7 +218,7 @@ export async function recordScoreSnapshot(project, score, riskLevel) {
   try {
     await callFunction('score-history-record', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...premiumHeaders(wallet) },
       body: JSON.stringify({ key, snapshot }),
     });
   } catch (error) {
@@ -221,15 +257,15 @@ export function computeScoreDelta(history, currentScore) {
 // strip, the Ask KHAN analyst, and anything else on the page that needs
 // history all read the same fetched data instead of each firing their own
 // network call.
-export function useScoreHistory(project) {
+export function useScoreHistory(project, wallet) {
   const [history, setHistory] = useState([]);
   const key = historyKeyFor(project);
 
   useEffect(() => {
     if (!key) return;
     let cancelled = false;
-    recordScoreSnapshot(project, project.trustScore, project.riskLevel).catch(() => {});
-    fetchScoreHistory(key)
+    recordScoreSnapshot(project, project.trustScore, project.riskLevel, wallet).catch(() => {});
+    fetchScoreHistory(key, wallet)
       .then((entries) => {
         if (!cancelled) setHistory(entries);
       })
@@ -238,7 +274,7 @@ export function useScoreHistory(project) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, project.trustScore, project.riskLevel]);
+  }, [key, project.trustScore, project.riskLevel, wallet]);
 
   return history;
 }

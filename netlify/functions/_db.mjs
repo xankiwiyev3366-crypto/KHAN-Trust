@@ -26,6 +26,11 @@ const STATEMENT_TIMEOUT_MS = 4000;
 // top of the pg timeouts): a healthy DB answers in tens of ms; a sick one can
 // never cost the user more than this.
 const MIRROR_RACE_MS = 1500;
+// Overall cap on a Phase 2 READ from the request path. A read can legitimately
+// scan a token's whole daily/observation series, so it is a touch more generous
+// than the single-statement write above — but still hard-bounded so a sick DB
+// falls back to Blobs quickly instead of stalling a page load or an alert run.
+const READ_RACE_MS = 2500;
 
 let pool = null;
 let poolBroken = false;
@@ -80,6 +85,30 @@ export async function mirror(text, values) {
   } catch (error) {
     console.warn(`[db] mirror write failed (non-fatal): ${error.message}`);
     return { ok: false, error: error.message };
+  }
+}
+
+// Phase 2 best-effort READ. Same non-negotiable posture as mirror(): NEVER
+// throws and NEVER hangs the caller. Returns a discriminated result so a store
+// can implement Postgres-first-with-Blob-fallback cleanly:
+//   { ok: true,  rows }            — a real answer (rows may be empty; an empty
+//                                    result is a VALID answer, NOT a reason to
+//                                    fall back — the token simply has no data).
+//   { ok: false, reason, error? }  — Postgres could not serve the read (unset
+//                                    URL, no pool, timeout, or query error), so
+//                                    the caller should fall back to Blobs.
+// Every failure is logged with the caller's label so that Blob-fallback usage is
+// observable in the function logs (requirement: detect when PG reads fail).
+export async function readRows(text, values, { label = 'read' } = {}) {
+  if (!dbConfigured()) return { ok: false, reason: 'no_database_url' };
+  const p = getPool();
+  if (!p) return { ok: false, reason: 'no_pool' };
+  try {
+    const result = await Promise.race([p.query(text, values), raceTimeout(READ_RACE_MS)]);
+    return { ok: true, rows: Array.isArray(result?.rows) ? result.rows : [] };
+  } catch (error) {
+    console.warn(`[db] ${label} read failed — falling back to Blobs (non-fatal): ${error.message}`);
+    return { ok: false, reason: 'error', error: error.message };
   }
 }
 

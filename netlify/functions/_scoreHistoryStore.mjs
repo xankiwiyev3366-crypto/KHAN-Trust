@@ -5,6 +5,7 @@
 // day, capped per key below).
 import { getNamedStore, jsonResponse } from './_blobsClient.mjs';
 import { mirrorScoreHistory } from './_pgMirror.mjs';
+import { readScoreHistory } from './_pgReads.mjs';
 
 const STORE_NAME = 'khan-trust-score-history';
 const DATA_KEY = 'score-history.json';
@@ -23,7 +24,19 @@ export async function writeAllHistory(allData) {
   await store().setJSON(DATA_KEY, allData);
 }
 
+// Postgres-FIRST read (Phase 2). Returns one token's daily series, ordered
+// oldest→newest by the DB. Falls back to the Blob only when Postgres cannot serve
+// the read (unset URL, timeout, error) — an EMPTY Postgres result is a valid
+// answer (this token has no history yet) and is returned as-is, never masked by
+// a Blob re-read. The response is the same array of snapshot objects either way,
+// so score-history-get and every downstream consumer are unchanged.
+//
+// NOTE: this is the READ surface only. The write helpers below still read the
+// whole-map Blob (readAllHistory) to upsert, keeping Blobs the authoritative
+// write target during the dual-write phase.
 export async function getHistory(key) {
+  const pg = await readScoreHistory(key);
+  if (pg.ok) return pg.value;
   const all = await readAllHistory();
   return all[key] || [];
 }

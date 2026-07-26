@@ -18,6 +18,7 @@
 // only ever read by identity, by the alert worker.
 import { getNamedStore } from './_blobsClient.mjs';
 import { mirrorWatchSnapshot } from './_pgMirror.mjs';
+import { readWatchLatest, readWatchLatestBatch, readWatchHistory } from './_pgReads.mjs';
 
 const STORE_NAME = 'khan-trust-watch-snapshots';
 
@@ -29,9 +30,35 @@ function snapshotKey(identity) {
   return `watch/${identity}`;
 }
 
-export async function getWatchSnapshot(identity) {
+// Blob-only latest read, kept as the fallback and reused by getWatchSnapshots.
+async function getWatchSnapshotFromBlob(identity) {
   const data = await store().get(snapshotKey(identity), { type: 'json' });
   return data && typeof data === 'object' ? data : null;
+}
+
+// Postgres-FIRST latest observation (Phase 2). Postgres keeps the full series,
+// so "latest" is `ORDER BY observed_at DESC LIMIT 1` — never a single stale Blob
+// masquerading as current. Falls back to the Blob (which holds exactly this
+// latest value) only when Postgres cannot serve the read. An empty Postgres
+// result (no observation yet) is a valid null answer, matching the Blob's own
+// first-run behaviour.
+export async function getWatchSnapshot(identity) {
+  const pg = await readWatchLatest(identity);
+  if (pg.ok) return pg.value;
+  return getWatchSnapshotFromBlob(identity);
+}
+
+// Postgres-FIRST full append-only history for one token, oldest→newest. This
+// series exists ONLY in Postgres — the Blob keeps a single latest record — so the
+// Blob fallback here is explicitly degraded: it can return at most a one-element
+// array ([latest]) and never a real history. It is used solely when Postgres
+// cannot serve the request, so a complete DB history is never replaced by the
+// single latest Blob when the DB is healthy.
+export async function getWatchSnapshotHistory(identity) {
+  const pg = await readWatchHistory(identity);
+  if (pg.ok) return pg.value;
+  const latest = await getWatchSnapshotFromBlob(identity);
+  return latest ? [latest] : [];
 }
 
 export async function putWatchSnapshot(identity, snapshot) {
@@ -42,12 +69,18 @@ export async function putWatchSnapshot(identity, snapshot) {
   return snapshot;
 }
 
-// Reads many snapshots at once. Individual misses resolve to null rather than
-// rejecting: a token with no snapshot yet is the normal first-run state, not an
-// error, and one unreadable blob must not abort the whole alert run.
+// Reads many snapshots' LATEST observation at once. Postgres-FIRST: one batched
+// query returns the newest row per identity (see readWatchLatestBatch), with
+// every requested identity present (null when unobserved). Falls back to the
+// per-Blob reads only when Postgres cannot serve the batch. Individual Blob
+// misses resolve to null rather than rejecting: a token with no snapshot yet is
+// the normal first-run state, not an error, and one unreadable blob must not
+// abort the whole alert run.
 export async function getWatchSnapshots(identities) {
+  const pg = await readWatchLatestBatch(identities);
+  if (pg.ok) return pg.value;
   const entries = await Promise.all(
-    identities.map(async (identity) => [identity, await getWatchSnapshot(identity).catch(() => null)])
+    identities.map(async (identity) => [identity, await getWatchSnapshotFromBlob(identity).catch(() => null)])
   );
   return Object.fromEntries(entries);
 }

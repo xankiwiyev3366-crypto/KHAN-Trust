@@ -15,6 +15,7 @@
 // scan and never corrupts a token's real record.
 import { getNamedStore, jsonResponse } from './_blobsClient.mjs';
 import { mirrorCorpusToken } from './_pgMirror.mjs';
+import { readCorpusListing } from './_pgReads.mjs';
 
 const STORE_NAME = 'khan-trust-corpus';
 const INDEX_KEY = 'index.json';
@@ -28,14 +29,37 @@ function tokenKey(identity) {
   return `token/${identity}`;
 }
 
+// Full per-token record. DELIBERATELY Blob-authoritative (NOT Postgres-first):
+// the corpus mirror is a lossy projection that does not store `scoreInputs`, and
+// the monitored-score bridge (src/lib/monitoredScore.js, via
+// watch-rescan-background) reads corpus.scoreInputs to rebuild a full-methodology
+// history point. Serving this from Postgres would silently drop that field and
+// break Trust Graph gap-fill. To flip this read too, scoreInputs must first be
+// added to the corpus mirror + schema + backfill (a separate, additive step).
 export async function getCorpusToken(identity) {
   const data = await store().get(tokenKey(identity), { type: 'json' });
   return data && typeof data === 'object' ? data : null;
 }
 
+// Blob-only read of the discovery index. Used by the WRITE path
+// (upsertCorpusToken's read-modify-write) and by the backfill script, both of
+// which must operate on the authoritative Blob index — never a Postgres view.
+// Public read endpoints should use getCorpusListingIndex() instead.
 export async function readIndex() {
   const data = await store().get(INDEX_KEY, { type: 'json' });
   return data && typeof data === 'object' ? data : {};
+}
+
+// Postgres-FIRST discovery listing (Phase 2), for the read endpoints
+// (token-corpus-list, sitemap). Returns the SAME identity→entry map shape as
+// readIndex(), so those endpoints keep their existing Object.values/sort/slice
+// logic unchanged. Every field the index entry needs (score, risk, descriptive
+// columns, updatedAt) is held in Postgres, so this listing is served completely
+// from the DB. Falls back to the Blob index only when Postgres cannot serve it.
+export async function getCorpusListingIndex() {
+  const pg = await readCorpusListing(MAX_INDEX_ENTRIES);
+  if (pg.ok) return pg.value;
+  return readIndex();
 }
 
 // Trims the discovery index to the most-recently-updated MAX_INDEX_ENTRIES so

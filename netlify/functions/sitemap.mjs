@@ -2,7 +2,7 @@
 // Generates the sitemap from the shared Trust Graph Corpus so every scored
 // token's /token/<contract> page is discoverable by search engines. Purely
 // additive - it only reads the corpus index (Direction 1) and emits XML.
-import { readIndex } from './_tokenCorpusStore.mjs';
+import { getCorpusListingIndex } from './_tokenCorpusStore.mjs';
 
 const SITE_URL = (process.env.URL || 'https://khantrust.net').replace(/\/$/, '');
 const MAX_URLS = 5000;
@@ -24,7 +24,7 @@ export async function handler(event) {
 
     let entries = [];
     try {
-      const index = await readIndex();
+      const index = await getCorpusListingIndex();
       entries = Object.values(index)
         .filter((entry) => entry && entry.contract)
         .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))

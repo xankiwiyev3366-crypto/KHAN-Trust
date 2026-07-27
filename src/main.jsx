@@ -204,6 +204,7 @@ import {
   trackCryptoVerifyStarted,
   trackCryptoVerifySuccess,
   trackCryptoVerifyFailed,
+  trackPixelPurchase,
 } from './analytics.js';
 import { isCardPaymentEnabled, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
@@ -1971,6 +1972,52 @@ function App() {
       }
     }
     Promise.resolve(handleTokenCheck(contract)).catch(() => {});
+  }, []);
+
+  // STRIPE CHECKOUT RETURN -> Meta Pixel Purchase.
+  //
+  // The two crypto rails report their own sale from trackCryptoVerifySuccess,
+  // because the buyer never leaves the SPA. Card buyers DO leave, so this return
+  // trip is the only moment this browser can learn the payment succeeded. Stripe
+  // sends them to `/#/pricing?checkout=success&plan=<plan>` (see
+  // netlify/functions/create-stripe-checkout-session.mjs).
+  //
+  // NOTE the query lives INSIDE THE HASH, so window.location.search is empty
+  // here and the params must be parsed off the hash by hand.
+  //
+  // The params are stripped immediately — same replaceState trick as the scan
+  // deep link above — so that a refresh, a back-button, or a URL pasted to
+  // someone else cannot report the same purchase twice and inflate the ROAS Meta
+  // optimises ad spend against. The ref guards repeats within a single mount.
+  //
+  // Card payments are currently behind VITE_STRIPE_ENABLED, so this is dormant
+  // until that flag is turned on; it exists now so enabling cards is purely the
+  // configuration step it was designed to be, with no silent analytics gap.
+  const checkoutReturnFired = useRef(false);
+  useEffect(() => {
+    if (checkoutReturnFired.current) return;
+    try {
+      const hash = window.location.hash || '';
+      const queryStart = hash.indexOf('?');
+      if (queryStart === -1) return;
+      const params = new URLSearchParams(hash.slice(queryStart + 1));
+      // `checkout=cancelled` lands here too and must NOT count as a sale.
+      if (params.get('checkout') !== 'success') return;
+      checkoutReturnFired.current = true;
+      // planUsdAmount() already falls back to Premium for an unknown plan.
+      const plan = params.get('plan') || 'premium';
+      params.delete('checkout');
+      params.delete('plan');
+      const remaining = params.toString();
+      window.history.replaceState(
+        null,
+        '',
+        `${window.location.pathname}${window.location.search}${hash.slice(0, queryStart)}${remaining ? `?${remaining}` : ''}`,
+      );
+      trackPixelPurchase(plan);
+    } catch {
+      // an odd or missing return URL must never break the pricing page
+    }
   }, []);
 
   return (

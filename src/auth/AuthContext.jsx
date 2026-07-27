@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { AuthGateModal } from './AuthGateModal.jsx';
 import { getGrowthContext } from '../growth.js';
 import { getStoredReferralCode, clearStoredReferralCode } from '../referral.js';
+import { trackPixelCompleteRegistration } from '../analytics.js';
 
 const TOKEN_KEY = 'khan-trust-auth-token-v1';
 
@@ -83,6 +84,12 @@ export function AuthProvider({ children }) {
     // has done its job and is cleared so a future different sign-up on this
     // browser is not mis-attributed to the same inviter.
     clearStoredReferralCode();
+    // Only reached when the server returned a real user and the session was
+    // persisted — apiFetch throws on any non-2xx, so a rejected sign-up
+    // (duplicate email, weak password) never counts as a conversion. This is
+    // the account-creation moment for BOTH entry points, since AuthModal and
+    // AuthGateModal both register through here.
+    trackPixelCompleteRegistration();
     return data.user;
   }, [persist]);
 

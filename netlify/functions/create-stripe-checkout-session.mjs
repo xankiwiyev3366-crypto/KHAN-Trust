@@ -104,7 +104,12 @@ export async function handler(event) {
       // payment.
       ...(auth.email ? { customer_email: auth.email } : {}),
       ...(mode === 'subscription' ? { subscription_data: { metadata } } : {}),
-      success_url: `${origin}/#/pricing?checkout=success`,
+      // `plan` rides back on the success URL purely so the client can report the
+      // correct purchase VALUE to the Meta Pixel (see the checkout-return effect
+      // in src/main.jsx). It is presentational telemetry only — the entitlement
+      // itself is granted by the webhook from the signed `metadata` above, never
+      // from this URL, so tampering with it cannot buy anything.
+      success_url: `${origin}/#/pricing?checkout=success&plan=${encodeURIComponent(plan)}`,
       cancel_url: `${origin}/#/pricing?checkout=cancelled`,
     });
 

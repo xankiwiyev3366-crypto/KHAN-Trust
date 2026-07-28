@@ -145,11 +145,24 @@ export function scoreMarketMaturity(tokenAgeDays, priceChange30d, ath, priceUsd)
 }
 
 // Rule-based manipulation pattern detection from already-fetched data only.
+// A volume-to-pool-depth ratio is only evidence of wash trading when this pool
+// is where the token's price discovery actually happens. For a large,
+// independently-listed asset most volume is on venues that are not this pool,
+// so a high ratio is ordinary market structure, not manipulation — the same
+// exemption isLargeVerifiedAsset() already applies to the shallow-liquidity
+// signal. Without this, every blue-chip scan raised a HIGH "wash-traded"
+// flag that contradicted its own all-clear scam-risk verdict.
+function hasWashTradeShape(data = {}) {
+  if (isLargeVerifiedAsset(data)) return false;
+  const liquidity = Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0);
+  const volume = Number(data.volume24hUsd || 0);
+  return liquidity > 0 && volume > 0 && volume / liquidity > 10;
+}
+
 export function detectManipulationPattern(data = {}) {
   const flags = [];
   const liquidity = Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0);
-  const volume = Number(data.volume24hUsd || 0);
-  if (liquidity > 0 && volume > 0 && volume / liquidity > 10) {
+  if (hasWashTradeShape(data)) {
     flags.push('Trading volume is far larger than available liquidity — possible artificial or wash-traded activity');
   }
   if (typeof data.priceChange1h === 'number' && Math.abs(data.priceChange1h) > 40 && liquidity > 0 && liquidity < 50000) {
@@ -167,8 +180,7 @@ export function detectManipulationPattern(data = {}) {
 function detectManipulationPatternKeys(data = {}) {
   const flags = [];
   const liquidity = Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0);
-  const volume = Number(data.volume24hUsd || 0);
-  if (liquidity > 0 && volume > 0 && volume / liquidity > 10) {
+  if (hasWashTradeShape(data)) {
     flags.push('volumeLiquidityMismatch');
   }
   if (typeof data.priceChange1h === 'number' && Math.abs(data.priceChange1h) > 40 && liquidity > 0 && liquidity < 50000) {
@@ -223,7 +235,10 @@ export function detectHiddenRisks(project = {}, data = {}, scores = {}, manipula
   ) {
     risks.push('Liquidity is shallow relative to market cap — large trades could move price significantly');
   }
-  if (scores.volumeConsistencyScore !== null && scores.volumeConsistencyScore !== undefined && scores.volumeConsistencyScore < 55) {
+  if (
+    !isLargeVerifiedAsset(data) &&
+    scores.volumeConsistencyScore !== null && scores.volumeConsistencyScore !== undefined && scores.volumeConsistencyScore < 55
+  ) {
     risks.push('Trading volume looks inconsistent with available liquidity — possible artificial activity');
   }
   if (typeof data.tokenAgeDays === 'number' && data.tokenAgeDays < 30) {
@@ -541,12 +556,173 @@ function detectPositiveSignalKeys(project = {}, data = {}, scores = {}) {
 // score. This cap stops high market cap / high community size alone from
 // disguising that speculative risk, per the "no near-parity with BTC/ETH/SOL"
 // requirement.
-function isEstablishedMemecoin(data = {}) {
-  const age = Number(data.tokenAgeDays || 0);
+// ── Speculative-asset maturity model ─────────────────────────────────────────
+//
+// REPLACES a binary `isEstablishedMemecoin()` that ANDed four thresholds
+// (age >= 365 && liquidity >= 1M && marketCap >= 100M && holders >= 10k) and
+// picked one of two ceilings: 35 or 70.
+//
+// Two things were wrong with it, and the second is the serious one:
+//
+//  1. Any single unavailable input collapsed the whole test. `tokenAgeDays`
+//     was structurally unavailable for almost every SPL token (fixed in
+//     src/lib/tokenAge.js), so essentially every memecoin failed at the first
+//     clause and took the 35 ceiling.
+//  2. A two-valued ceiling cannot rank. Measured on production data, BONK
+//     ($256M cap, 1.0M holders, both authorities revoked, raw score 82) and a
+//     minutes-old pump.fun launch with 15 holders and $3k of liquidity BOTH
+//     resolved to exactly 35/100 "High Risk". A score that returns one constant
+//     across the entire range it is asked about carries no information, and the
+//     users who most need this product are precisely the ones scanning that
+//     range.
+//
+// The model below grades maturity continuously across the dimensions that
+// actually separate a survivable speculative asset from a rug, and maps it onto
+// a ceiling band. The original intent is preserved exactly: the band TOPS OUT
+// below the infrastructure tier, so no amount of market cap or community size
+// can ever let a memecoin read as safe as BTC/ETH/SOL. What changes is that
+// between "obvious rug" and "as safe as a memecoin ever gets" there are now
+// gradations instead of a single value.
+//
+// Every dimension is independently nullable. An unavailable dimension is
+// EXCLUDED from the weighted average rather than scored as zero — absence is
+// not evidence of risk — but it also lowers coverage, and low coverage pulls
+// the ceiling toward the conservative end (see `applyUncertaintyDiscount`).
+// That is how "we don't know" stays conservative without being punitive.
+
+// Piecewise-linear interpolation over [input, output] stops. Keeps each
+// dimension's shape readable as data instead of a ladder of if-statements.
+function interpolate(value, stops) {
+  if (value <= stops[0][0]) return stops[0][1];
+  const last = stops[stops.length - 1];
+  if (value >= last[0]) return last[1];
+  for (let i = 1; i < stops.length; i += 1) {
+    const [x0, y0] = stops[i - 1];
+    const [x1, y1] = stops[i];
+    if (value <= x1) return y0 + ((value - x0) / (x1 - x0)) * (y1 - y0);
+  }
+  return last[1];
+}
+
+function numberOrNull(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+// Each entry: [weight, 0..1 sub-score or null].
+// Weights sum to 100 when every dimension is available.
+export function speculativeMaturityFactors(data = {}) {
+  const age = numberOrNull(data.tokenAgeDays);
+  const liquidity = numberOrNull(data.totalLiquidityUsd ?? data.liquidityUsd);
+  const marketCap = numberOrNull(data.marketCapUsd);
+  const holders = numberOrNull(data.holderCount);
+  const topHolder = numberOrNull(data.topHolderPercent);
+  const topTen = numberOrNull(data.topTenHolderPercent);
+
+  // Authority status. Unknown stays null — an unconfirmed authority must never
+  // be credited as revoked, and must never be assumed enabled either.
+  let authority = null;
+  const mint = data.mintAuthorityEnabled;
+  const freeze = data.freezeAuthorityEnabled;
+  const upgradeable = data.upgradeable;
+  const known = [mint, freeze, upgradeable].filter((v) => v === true || v === false);
+  if (known.length) {
+    const enabled = known.filter((v) => v === true).length;
+    // Any live authority is a unilateral-control risk and dominates: one
+    // enabled authority cannot be averaged away by two revoked ones.
+    authority = enabled === 0 ? 1 : enabled === known.length ? 0 : 0.3;
+  }
+
+  // Decentralization. Uses whichever concentration measures resolved; the
+  // top-10 figure is the better signal when both are present.
+  let decentralization = null;
+  const parts = [];
+  if (topHolder !== null) parts.push(interpolate(topHolder, [[2, 1], [8, 0.85], [15, 0.6], [25, 0.35], [40, 0.1], [60, 0]]));
+  if (topTen !== null) parts.push(interpolate(topTen, [[15, 1], [30, 0.85], [45, 0.6], [60, 0.35], [80, 0.1], [95, 0]]));
+  if (parts.length) decentralization = Math.min(...parts);
+
+  return {
+    // A lower-bound age (resolved from earliest observed liquidity) is safe to
+    // use here: it can only ever understate how old the token is, so it can
+    // never make a new token look mature.
+    age: [22, age === null ? null : interpolate(age, [[0, 0], [7, 0.05], [30, 0.2], [90, 0.38], [180, 0.52], [365, 0.72], [730, 0.9], [1095, 1]])],
+    liquidity: [20, liquidity === null ? null : interpolate(liquidity, [[0, 0], [10_000, 0.05], [50_000, 0.2], [250_000, 0.42], [1_000_000, 0.65], [5_000_000, 0.85], [20_000_000, 1]])],
+    marketCap: [12, marketCap === null ? null : interpolate(marketCap, [[0, 0], [100_000, 0.05], [1_000_000, 0.2], [10_000_000, 0.45], [100_000_000, 0.7], [1_000_000_000, 0.9], [5_000_000_000, 1]])],
+    holders: [16, holders === null ? null : interpolate(holders, [[0, 0], [100, 0.08], [1_000, 0.25], [10_000, 0.5], [100_000, 0.75], [500_000, 0.95], [1_000_000, 1]])],
+    authority: [15, authority],
+    decentralization: [15, decentralization],
+  };
+}
+
+// The 0..100 maturity index, plus how much of the model we could actually
+// evaluate. `coverage` is the share of total weight that resolved.
+export function speculativeMaturity(data = {}) {
+  const factors = speculativeMaturityFactors(data);
+  let weighted = 0;
+  let resolvedWeight = 0;
+  let totalWeight = 0;
+  for (const [weight, value] of Object.values(factors)) {
+    totalWeight += weight;
+    if (value === null) continue;
+    resolvedWeight += weight;
+    weighted += weight * value;
+  }
+  const coverage = totalWeight > 0 ? resolvedWeight / totalWeight : 0;
+  // No dimension resolved at all: maturity is unknown, and unknown is treated
+  // as immature. This is the one place absence IS conservative, deliberately —
+  // a token we know literally nothing about does not get the benefit of doubt.
+  const index = resolvedWeight > 0 ? weighted / resolvedWeight : 0;
+  return { index, coverage, factors };
+}
+
+// Wash-trading style activity is a real ceiling risk on a thin token and noise
+// on a deep one: a top-20 asset routinely turns over many multiples of its
+// on-chain pool depth because most of its volume is on venues that are not
+// this pool. So the penalty scales with how much the token's own depth
+// suggests the ratio is meaningful.
+function tradingBehaviourPenalty(data = {}) {
   const liquidity = Number(data.totalLiquidityUsd ?? data.liquidityUsd ?? 0);
-  const marketCap = Number(data.marketCapUsd || 0);
-  const holders = Number(data.holderCount || 0);
-  return age >= 365 && liquidity >= 1_000_000 && marketCap >= 100_000_000 && holders >= 10_000;
+  const volume = Number(data.volume24hUsd || 0);
+  if (!(liquidity > 0 && volume > 0)) return 0;
+  const ratio = volume / liquidity;
+  if (ratio <= 10) return 0;
+  // Exempt genuinely large, independently-listed assets for the same reason
+  // isLargeVerifiedAsset() already exempts them from the shallow-liquidity
+  // signal: their price discovery does not happen in this pool.
+  if (isLargeVerifiedAsset(data)) return 0;
+  return interpolate(ratio, [[10, 0], [25, 6], [60, 12], [150, 18]]);
+}
+
+// Low coverage pulls the ceiling toward the conservative end of the band,
+// proportionally. Full coverage costs nothing; knowing almost nothing costs
+// most of what the model would otherwise have granted above the floor.
+function applyUncertaintyDiscount(ceiling, floor, coverage) {
+  const headroom = ceiling - floor;
+  // Coverage at or above 0.8 is treated as complete — the model should not
+  // penalise a token for a single provider being down.
+  const factor = clamp(coverage / 0.8, 0, 1);
+  return floor + headroom * factor;
+}
+
+// A CONFIRMED-live authority is a hard ceiling, not a weighted factor.
+//
+// A live mint authority means the deployer can create unlimited new supply at
+// any moment. No amount of age, liquidity, holder count or market cap offsets
+// that — those measure what the token HAS done, and this describes what its
+// controller can still do unilaterally, today. Treating it as one weighted
+// input among six would let a mature token average it away, which is exactly
+// the shape of a slow rug on an established name.
+//
+// Only a CONFIRMED `true` gates. Unknown (null) never gates — that is handled
+// as reduced coverage by the uncertainty discount, not as an accusation.
+export const AUTHORITY_HARD_CEILING = { mint: 45, freeze: 55, upgradeable: 60 };
+
+function authorityHardCeiling(data = {}) {
+  const ceilings = [];
+  if (data.mintAuthorityEnabled === true) ceilings.push(AUTHORITY_HARD_CEILING.mint);
+  if (data.freezeAuthorityEnabled === true) ceilings.push(AUTHORITY_HARD_CEILING.freeze);
+  if (data.upgradeable === true) ceilings.push(AUTHORITY_HARD_CEILING.upgradeable);
+  return ceilings.length ? Math.min(...ceilings) : null;
 }
 
 // Exact identifiers for the top blue-chip Layer 1s. Matching used to be a loose
@@ -574,16 +750,52 @@ function isMajorBlueChip(project = {}, data = {}) {
 // asset class can credibly earn.
 export function getAssetTypeRiskModifier(category, project = {}, data = {}) {
   if (category === 'Meme Token') {
-    const established = isEstablishedMemecoin(data);
-    const cap = established ? 70 : 35;
+    // The band. FLOOR: no memecoin, however clean its data, is ever a low-risk
+    // asset — it has no underlying utility and the ceiling says so. TOP: stays
+    // below the Utility/DeFi tier (85) and far below infrastructure (92) and
+    // blue-chip L1 (95), so market cap and community size still cannot buy a
+    // memecoin an infrastructure-grade score. That was the original rule and it
+    // is unchanged; what is new is that the space between the two ends is now
+    // graded rather than collapsed onto a single value.
+    const MEME_FLOOR = 30;
+    const MEME_TOP = 82;
+    const { index, coverage } = speculativeMaturity(data);
+    const graded = MEME_FLOOR + (MEME_TOP - MEME_FLOOR) * index;
+    const discounted = applyUncertaintyDiscount(graded, MEME_FLOOR, coverage);
+    const penalty = tradingBehaviourPenalty(data);
+    const hardCeiling = authorityHardCeiling(data);
+    const gated = hardCeiling === null ? discounted : Math.min(discounted, hardCeiling);
+    const cap = Math.round(clamp(gated - penalty, MEME_FLOOR, MEME_TOP));
+
+    const maturityPercent = Math.round(index * 100);
+    // Tiering is for the human-readable label only — the cap itself is
+    // continuous, so two tokens in the same tier still receive different
+    // ceilings.
+    const tier = cap >= 70 ? 'proven' : cap >= 55 ? 'maturing' : cap >= 42 ? 'early' : 'unproven';
+    const labels = {
+      proven: 'Proven memecoin',
+      maturing: 'Maturing memecoin',
+      early: 'Early-stage memecoin',
+      unproven: 'New / unproven memecoin',
+    };
+    const explanations = {
+      proven: `This memecoin has a sustained track record — age, liquidity depth, holder base, contract authorities and supply distribution all check out (maturity ${maturityPercent}/100). It still has no underlying network utility and is driven by sentiment, so its Trust Score is capped at ${cap}/100: this is as strong as a speculative asset can score, not a safety rating.`,
+      maturing: `This memecoin shows real staying power on some measures but not all (maturity ${maturityPercent}/100). Its Trust Score is capped at ${cap}/100 to reflect speculative risk that a growing market cap does not remove.`,
+      early: `This memecoin is still early: its age, liquidity, holder base or supply distribution do not yet show a sustained track record (maturity ${maturityPercent}/100). Its Trust Score is capped at ${cap}/100.`,
+      unproven: `This memecoin has little verifiable history, thin liquidity, a concentrated holder base, or live contract authorities (maturity ${maturityPercent}/100). Speculative risk is severe, so its Trust Score is capped at ${cap}/100.`,
+    };
     return {
       cap,
       isSpeculative: true,
-      label: established ? 'Established memecoin' : 'New / unproven memecoin',
-      explanationKey: established ? 'establishedMemecoin' : 'newMemecoin',
-      explanation: established
-        ? `This is a memecoin with no underlying network utility — it is driven by sentiment and community attention rather than infrastructure or adoption fundamentals. Despite strong liquidity, age, or holder count, the Trust Score is capped at ${cap}/100 because high market cap alone does not reduce its speculative risk.`
-        : `This is a memecoin with limited trading history, liquidity, or verified fundamentals. Speculative risk is severe, so the Trust Score is capped at ${cap}/100 regardless of market cap, volume, or community size.`,
+      label: labels[tier],
+      // Flat key — the i18n lookup in khanAnalyst.js indexes
+      // `askKhan.answers.modifiers.<key>` directly, so it must not be dotted.
+      explanationKey: `memecoin${tier.charAt(0).toUpperCase()}${tier.slice(1)}`,
+      explanation: explanations[tier],
+      maturityIndex: maturityPercent,
+      maturityCoverage: Math.round(coverage * 100),
+      tradingBehaviourPenalty: Math.round(penalty),
+      authorityHardCeiling: hardCeiling,
     };
   }
   if (category === 'Layer 1' && isMajorBlueChip(project, data)) {

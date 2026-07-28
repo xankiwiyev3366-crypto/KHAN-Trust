@@ -1509,8 +1509,10 @@ export default {
         Other: 'token',
       },
       modifiers: {
-        establishedMemecoin: 'Bu, temel ağ faydası olmayan bir meme tokendir - altyapı veya benimsenme temellerinden çok duyarlılık ve topluluk ilgisiyle hareket eder. Güçlü likidite, yaş veya sahip sayısı olsa bile, yüksek piyasa değeri tek başına spekülatif riski azaltmadığı için Trust Score {{cap}}/100 ile sınırlanır.',
-        newMemecoin: 'Bu, sınırlı işlem geçmişi, likiditesi veya doğrulanmış temelleri olan bir meme tokendir. Spekülatif risk çok yüksektir, bu yüzden piyasa değeri, hacim veya topluluk büyüklüğünden bağımsız olarak Trust Score {{cap}}/100 ile sınırlanır.',
+        memecoinProven: 'Bu meme token sürdürülebilir bir geçmişe sahip - yaş, likidite derinliği, sahip tabanı, kontrat yetkileri ve arz dağılımı doğrulanıyor (olgunluk {{maturity}}/100). Hala temel bir ağ faydası yok ve duyarlılıkla hareket ediyor, bu yüzden Trust Score {{cap}}/100 ile sınırlanır: bu, spekülatif bir varlığın alabileceği en yüksek puandır, bir güvenlik derecelendirmesi değildir.',
+        memecoinMaturing: 'Bu meme token bazı ölçütlerde gerçek dayanıklılık gösteriyor ancak hepsinde değil (olgunluk {{maturity}}/100). Artan piyasa değerinin ortadan kaldırmadığı spekülatif riski yansıtmak için Trust Score {{cap}}/100 ile sınırlanır.',
+        memecoinEarly: 'Bu meme token hala erken aşamada: yaşı, likiditesi, sahip tabanı veya arz dağılımı henüz sürdürülebilir bir geçmiş göstermiyor (olgunluk {{maturity}}/100). Trust Score {{cap}}/100 ile sınırlanır.',
+        memecoinUnproven: 'Bu meme tokenin doğrulanabilir geçmişi az, likiditesi zayıf, sahip tabanı yoğunlaşmış veya kontrat yetkileri aktif (olgunluk {{maturity}}/100). Spekülatif risk çok yüksektir, bu yüzden Trust Score {{cap}}/100 ile sınırlanır.',
         majorLayer1: 'Bu, yerleşik altyapıya, derin likiditeye, sürdürülebilir geliştirici aktivitesine ve gerçek uzun vadeli ağ faydasına sahip büyük bir Layer 1 blokzinciridir - spekülatif varlık kriterleriyle değil, altyapı düzeyi kriterlerle değerlendirilir.',
         infrastructure: '{{category}} altyapısı olarak sınıflandırıldı. Puan, abartı kaynaklı talepten çok ağ faydasını, geliştirici aktivitesini ve benimsenmeyi yansıtır.',
         utilityDefi: 'Gerçek protokol faydası olan bir {{category}} projesi olarak sınıflandırıldı. Benimsenmesi ve uzun ömürlülüğü en üst Layer 1 kadar kanıtlanmadığı için büyük altyapı seviyesinin altında sınırlandırılır.',

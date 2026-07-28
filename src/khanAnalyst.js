@@ -58,24 +58,27 @@ export function translatedCategory(category) {
 }
 
 export function translatedModifier(modifier, category) {
-  if (!modifier?.explanationKey) {
-    const inferredKey = inferModifierKey(modifier);
-    if (!inferredKey) return modifier?.explanation || '';
-    return t(`askKhan.answers.modifiers.${inferredKey}`, {
-      cap: modifier.cap,
-      category: translatedCategory(category),
-    });
-  }
-  return t(`askKhan.answers.modifiers.${modifier.explanationKey}`, {
+  const key = modifier?.explanationKey || inferModifierKey(modifier);
+  if (!key) return modifier?.explanation || '';
+  return t(`askKhan.answers.modifiers.${key}`, {
     cap: modifier.cap,
     category: translatedCategory(category),
+    // Present only on the graded speculative ceiling; harmless for the other
+    // modifiers, whose strings do not reference it.
+    maturity: modifier.maturityIndex ?? '',
   });
 }
 
 function inferModifierKey(modifier) {
   if (!modifier) return null;
-  if (modifier.label === 'Established memecoin') return 'establishedMemecoin';
-  if (modifier.label === 'New / unproven memecoin') return 'newMemecoin';
+  // Legacy labels: profiles scored before the graded speculative ceiling
+  // shipped are still in localStorage and in the corpus, so their stored
+  // modifier carries one of the two old labels and no explanationKey.
+  if (modifier.label === 'Established memecoin') return 'memecoinProven';
+  if (modifier.label === 'New / unproven memecoin') return 'memecoinUnproven';
+  if (modifier.label === 'Proven memecoin') return 'memecoinProven';
+  if (modifier.label === 'Maturing memecoin') return 'memecoinMaturing';
+  if (modifier.label === 'Early-stage memecoin') return 'memecoinEarly';
   if (modifier.label === 'Major Layer 1 infrastructure') return 'majorLayer1';
   if (modifier.label === 'Infrastructure asset') return 'infrastructure';
   if (modifier.label === 'Utility / DeFi asset') return 'utilityDefi';

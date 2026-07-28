@@ -35,15 +35,89 @@ test('classifyAsset: meme SHAPE (huge supply, sub-cent price) without a meme key
   assert.equal(res.confidence, 'heuristic');
 });
 
-test('asset-type modifier: unproven memecoin capped at 35, established at 70', () => {
-  const unproven = getAssetTypeRiskModifier('Meme Token', { name: 'Pepe' }, {});
-  assert.equal(unproven.cap, 35);
-  assert.equal(unproven.isSpeculative, true);
+test('asset-type modifier: memecoin ceiling is graded, not two-valued', () => {
+  // Nothing known about the token: conservative floor, and still speculative.
+  const unknown = getAssetTypeRiskModifier('Meme Token', { name: 'Pepe' }, {});
+  assert.equal(unknown.cap, 30);
+  assert.equal(unknown.isSpeculative, true);
 
-  const established = getAssetTypeRiskModifier('Meme Token', { name: 'Doge' }, {
-    tokenAgeDays: 500, totalLiquidityUsd: 2_000_000, marketCapUsd: 500_000_000, holderCount: 50_000,
+  // A mature, well-distributed memecoin with revoked authorities earns a much
+  // higher ceiling — but never an infrastructure-grade one.
+  const proven = getAssetTypeRiskModifier('Meme Token', { name: 'Doge' }, {
+    tokenAgeDays: 1200, totalLiquidityUsd: 5_000_000, marketCapUsd: 500_000_000,
+    holderCount: 500_000, topHolderPercent: 5, topTenHolderPercent: 25,
+    mintAuthorityEnabled: false, freezeAuthorityEnabled: false,
   });
-  assert.equal(established.cap, 70);
+  assert.ok(proven.cap >= 70, `expected a proven memecoin to clear 70, got ${proven.cap}`);
+  assert.ok(proven.cap <= 82, 'a memecoin can never reach the utility/infrastructure tier');
+  assert.ok(proven.cap < getAssetTypeRiskModifier('Layer 1', { name: 'SomeChain' }, { marketCapUsd: 1e7 }).cap);
+});
+
+// THE REGRESSION THIS FILE EXISTS FOR. Before the graded model, every one of
+// these resolved to exactly 35 and the score carried no information at all.
+test('asset-type modifier: memecoin ceilings are strictly ordered by maturity', () => {
+  const rug = getAssetTypeRiskModifier('Meme Token', { name: 'Safe Moon Inu' }, {
+    tokenAgeDays: 0, totalLiquidityUsd: 3_000, marketCapUsd: 30_000, holderCount: 15,
+    topHolderPercent: 62, topTenHolderPercent: 91,
+    mintAuthorityEnabled: true, freezeAuthorityEnabled: true,
+  });
+  const young = getAssetTypeRiskModifier('Meme Token', { name: 'New Dog' }, {
+    tokenAgeDays: 45, totalLiquidityUsd: 120_000, marketCapUsd: 2_000_000, holderCount: 1_800,
+    topHolderPercent: 18, topTenHolderPercent: 48,
+    mintAuthorityEnabled: false, freezeAuthorityEnabled: false,
+  });
+  const bonkLike = getAssetTypeRiskModifier('Meme Token', { name: 'Bonk', ticker: 'BONK' }, {
+    tokenAgeDays: 1310, totalLiquidityUsd: 700_770, marketCapUsd: 256_773_293,
+    holderCount: 1_007_128, topHolderPercent: 7.68, topTenHolderPercent: 37.76,
+    mintAuthorityEnabled: false, freezeAuthorityEnabled: false,
+    volume24hUsd: 29_042_572, coingeckoListed: true,
+  });
+
+  assert.ok(rug.cap < young.cap, `rug (${rug.cap}) must rank below a young token (${young.cap})`);
+  assert.ok(young.cap < bonkLike.cap, `young (${young.cap}) must rank below a mature one (${bonkLike.cap})`);
+  assert.equal(rug.cap, 30, 'an obvious rug sits on the floor');
+  assert.ok(bonkLike.cap >= 70, `a mature memecoin must clear 70, got ${bonkLike.cap}`);
+});
+
+test('asset-type modifier: a missing data point never reads as maximum maturity', () => {
+  const full = getAssetTypeRiskModifier('Meme Token', { name: 'Doge' }, {
+    tokenAgeDays: 1200, totalLiquidityUsd: 5_000_000, marketCapUsd: 500_000_000,
+    holderCount: 500_000, topHolderPercent: 5, topTenHolderPercent: 25,
+    mintAuthorityEnabled: false, freezeAuthorityEnabled: false,
+  });
+  // Same token, but every provider that reports concentration and authorities
+  // was down. Uncertainty must pull the ceiling DOWN, never leave it unchanged.
+  const thin = getAssetTypeRiskModifier('Meme Token', { name: 'Doge' }, {
+    tokenAgeDays: 1200, totalLiquidityUsd: 5_000_000, marketCapUsd: 500_000_000, holderCount: 500_000,
+  });
+  assert.ok(thin.cap < full.cap, `thin data (${thin.cap}) must be more conservative than full (${full.cap})`);
+});
+
+test('asset-type modifier: a confirmed-live authority is a HARD ceiling maturity cannot outvote', () => {
+  const base = {
+    tokenAgeDays: 1200, totalLiquidityUsd: 5_000_000, marketCapUsd: 500_000_000,
+    holderCount: 500_000, topHolderPercent: 5, topTenHolderPercent: 25,
+  };
+  const revoked = getAssetTypeRiskModifier('Meme Token', { name: 'Doge' }, {
+    ...base, mintAuthorityEnabled: false, freezeAuthorityEnabled: false,
+  });
+  // Same otherwise-excellent token, but the deployer can still mint at will.
+  const liveMint = getAssetTypeRiskModifier('Meme Token', { name: 'Doge' }, {
+    ...base, mintAuthorityEnabled: true, freezeAuthorityEnabled: false,
+  });
+  assert.ok(liveMint.cap <= 45, `a live mint authority must gate the ceiling, got ${liveMint.cap}`);
+  assert.ok(liveMint.cap < revoked.cap);
+
+  // Freeze alone is serious but less severe than unlimited issuance.
+  const liveFreeze = getAssetTypeRiskModifier('Meme Token', { name: 'Doge' }, {
+    ...base, mintAuthorityEnabled: false, freezeAuthorityEnabled: true,
+  });
+  assert.ok(liveFreeze.cap <= 55 && liveFreeze.cap > liveMint.cap);
+
+  // UNKNOWN must never gate — that would turn a provider outage into an
+  // accusation. It reduces coverage instead.
+  const unknownAuthority = getAssetTypeRiskModifier('Meme Token', { name: 'Doge' }, base);
+  assert.ok(unknownAuthority.cap > 45, `unknown authority must not be gated like a live one, got ${unknownAuthority.cap}`);
 });
 
 test('asset-type modifier: major blue-chip L1 capped at 95, generic caps below 100', () => {
@@ -67,7 +141,7 @@ test('blue-chip cap resists name-squatting (exact ticker/name only)', () => {
 
 test('applyAssetTypeRiskModifier: caps down but NEVER raises a score', () => {
   const capped = applyAssetTypeRiskModifier('Meme Token', { name: 'Pepe' }, {}, 90);
-  assert.equal(capped.adjustedScore, 35);
+  assert.equal(capped.adjustedScore, 30);
   assert.equal(capped.capApplied, true);
 
   const belowCap = applyAssetTypeRiskModifier('Meme Token', { name: 'Pepe' }, {}, 20);
@@ -144,9 +218,10 @@ test('rankSignalsBySeverity: orders most-severe first and tags each', () => {
 test('runRiskAnalysis: integrates into a stable shape without touching trustScore', () => {
   const project = { name: 'Pepe', ticker: 'PEPE', website: '', twitter: '', telegram: '' };
   const data = { totalLiquidityUsd: 5_000, volume24hUsd: 500_000, tokenAgeDays: 3, marketCapUsd: 1_000_000, priceChange24h: 250 };
-  const out = runRiskAnalysis(project, data, {}, 'High', { rawScore: 88, adjustedScore: 35 });
+  const out = runRiskAnalysis(project, data, {}, 'High', { rawScore: 88, adjustedScore: 30 });
   assert.equal(out.assetCategory, 'Meme Token');
-  assert.equal(out.assetTypeRiskModifier.cap, 35);
+  // 3 days old, $5k liquidity, no holder or authority data: floor.
+  assert.equal(out.assetTypeRiskModifier.cap, 30);
   assert.ok(Array.isArray(out.hiddenRiskSignals) && out.hiddenRiskSignals.length > 0);
   assert.equal(typeof out.confidenceScore, 'number');
   assert.ok('aiRiskSummary' in out && typeof out.aiRiskSummary === 'string');

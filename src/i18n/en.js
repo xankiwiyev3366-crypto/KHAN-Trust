@@ -1589,8 +1589,10 @@ export default {
         Other: 'token',
       },
       modifiers: {
-        establishedMemecoin: 'This is a memecoin with no underlying network utility - it is driven by sentiment and community attention rather than infrastructure or adoption fundamentals. Despite strong liquidity, age, or holder count, the Trust Score is capped at {{cap}}/100 because high market cap alone does not reduce its speculative risk.',
-        newMemecoin: 'This is a memecoin with limited trading history, liquidity, or verified fundamentals. Speculative risk is severe, so the Trust Score is capped at {{cap}}/100 regardless of market cap, volume, or community size.',
+        memecoinProven: 'This memecoin has a sustained track record - age, liquidity depth, holder base, contract authorities and supply distribution all check out (maturity {{maturity}}/100). It still has no underlying network utility and is driven by sentiment, so its Trust Score is capped at {{cap}}/100: this is as strong as a speculative asset can score, not a safety rating.',
+        memecoinMaturing: 'This memecoin shows real staying power on some measures but not all (maturity {{maturity}}/100). Its Trust Score is capped at {{cap}}/100 to reflect speculative risk that a growing market cap does not remove.',
+        memecoinEarly: 'This memecoin is still early: its age, liquidity, holder base or supply distribution do not yet show a sustained track record (maturity {{maturity}}/100). Its Trust Score is capped at {{cap}}/100.',
+        memecoinUnproven: 'This memecoin has little verifiable history, thin liquidity, a concentrated holder base, or live contract authorities (maturity {{maturity}}/100). Speculative risk is severe, so its Trust Score is capped at {{cap}}/100.',
         majorLayer1: 'This is a major Layer 1 blockchain with established infrastructure, deep liquidity, sustained developer activity, and real long-term network utility - evaluated against infrastructure-grade criteria, not speculative-asset criteria.',
         infrastructure: 'Classified as {{category}} infrastructure. The score reflects network utility, developer activity, and adoption rather than hype-driven demand.',
         utilityDefi: 'Classified as a {{category}} project with real protocol utility. It is capped below the major infrastructure tier because its adoption and longevity are comparatively less proven than a top Layer 1.',

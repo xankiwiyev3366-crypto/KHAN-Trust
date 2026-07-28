@@ -1508,8 +1508,10 @@ export default {
         Other: 'token',
       },
       modifiers: {
-        establishedMemecoin: 'Bu, əsas şəbəkə faydası olmayan meme tokendir - infrastruktur və ya qəbul fundamental göstəricilərindən çox bazar əhvalı və icma diqqəti ilə hərəkət edir. Güclü likvidlik, yaş və ya sahib sayı olsa belə, yüksək bazar dəyəri təkbaşına spekulyativ riski azaltmadığı üçün Trust Score {{cap}}/100 ilə məhdudlaşdırılır.',
-        newMemecoin: 'Bu, məhdud ticarət tarixçəsi, likvidliyi və ya təsdiqlənmiş fundamental göstəriciləri olan meme tokendir. Spekulyativ risk çox yüksəkdir, buna görə bazar dəyəri, həcm və ya icma ölçüsündən asılı olmayaraq Trust Score {{cap}}/100 ilə məhdudlaşdırılır.',
+        memecoinProven: 'Bu meme tokenin davamlı keçmişi var - yaş, likvidlik dərinliyi, sahib bazası, kontrakt səlahiyyətləri və tədarük paylanması yoxlanışdan keçir (yetkinlik {{maturity}}/100). Onun hələ də əsas şəbəkə faydası yoxdur və bazar əhvalı ilə hərəkət edir, buna görə Trust Score {{cap}}/100 ilə məhdudlaşdırılır: bu, spekulyativ aktivin ala biləcəyi ən yüksək baldır, təhlükəsizlik reytinqi deyil.',
+        memecoinMaturing: 'Bu meme token bəzi göstəricilərdə real dayanıqlıq göstərir, lakin hamısında yox (yetkinlik {{maturity}}/100). Artan bazar dəyərinin aradan qaldırmadığı spekulyativ riski əks etdirmək üçün Trust Score {{cap}}/100 ilə məhdudlaşdırılır.',
+        memecoinEarly: 'Bu meme token hələ erkən mərhələdədir: yaşı, likvidliyi, sahib bazası və ya tədarük paylanması hələ davamlı keçmiş göstərmir (yetkinlik {{maturity}}/100). Trust Score {{cap}}/100 ilə məhdudlaşdırılır.',
+        memecoinUnproven: 'Bu meme tokenin təsdiqlənə bilən keçmişi azdır, likvidliyi zəifdir, sahib bazası cəmlənmişdir və ya kontrakt səlahiyyətləri aktivdir (yetkinlik {{maturity}}/100). Spekulyativ risk çox yüksəkdir, buna görə Trust Score {{cap}}/100 ilə məhdudlaşdırılır.',
         majorLayer1: 'Bu, formalaşmış infrastruktura, dərin likvidliyə, davamlı tərtibatçı aktivliyinə və real uzunmüddətli şəbəkə faydasına malik böyük Layer 1 blokçeynidir - spekulyativ aktiv meyarları ilə deyil, infrastruktur səviyyəli meyarlarla qiymətləndirilir.',
         infrastructure: '{{category}} infrastrukturu kimi təsnif edilir. Bal şişirdilmiş tələbdən çox şəbəkə faydasını, tərtibatçı aktivliyini və qəbulu əks etdirir.',
         utilityDefi: 'Real protokol faydası olan {{category}} layihəsi kimi təsnif edilir. Qəbulu və uzunömürlülüyü ən güclü Layer 1 ilə müqayisədə daha az sübut olunduğu üçün böyük infrastruktur səviyyəsindən aşağı məhdudlaşdırılır.',

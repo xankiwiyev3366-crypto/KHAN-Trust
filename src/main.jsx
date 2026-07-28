@@ -2470,8 +2470,14 @@ function MobileNav({ page, navigate, navTo, setAuthModalMode }) {
       {navItems.map((item) => {
         const Icon = item.icon;
         return (
-          <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navTo(navTargetFor(item.id))}>
-            <Icon size={18} />
+          <button
+            key={item.id}
+            className={isActive(page, item.id) ? 'active' : ''}
+            onClick={() => navTo(navTargetFor(item.id))}
+            aria-label={t(`nav.${item.id}`)}
+            aria-current={isActive(page, item.id) ? 'page' : undefined}
+          >
+            <Icon size={18} aria-hidden="true" />
             <span>{t(`nav.${item.id}`)}</span>
           </button>
         );
@@ -2542,10 +2548,22 @@ function Sidebar({ page, navigate, navTo, alertCount }) {
           const active = isSidebarActive(page, item.id);
           const badge = item.badgeFrom === 'alertCount' ? alertCount : 0;
           return (
-            <button key={item.id} className={active ? 'active' : ''} onClick={() => navTo(item.id)}>
-              <Icon size={18} />
+            /* The visible <span> is the label in the wide layout, but the
+               sidebar collapses to icons at narrower widths — where the button
+               would otherwise carry no accessible name at all. The explicit
+               aria-label is correct in both. */
+            <button
+              key={item.id}
+              className={active ? 'active' : ''}
+              onClick={() => navTo(item.id)}
+              aria-label={t(item.labelKey)}
+              aria-current={active ? 'page' : undefined}
+            >
+              <Icon size={18} aria-hidden="true" />
               <span>{t(item.labelKey)}</span>
-              {badge > 0 && <span className="sidebar-badge">{badge}</span>}
+              {badge > 0 && (
+                <span className="sidebar-badge" aria-label={t('a11y.unreadAlerts', { count: badge })}>{badge}</span>
+              )}
             </button>
           );
         })}
@@ -3674,6 +3692,116 @@ function CompareRow({ label, first, second }) {
 // (see netlify/functions/alerts-*). Login-gated via the existing gate();
 // Every network call is best-effort so it can never
 // break the report it sits on.
+// ONE control for "watch this token", replacing two that meant the same thing.
+//
+// The report used to carry a crowned, Premium-gated "Watch Project" button
+// directly beside a free "Alert me if risk rises" toggle. To a user those are
+// the same action, so the pair read as a bug — and worse, the crowned one was
+// the habit loop the whole product depends on, paywalled, while the free one
+// next to it did the actual useful thing and was easy to miss.
+//
+// Watching a token now means exactly one thing: it goes on your watchlist AND
+// we start telling you when it changes. Both effects, one click.
+//
+// Signing in is required and is the RIGHT gate here: there is nowhere to send
+// an alert without an account. Unlike the old Premium gate, what the user signs
+// up for is now genuinely what they receive.
+function WatchProjectButton({ project, watched, toggleWatch }) {
+  const { t } = useTranslation();
+  const { user, gate, toggleTokenAlert, fetchAlertTokens } = useAuth();
+  const { can, openUpgrade } = usePremiumGate();
+  const [subscribed, setSubscribed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // Set when the server refuses an ADD because the plan's watch limit is
+  // reached. Surfaced rather than swallowed: a toggle that silently does
+  // nothing reads as a broken button, not as a reason to upgrade.
+  const [limitReached, setLimitReached] = useState(null);
+  const identity = historyKeyFor(project);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!user || !identity) {
+      setSubscribed(false);
+      return undefined;
+    }
+    fetchAlertTokens()
+      .then((tokens) => {
+        if (!cancelled) setSubscribed(tokens.some((entry) => entry.identity === identity));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [user, identity, fetchAlertTokens]);
+
+  const onClick = () => {
+    gate(async () => {
+      if (busy) return;
+      setBusy(true);
+      // One intent — "watch" or "stop watching" — applied to both the local
+      // watchlist and the server subscription, so the two can never drift into
+      // the half-on state the old two-button pair made easy to reach.
+      const turningOn = !(watched || subscribed);
+      try {
+        // Local list first: it drives the visible state and must respond to the
+        // click immediately, before any network round-trip.
+        if (Boolean(watched) !== turningOn) toggleWatch();
+        if (identity) {
+          const result = await toggleTokenAlert({
+            identity,
+            contract: project.contract || '',
+            chain: project.chain || '',
+            name: project.name || '',
+            ticker: project.ticker || '',
+          });
+          // The cap is a successful 200 carrying `limitReached`, not an error —
+          // the request was understood and correctly refused. Roll the local
+          // add back so the button does not claim a watch the server declined.
+          if (result?.limitReached) {
+            setLimitReached(result.limit || null);
+            setSubscribed(false);
+            if (turningOn) toggleWatch();
+          } else {
+            setLimitReached(null);
+            setSubscribed(Boolean(result?.subscribed));
+          }
+        }
+      } catch {
+        // best-effort - a failed toggle must not disrupt the report
+      }
+      setBusy(false);
+    });
+  };
+
+  const on = Boolean(watched || subscribed);
+  return (
+    <div className="watch-project-control">
+      <button
+        className={on ? 'primary-button watched' : 'primary-button'}
+        type="button"
+        onClick={onClick}
+        disabled={busy}
+        title={t('projectProfile.watchHint')}
+      >
+        <Bell size={18} /> {on ? t('projectProfile.watchingProject') : t('projectProfile.watchProject')}
+      </button>
+      {on && (
+        <p className="inline-note watch-cadence-note">
+          {can('realtimeAlerts')
+            ? t('projectProfile.watchCadencePremium')
+            : t('projectProfile.watchCadenceFree')}
+          {!can('realtimeAlerts') && (
+            <button type="button" className="watch-cadence-upgrade" onClick={() => openUpgrade('realtimeAlerts')}>
+              {t('projectProfile.watchCadenceUpgrade')}
+            </button>
+          )}
+        </p>
+      )}
+      {limitReached && (
+        <p className="token-alert-limit">{t('alerts.limitReached', { limit: limitReached })}</p>
+      )}
+    </div>
+  );
+}
+
 function TokenAlertToggle({ project }) {
   const { t } = useTranslation();
   const { user, gate, toggleTokenAlert, fetchAlertTokens } = useAuth();
@@ -5410,14 +5538,7 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
                 clickable for free users — the click opens the upgrade modal
                 naming the feature instead of silently doing nothing. See the
                 note on PremiumActionButton for why these are not `disabled`. */}
-            <PremiumActionButton
-              feature="watchlist"
-              className={watched ? 'primary-button watched' : 'primary-button'}
-              onClick={toggleWatch}
-            >
-              <Bell size={18} /> {watched ? t('projectProfile.watchingProject') : t('projectProfile.watchProject')}
-            </PremiumActionButton>
-            <TokenAlertToggle project={project} />
+            <WatchProjectButton project={project} watched={watched} toggleWatch={toggleWatch} />
             {canEdit && (
               <button className="secondary-button" onClick={onEdit}>
                 <Plus size={18} /> {t('projectProfile.editProject')}

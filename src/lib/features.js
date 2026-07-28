@@ -68,9 +68,25 @@ export const FEATURES = {
   securityAnalysis: { tier: 'premium', labelKey: 'features.securityAnalysis', teaser: true, group: 'security' },
   scoreHistory: { tier: 'premium', labelKey: 'features.scoreHistory', teaser: true, group: 'monitoring' },
   compareProjects: { tier: 'premium', labelKey: 'features.compareProjects', teaser: true, group: 'tools' },
-  watchlist: { tier: 'premium', labelKey: 'features.watchlist', teaser: true, group: 'monitoring' },
-  continuousMonitoring: { tier: 'premium', labelKey: 'features.continuousMonitoring', teaser: true, group: 'monitoring' },
+
+  // ── Monitoring: FREE gets the loop, Premium gets speed and capacity ────────
+  //
+  // The watchlist and its monitoring were Premium. That was backwards. A
+  // watchlist is not a paid feature, it is the MECHANISM by which a user
+  // becomes someone who comes back — and the sign-up modal was already
+  // promising "Build your watchlist" and "Receive alerts" to get the
+  // registration, then charging for them immediately afterwards. Free users
+  // therefore had no reason to return at all, and the one habit loop the
+  // product owns was locked behind the paywall it was supposed to feed.
+  //
+  // The server already tiered this correctly (netlify/functions/_watchTiers.mjs:
+  // free = 5 tokens observed every 12h, premium = 100 every 30min) — only the
+  // client-side gate disagreed. Premium now sells what it actually provides
+  // here: how FAST you are told, and how MUCH you can watch.
+  watchlist: { tier: 'free', labelKey: 'features.watchlist', group: 'monitoring' },
+  continuousMonitoring: { tier: 'free', labelKey: 'features.continuousMonitoring', group: 'monitoring' },
   realtimeAlerts: { tier: 'premium', labelKey: 'features.realtimeAlerts', teaser: true, group: 'monitoring' },
+  extendedWatchlist: { tier: 'premium', labelKey: 'features.extendedWatchlist', teaser: true, group: 'monitoring' },
   pdfReports: { tier: 'premium', labelKey: 'features.pdfReports', teaser: true, group: 'tools' },
   advancedAnalytics: { tier: 'premium', labelKey: 'features.advancedAnalytics', teaser: true, group: 'tools' },
   unlimitedScans: { tier: 'premium', labelKey: 'features.unlimitedScans', teaser: false, group: 'analysis' },

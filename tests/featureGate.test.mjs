@@ -78,6 +78,10 @@ test('the free tier covers the whole core scan', () => {
   for (const key of [
     'trustScore', 'scamProbability', 'projectOverview', 'aiSummary',
     'basicRiskIndicators', 'basicHolders', 'basicContractSecurity', 'priceChart',
+    // The watchlist and its 12-hour monitoring are deliberately FREE: they are
+    // the retention loop, not a paid surface. Premium sells the cadence
+    // (realtimeAlerts) and the capacity (extendedWatchlist) on top of them.
+    'watchlist', 'continuousMonitoring',
   ]) {
     assert.equal(isPremiumFeature(key), false, `${key} must stay free`);
     assert.equal(canUseFeature(key, { hasPremium: false }), true);
@@ -87,8 +91,8 @@ test('the free tier covers the whole core scan', () => {
 test('every advertised premium feature is actually gated', () => {
   for (const key of [
     'fullAiAnalysis', 'detailedRiskBreakdown', 'aiRecommendations', 'holderAnalytics',
-    'securityAnalysis', 'scoreHistory', 'compareProjects', 'watchlist',
-    'continuousMonitoring', 'realtimeAlerts', 'pdfReports', 'advancedAnalytics',
+    'securityAnalysis', 'scoreHistory', 'compareProjects',
+    'realtimeAlerts', 'extendedWatchlist', 'pdfReports', 'advancedAnalytics',
   ]) {
     assert.equal(isPremiumFeature(key), true, `${key} must be premium`);
     assert.equal(canUseFeature(key, { hasPremium: false }), false);
@@ -110,15 +114,16 @@ test('an unknown feature key fails CLOSED, not open', () => {
 test('a missing or malformed premium flag is not premium', () => {
   // canUseFeature requires === true, so no truthy-ish value sneaks through.
   for (const value of [undefined, null, 0, '', 'yes', 1, {}]) {
-    assert.equal(canUseFeature('watchlist', { hasPremium: value }), false, `hasPremium=${JSON.stringify(value)}`);
+    assert.equal(canUseFeature('realtimeAlerts', { hasPremium: value }), false, `hasPremium=${JSON.stringify(value)}`);
   }
-  assert.equal(canUseFeature('watchlist', {}), false);
-  assert.equal(canUseFeature('watchlist'), false);
+  assert.equal(canUseFeature('realtimeAlerts', {}), false);
+  assert.equal(canUseFeature('realtimeAlerts'), false);
 });
 
 test('free features are always teasable; premium ones follow their flag', () => {
   assert.equal(isTeasable('trustScore'), true);
   assert.equal(isTeasable('watchlist'), true);
+  assert.equal(isTeasable('realtimeAlerts'), true);
   // unlimitedScans has no panel to tease — it is a limit, not a surface.
   assert.equal(isTeasable('unlimitedScans'), false);
 });

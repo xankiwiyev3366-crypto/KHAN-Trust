@@ -79,7 +79,7 @@ export default {
     categories: 'Categories',
     referral: 'Refer & Earn',
     promoTitle: 'Join the KHAN Ecosystem',
-    promoText: 'Hold $KHAN and unlock premium features.',
+    promoText: 'Follow the $KHAN token and community roadmap. No token-gated access is active today.',
     promoCta: 'Learn More',
   },
   earlyStage: {
@@ -222,11 +222,14 @@ export default {
     goHome: 'Go to home',
   },
   // Retention trust alerts (Direction 3) - opt-in on the token report.
+  a11y: {
+    unreadAlerts: '{{count}} unread alerts',
+  },
   alerts: {
-    limitReached: 'Alert limit reached ({{limit}} projects). Upgrade to Premium to watch up to 100.',
-    enable: 'Alert me if risk rises',
-    enabled: 'Alerts on',
-    hint: 'Get an email if this token’s KHAN Trust risk increases.',
+    limitReached: 'Watch limit reached ({{limit}} tokens). Upgrade to Premium to watch up to 100.',
+    enable: 'Watch this token',
+    enabled: 'Watching',
+    hint: 'We check this token and tell you if its KHAN Trust risk rises.',
   },
   // Embeddable verification badge (Direction 4) - shown on verified profiles.
   verifiedEmbed: {
@@ -706,9 +709,10 @@ export default {
     securityAnalysis: 'Detailed Security Analysis',
     scoreHistory: 'Trust Score History',
     compareProjects: 'Compare Projects',
-    watchlist: 'Watchlist',
-    continuousMonitoring: 'Continuous Monitoring',
-    realtimeAlerts: 'Real-time Alerts',
+    watchlist: 'Watchlist (5 tokens free)',
+    continuousMonitoring: '24/7 monitoring (every 12h free)',
+    realtimeAlerts: 'Fast alerts - checked every 30 minutes',
+    extendedWatchlist: 'Watch up to 100 tokens',
     pdfReports: 'PDF Report Export',
     advancedAnalytics: 'Advanced Analytics',
     unlimitedScans: 'Unlimited project analyses',
@@ -1342,6 +1346,10 @@ export default {
     rejectedNote: 'Verification request was rejected{{note}}',
     watchProject: 'Watch Project',
     watchingProject: 'Watching Project',
+    watchHint: 'Adds this token to your watchlist and starts monitoring it.',
+    watchCadenceFree: 'Checked every 12 hours. ',
+    watchCadencePremium: 'Checked every 30 minutes.',
+    watchCadenceUpgrade: 'Get 30-minute checks',
     editProject: 'Edit Project',
     requestVerification: 'Request Verification',
     downloadPdf: 'Download PDF Report',

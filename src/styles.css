@@ -12071,3 +12071,32 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
   margin-top: 2px;
   color: var(--gold, #e0b75c);
 }
+
+/* Unified "Watch Project" control. One button replaces the old crowned
+   watchlist button + separate alert toggle pair; the cadence line under it is
+   where Premium is actually sold now — speed, not access. */
+.watch-project-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.watch-cadence-note {
+  margin: 0;
+  font-size: 0.82rem;
+  opacity: 0.8;
+}
+
+.watch-cadence-upgrade {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--gold, #e0b75c);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.watch-cadence-upgrade:hover {
+  opacity: 0.85;
+}

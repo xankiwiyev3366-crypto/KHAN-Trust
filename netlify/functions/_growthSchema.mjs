@@ -43,6 +43,21 @@ export const EVENT_TYPES = {
   // Advocacy — they pulled other people in.
   SHARE_CLICK: 'share_click',
   SOCIAL_CLICK: 'social_click',
+
+  // Retention — WE reached out, and what it cost us.
+  //
+  // The lifecycle mailer is the platform's only outbound retention channel, and
+  // until now it was invisible here: it sent, and nothing recorded that it had.
+  // The console could not answer "does the sequence work", "which stage loses
+  // people", or even "how much mail are we sending" — so an unattended system
+  // was making the product's most reputation-sensitive decisions unobserved.
+  //
+  // The unsubscribe is recorded as its own event rather than as a flag on the
+  // user, because the COST of the sequence is a rate over sends, and a flag can
+  // only ever say "at some point, they left".
+  LIFECYCLE_EMAIL_SENT: 'lifecycle_email_sent',
+  LIFECYCLE_UNSUBSCRIBED: 'lifecycle_unsubscribed',
+  LIFECYCLE_RESUBSCRIBED: 'lifecycle_resubscribed',
 };
 
 // Types the PUBLIC ingestion endpoint will accept from a browser.
@@ -71,10 +86,19 @@ export const CLIENT_EVENT_TYPES = new Set([
   EVENT_TYPES.SOCIAL_CLICK,
 ]);
 
+// Written only by backend code, never accepted from a browser. The lifecycle
+// events belong here for the same reason a registration does: they assert that
+// the PLATFORM did something. A browser able to post lifecycle_email_sent could
+// fabricate a mail programme that never ran, and lifecycle_unsubscribed is how
+// the console measures the harm the sequence does — the one number a growth
+// system must never be able to talk itself out of.
 export const SERVER_EVENT_TYPES = new Set([
   EVENT_TYPES.SIGNUP_COMPLETED,
   EVENT_TYPES.LOGIN,
   EVENT_TYPES.CHECKOUT_COMPLETED,
+  EVENT_TYPES.LIFECYCLE_EMAIL_SENT,
+  EVENT_TYPES.LIFECYCLE_UNSUBSCRIBED,
+  EVENT_TYPES.LIFECYCLE_RESUBSCRIBED,
 ]);
 
 // ── Channels ──────────────────────────────────────────────────────────────────
@@ -218,5 +242,10 @@ export function buildEvent(type, payload = {}, now = new Date()) {
     query: clamp(payload.query),
     plan: clamp(payload.plan),
     reason: clamp(payload.reason),
+    // Which lifecycle stage an outbound email was. Additive and null for every
+    // other event type; it is what turns "we sent 400 emails" into "day1 is the
+    // stage people unsubscribe from", which is the only version of the number
+    // worth acting on.
+    stage: clamp(payload.stage),
   };
 }

@@ -3724,10 +3724,25 @@ button:disabled {
 
 .footer-grid {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
+  /* Four columns since the footer gained the monitoring/research links: those
+     destinations live only in the sidebar, which is hidden below 1024px, so
+     without a footer home they are unreachable on a phone. */
+  grid-template-columns: 1.4fr 1fr 1fr 1fr;
   gap: 28px;
   max-width: 1180px;
   margin: 0 auto;
+}
+
+@media (max-width: 860px) {
+  .footer-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .footer-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .footer-brand {
@@ -12145,4 +12160,24 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
 
 .premium-pitch-actions small {
   opacity: 0.75;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Navigation de-duplication (Phase 4)                                     */
+/*                                                                         */
+/* At >=1024px the left sidebar appears and already carries Home, Explore,  */
+/* Early Stage, Watchlist, Compare and Refer & Earn. The header top-nav was */
+/* repeating all six, so a desktop visitor was shown 25 navigation buttons  */
+/* at once, six of them pointing at pages already listed two inches to the  */
+/* left. Hiding the duplicates here rather than removing them from the      */
+/* array is deliberate: below 1024px the sidebar is hidden and these are    */
+/* the only way to reach those pages, so nothing becomes unreachable.       */
+/* The breakpoint MUST stay in step with .app-sidebar's own (min-width:     */
+/* 1024px) — if they drift apart, one width loses the items entirely.       */
+/* ---------------------------------------------------------------------- */
+
+@media (min-width: 1024px) {
+  .desktop-nav button.is-in-sidebar {
+    display: none;
+  }
 }

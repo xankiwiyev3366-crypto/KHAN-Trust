@@ -379,23 +379,31 @@ function currentRoute() {
 }
 
 
+// The top/bottom navigation. Every label is resolved as `nav.<id>` at render
+// time — the hardcoded English `label` these entries used to carry was read by
+// nothing, and existed only to be mistaken for the source of truth.
+//
+// Items also present in SIDEBAR_ITEMS carry `alsoInSidebar`, which hides them
+// from the DESKTOP header nav at the width where the sidebar appears (>=1024px).
+// Below that the sidebar is hidden and these are the only way to reach those
+// pages, so they stay. Without this the two navigations rendered 25 buttons at
+// once with six of them duplicated.
 const navItems = [
-  { id: 'home', label: 'Home', icon: Home },
-  { id: 'explore', label: 'Explore', icon: Layers3 },
-  { id: 'early-stage', label: 'Early Stage', icon: Rocket },
-  { id: 'pricing', label: 'Pricing', icon: WalletCards },
-  { id: 'compare', label: 'Compare', icon: Scale },
-  { id: 'watchlist', label: 'Watchlist', icon: Bell },
-  // Also in SIDEBAR_ITEMS for desktop; listed here too so it reaches the mobile
-  // bottom nav and the desktop top-nav (the sidebar is desktop-only). Gated like
-  // watchlist/add — navTo() shows the sign-in gate for signed-out users.
-  { id: 'referral', label: 'Refer & Earn', icon: Gift },
-  { id: 'add', label: 'Add Project', icon: Plus },
-  { id: 'launchpad', label: 'Launchpad', icon: Sparkles },
-  { id: 'whitepaper', label: 'Whitepaper', icon: BookOpen },
-  { id: 'about', label: 'About', icon: Info },
-  { id: 'khan', label: '$KHAN', icon: Star },
-  { id: 'support', label: 'Support', icon: LifeBuoy },
+  { id: 'home', icon: Home, alsoInSidebar: true },
+  { id: 'explore', icon: Layers3, alsoInSidebar: true },
+  { id: 'early-stage', icon: Rocket, alsoInSidebar: true },
+  { id: 'pricing', icon: WalletCards },
+  { id: 'compare', icon: Scale, alsoInSidebar: true },
+  { id: 'watchlist', icon: Bell, alsoInSidebar: true },
+  // Gated like watchlist/add — navTo() shows the sign-in gate for signed-out
+  // users.
+  { id: 'referral', icon: Gift, alsoInSidebar: true },
+  { id: 'add', icon: Plus },
+  { id: 'launchpad', icon: Sparkles },
+  { id: 'whitepaper', icon: BookOpen },
+  { id: 'about', icon: Info },
+  { id: 'khan', icon: Star },
+  { id: 'support', icon: LifeBuoy },
 ];
 
 // Chain filter tokens MUST equal the project.chain label a scan produces
@@ -2468,11 +2476,22 @@ function Header({ page, navigate, navTo, setAuthModalMode, projects }) {
         </div>
       </div>
       <nav className="desktop-nav">
-        {navItems.map((item) => (
-          <button key={item.id} className={isActive(page, item.id) ? 'active' : ''} onClick={() => navTo(navTargetFor(item.id))}>
-            {t(`nav.${item.id}`)}
-          </button>
-        ))}
+        {navItems.map((item) => {
+          const active = isActive(page, item.id);
+          return (
+            <button
+              key={item.id}
+              /* `is-in-sidebar` is hidden by CSS at >=1024px, where the sidebar
+                 renders the same destination. Below that the sidebar is gone
+                 and this is the only route to it, so it stays visible. */
+              className={`${active ? 'active' : ''}${item.alsoInSidebar ? ' is-in-sidebar' : ''}`.trim()}
+              onClick={() => navTo(navTargetFor(item.id))}
+              aria-current={active ? 'page' : undefined}
+            >
+              {t(`nav.${item.id}`)}
+            </button>
+          );
+        })}
       </nav>
     </header>
   );
@@ -2517,22 +2536,30 @@ function isActive(page, id) {
 // through the same `navigate(target)` the top Header already uses, so
 // every existing page/route continues to work exactly as before; this is
 // a second way to reach them, not a replacement for the routing itself.
-// "Alerts" is a dedicated nav entry/route, but it renders the exact same
-// WatchlistPage and risk-change alerts (see detectRiskAlerts) rather than
-// duplicating that page - only the route id differs, so it can have its
-// own exact active state independent of "Watchlist" (see isSidebarActive).
+// "Alerts" used to be a separate entry here. It rendered THE EXACT SAME
+// WatchlistPage as "Watchlist" - two names, two active states, one screen. To a
+// user that is not two features, it is a bug: whichever you picked, you got the
+// same page, so the pair taught you that the navigation does not mean anything.
+// The entry is gone and its unread badge moved onto Watchlist, where the count
+// was always about the watched tokens anyway. #/alerts still resolves (see
+// src/lib/routes.js) because the bell and the alert emails link to it.
+//
+// Home and Compare deliberately share the header's `nav.*` label keys rather
+// than carrying their own. They were "Dashboard" and "Comparison" here while
+// the header called the same two destinations "Home" and "Compare" - one place
+// in the product, two names, depending which navigation you happened to use.
+// Sharing the key is what stops them drifting apart again.
 const SIDEBAR_ITEMS = [
-  { id: 'home', labelKey: 'sidebar.dashboard', icon: LayoutDashboard },
-  { id: 'explore', labelKey: 'sidebar.explore', icon: Layers3 },
+  { id: 'home', labelKey: 'nav.home', icon: LayoutDashboard },
+  { id: 'explore', labelKey: 'nav.explore', icon: Layers3 },
   { id: 'early-stage', labelKey: 'sidebar.earlyStage', icon: Rocket },
-  { id: 'watchlist', labelKey: 'sidebar.watchlist', icon: Eye },
-  { id: 'alerts', labelKey: 'sidebar.alerts', icon: Bell, badgeFrom: 'alertCount' },
-  // Sits directly after Alerts: an alert is a single event, the Watchtower
+  { id: 'watchlist', labelKey: 'sidebar.watchlist', icon: Eye, badgeFrom: 'alertCount' },
+  // Directly after the watchlist: an alert is a single event, the Watchtower
   // Report is the period view over the same monitoring. Adjacent so the
   // relationship is obvious without explanation.
   { id: 'watchtower', labelKey: 'sidebar.watchtower', icon: ShieldCheck },
   { id: 'approvals', labelKey: 'sidebar.approvals', icon: Shield },
-  { id: 'compare', labelKey: 'sidebar.comparison', icon: Scale },
+  { id: 'compare', labelKey: 'nav.compare', icon: Scale },
   { id: 'top-projects', labelKey: 'sidebar.topProjects', icon: Trophy },
   // The intelligence layer over the same longitudinal score data the leaderboard
   // ranks — placed right after Top Projects, its natural neighbour.
@@ -2540,6 +2567,15 @@ const SIDEBAR_ITEMS = [
   { id: 'categories', labelKey: 'sidebar.categories', icon: Tags },
   { id: 'referral', labelKey: 'sidebar.referral', icon: Gift },
 ];
+
+// Destinations that exist ONLY in the sidebar, which is hidden below 1024px.
+// Without a second home these are unreachable from any navigation on a phone or
+// a small laptop - including Approvals, which this product's own day-5 lifecycle
+// email links to, and Watchtower, which is what Premium is sold on. The footer
+// carries them so every page has a route to every page at every width.
+const SIDEBAR_ONLY_IDS = SIDEBAR_ITEMS
+  .map((item) => item.id)
+  .filter((id) => !navItems.some((item) => item.id === id));
 
 // Exact route matching for the sidebar only - intentionally separate from
 // the top Header's isActive(), which also has to light up "Explore" while
@@ -10440,6 +10476,14 @@ const footerQuickLinks = [
   { id: 'pricing', label: 'nav.pricing' },
 ];
 
+// The sidebar-only destinations, given a home that survives below 1024px where
+// the sidebar is hidden. Labels reuse the sidebar's own keys, so a rename in one
+// navigation cannot leave the other describing the same page differently.
+const footerMonitoringLinks = SIDEBAR_ONLY_IDS.map((id) => ({
+  id,
+  label: SIDEBAR_ITEMS.find((item) => item.id === id).labelKey,
+}));
+
 const footerLegalLinks = [
   { id: 'privacy', label: 'footer.legal.privacy' },
   { id: 'terms', label: 'footer.legal.terms' },
@@ -10469,6 +10513,16 @@ function Footer({ navigate }) {
           <h4>{t('footer.quickLinksTitle')}</h4>
           <nav>
             {footerQuickLinks.map((item) => (
+              <button key={item.id} type="button" onClick={() => goTo(item.id)}>
+                {t(item.label)}
+              </button>
+            ))}
+          </nav>
+        </div>
+        <div className="footer-column">
+          <h4>{t('footer.monitoringTitle')}</h4>
+          <nav>
+            {footerMonitoringLinks.map((item) => (
               <button key={item.id} type="button" onClick={() => goTo(item.id)}>
                 {t(item.label)}
               </button>

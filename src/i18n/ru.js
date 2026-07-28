@@ -363,6 +363,7 @@ export default {
   footer: {
     tagline: 'Доверие важнее хайпа.',
     quickLinksTitle: 'Быстрые ссылки',
+    monitoringTitle: 'Мониторинг и аналитика',
     legalTitle: 'Юридическая информация',
     legal: {
       privacy: 'Политика конфиденциальности',

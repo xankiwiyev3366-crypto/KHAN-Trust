@@ -414,6 +414,7 @@ export default {
   footer: {
     tagline: 'Trust before hype.',
     quickLinksTitle: 'Quick Links',
+    monitoringTitle: 'Monitoring & Research',
     legalTitle: 'Legal',
     legal: {
       privacy: 'Privacy Policy',

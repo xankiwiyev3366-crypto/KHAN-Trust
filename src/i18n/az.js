@@ -363,6 +363,7 @@ export default {
   footer: {
     tagline: 'Hype-dan əvvəl etibar.',
     quickLinksTitle: 'Sürətli Keçidlər',
+    monitoringTitle: 'Monitorinq və Araşdırma',
     legalTitle: 'Hüquqi',
     legal: {
       privacy: 'Məxfilik Siyasəti',

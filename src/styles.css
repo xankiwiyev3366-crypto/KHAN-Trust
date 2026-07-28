@@ -12181,3 +12181,47 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------------- */
+/* Methodology modal (Phase 4)                                             */
+/*                                                                         */
+/* The five categories are now followed by the three statements that decide */
+/* whether a score is believable at all: what overrides everything else,    */
+/* what happens when a source cannot answer, and what the number does not   */
+/* claim to be. Styled as quiet prose rather than more cards - they are     */
+/* read once, carefully, not scanned.                                      */
+/* ---------------------------------------------------------------------- */
+
+.method-heading {
+  margin: 22px 0 0;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.method-notes {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.method-notes h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.method-notes p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+@media (max-width: 640px) {
+  .method-grid {
+    grid-template-columns: 1fr;
+  }
+}

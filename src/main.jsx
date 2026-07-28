@@ -9689,22 +9689,82 @@ function AboutPage({ openMethodology, navigate }) {
   );
 }
 
+// "How is this calculated?" — the single most credibility-critical screen in the
+// product, and it was describing an algorithm that no longer exists.
+//
+// It listed a submission points table ("Website +10, X/Twitter +10, Telegram
+// +10, GitHub +15...") which is not how a token is scored and has not been for
+// a long time. Three things were wrong with that at once:
+//
+//   - it described ONE of the five categories (Community) as if it were the
+//     whole score, omitting contract security, liquidity, holder health and
+//     market activity — the four that actually decide a memecoin's verdict;
+//   - it read as a checklist to game. "Add a Telegram link, get +10" is exactly
+//     the behaviour the scoring engine had to be hardened against (see the
+//     faked-social-links fix), so the methodology was teaching the attack;
+//   - a user who compared it against a real report found two different
+//     products, which is worse for trust than showing no methodology at all.
+//
+// The categories are now DERIVED from TRUST_CATEGORIES — the same constant the
+// report's category cards and the score history read — and their names and
+// descriptions come from the same `profileSections.category*` keys the report
+// already renders. The modal therefore cannot describe the score differently
+// from the report, and a category added to the engine cannot be silently
+// missing here.
 function MethodologyModal({ onClose }) {
   const { t } = useTranslation();
+  const labels = t('profileSections.categoryLabels');
+  const explainers = t('profileSections.categoryExplainers');
+
+  // Escape and backdrop-click, matching the behaviour every other dismissable
+  // modal in this app already has. A trust explainer you cannot close without
+  // hunting for the X is a small thing that reads as an unfinished product.
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Trust Score Methodology">
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('methodology.title')}
+      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    >
       <div className="modal-panel">
-        <button className="close-button" onClick={onClose} aria-label="Close methodology"><X size={20} /></button>
+        <button className="close-button" onClick={onClose} aria-label={t('common.close')}><X size={20} /></button>
         <SectionTitle icon={Sparkles} eyebrow={t('methodology.eyebrow')} title={t('methodology.title')} />
         <p>{t('methodology.body')}</p>
+
+        <h4 className="method-heading">{t('methodology.categoriesTitle')}</h4>
         <div className="method-grid">
-          {t('methodology.items').map((item) => (
-            <div key={item}>
+          {TRUST_CATEGORIES.map((category) => (
+            <div key={category.key}>
               <CheckCircle2 size={18} />
-              <strong>{item}</strong>
-              <span>{t('methodology.itemNote')}</span>
+              <strong>{labels?.[category.labelKey] || category.labelKey}</strong>
+              <span>{explainers?.[category.labelKey] || ''}</span>
             </div>
           ))}
+        </div>
+
+        {/* The three statements that decide whether a score is believable: what
+            overrides everything, what happens when data is missing, and what the
+            number does not claim to be. */}
+        <div className="method-notes">
+          <div>
+            <h4>{t('methodology.ceilingTitle')}</h4>
+            <p>{t('methodology.ceiling')}</p>
+          </div>
+          <div>
+            <h4>{t('methodology.unknownTitle')}</h4>
+            <p>{t('methodology.unknown')}</p>
+          </div>
+          <div>
+            <h4>{t('methodology.limitsTitle')}</h4>
+            <p>{t('methodology.limits')}</p>
+          </div>
         </div>
       </div>
     </div>

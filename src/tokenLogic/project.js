@@ -13,6 +13,8 @@ import { roadmapToText, roadmapFromText, buildUpdatesTimeline } from '../roadmap
 import { buildCanonicalRiskNotes, mergeRiskNotes } from '../providers/lookups.js';
 import { calculateTrustScore, buildScoreBreakdown, buildCategoryBreakdown, calculateScamRisk } from './scoring.js';
 import { riskFactors } from './riskModel.js';
+import { resolveVerdict } from '../lib/verdict.js';
+import { severityForSignalKey } from '../scoringEngine.js';
 
 export function normalizeProject(input) {
   const now = new Date().toISOString().slice(0, 10);
@@ -110,16 +112,46 @@ export function normalizeProject(input) {
   const score = assetTypeRiskModifier.adjustedScore;
   const breakdown = buildScoreBreakdown(authoritativeProject, authoritativeHolders, authoritativeCommunitySize, score);
   breakdown.finalTrustScore = score;
-  const riskLevel = scoreToRisk(score);
-  const deepAnalysis = runRiskAnalysis(authoritativeProject, rawRealData || {}, breakdown, riskLevel, { rawScore, adjustedScore: score });
+
+  // THE VERDICT. Resolved once, here, from the score AND the evidence
+  // together — never read straight off the score. Before this, the headline
+  // label and the scam probability / factor severities / category scores were
+  // computed independently and nothing checked they agreed, which is how a
+  // token could show "High Risk" above a 0/100 scam score and eight "Low"
+  // factors on the same screen. See src/lib/verdict.js for both directions of
+  // the guard; the hardening one is the safety-critical half.
+  const scamRisk = calculateScamRisk(authoritativeProject, rawRealData || {});
+  const factors = riskFactors({ ...authoritativeProject, holders: authoritativeHolders, communitySize: authoritativeCommunitySize });
+  const scoreLevel = scoreToRisk(score);
+  const preliminaryAnalysis = runRiskAnalysis(authoritativeProject, rawRealData || {}, breakdown, scoreLevel, { rawScore, adjustedScore: score });
+  const verdict = resolveVerdict({
+    scoreLevel,
+    scamRisk,
+    riskFactors: factors,
+    hiddenRiskSignalKeys: preliminaryAnalysis.hiddenRiskSignalKeys || [],
+    severityForSignalKey,
+    speculativeCeiling: Boolean(assetTypeRiskModifier?.isSpeculative),
+  });
+  const riskLevel = verdict.riskLevel;
+  // Re-run the analyst layer against the RESOLVED verdict so its prose opens
+  // with the same rating the headline shows. Running it twice is cheap (both
+  // passes are pure and synchronous) and is the only way the summary sentence
+  // and the risk pill cannot disagree.
+  const deepAnalysis = verdict.adjusted
+    ? runRiskAnalysis(authoritativeProject, rawRealData || {}, breakdown, riskLevel, { rawScore, adjustedScore: score })
+    : preliminaryAnalysis;
 
   return {
     ...scoringProject,
     trustScore: score,
     riskLevel,
+    // Why the headline differs from what the raw score alone implied, when it
+    // does. Null on the ordinary path. Surfaced so the adjustment is visible
+    // rather than silent — an unexplained correction is its own trust problem.
+    verdictAdjustment: verdict.adjusted ? { from: scoreLevel, to: riskLevel, reason: verdict.reason } : null,
     scoreBreakdown: breakdown,
     categoryBreakdown: buildCategoryBreakdown(breakdown),
-    scamRisk: calculateScamRisk(authoritativeProject, rawRealData || {}),
+    scamRisk,
     riskFlags: deriveRiskFlags(authoritativeProject, authoritativeHolders, authoritativeCommunitySize),
     // Evidence provenance (Phase 2): surface WHERE the scan data came from and
     // WHEN it was fetched, so results carry source attribution + a timestamp

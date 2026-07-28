@@ -60,6 +60,24 @@ export function riskBadge(score) {
   return translate(`common.${riskKey(score)}Risk`);
 }
 
+// The label for an ALREADY-RESOLVED verdict (see src/lib/verdict.js).
+//
+// Prefer these over the score-based pair anywhere a normalized project is in
+// hand. The score-based ones re-derive the band from the number alone, which
+// bypasses the consistency guard entirely — that is how the report card ended
+// up rendering a resolved RiskPill next to an unresolved "High Risk" caption
+// that could contradict it. The score-based pair remains correct, and stays,
+// for the contexts that genuinely only have a bare score: sparkline points,
+// history entries, and the retention scan list.
+export function riskKeyForLevel(level) {
+  const key = String(level || '').toLowerCase();
+  return key === 'low' || key === 'medium' || key === 'high' ? key : 'medium';
+}
+
+export function riskBadgeForLevel(level) {
+  return translate(`common.${riskKeyForLevel(level)}Risk`);
+}
+
 export function confidenceScore(project = {}) {
   const data = project.realData || {};
   const checks = [

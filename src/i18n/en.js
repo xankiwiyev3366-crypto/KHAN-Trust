@@ -1029,6 +1029,14 @@ export default {
     },
     badges: { partner: 'Partner', investor: 'Investor' },
   },
+  verdict: {
+    adjusted: {
+      cleanEvidence: 'Headline shown as {{to}} rather than {{from}}: no scam indicators and no high-severity risk factors were found for this token. The Trust Score itself stays capped by its asset type.',
+      highSeverityEvidence: 'Headline raised to {{to}}: a high-severity risk signal was confirmed, which takes precedence over the numeric score.',
+      scamRiskHigh: 'Headline raised to {{to}}: the scam-risk model returned a high-risk verdict, which takes precedence over the numeric score.',
+      speculativeFloor: 'Shown as {{to}} rather than {{from}}: a speculative asset is never rated low risk, however clean its individual checks are.',
+    },
+  },
   pricing: {
     eyebrow: 'Pricing',
     title: 'Plans for KHAN Trust',

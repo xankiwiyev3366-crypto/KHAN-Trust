@@ -12049,3 +12049,25 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
 @media (prefers-reduced-motion: reduce) {
   .tm-card--up, .tm-card--down, .tm-spin { animation: none; }
 }
+
+/* Verdict transparency note. Sits under the score card and only appears when
+   the headline verdict differs from what the numeric score alone implied (see
+   src/lib/verdict.js). Deliberately quiet — it is a footnote explaining a
+   correction, not another alarm competing with the risk pill above it. */
+.verdict-adjustment-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(224, 183, 92, 0.22);
+  border-radius: 10px;
+  background: rgba(224, 183, 92, 0.06);
+  line-height: 1.45;
+}
+
+.verdict-adjustment-note svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--gold, #e0b75c);
+}

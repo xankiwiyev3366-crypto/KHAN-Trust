@@ -350,7 +350,7 @@ import {
   fetchMintCreationTimestamp, buildRealDataRiskNotes, buildCanonicalRiskNotes, mergeRiskNotes,
 } from './providers/lookups.js';
 import {
-  holderConcentrationStatus, holderRiskLevel, contractSecuritySummary, riskKey, riskBadge,
+  holderConcentrationStatus, holderRiskLevel, contractSecuritySummary, riskKey, riskBadge, riskBadgeForLevel,
   confidenceScore, riskFactors, riskSignals, plainRiskExplanation,
 } from './tokenLogic/riskModel.js';
 import {
@@ -1440,7 +1440,7 @@ async function handleCheckout(plan, wallet) {
 function shareText(project = {}, channel = 'x') {
   const name = project.name || translate('scoring.shareText.thisToken');
   const score = project.trustScore || 0;
-  const risk = riskBadge(score);
+  const risk = riskBadgeForLevel(project.riskLevel);
   const contract = hasValue(project.contract) ? translate('scoring.shareText.contractSuffix', { contract: project.contract }) : '';
   const key = channel === 'telegram' ? 'scoring.shareText.telegram' : 'scoring.shareText.x';
   return translate(key, { name, score, risk, contract });
@@ -3757,6 +3757,27 @@ function TokenAlertToggle({ project }) {
 // completed scan: the card is a distribution loop, not a paid feature.
 // The security verdict shown on the card + report: a short, grounded phrase
 // derived only from the deterministic scam-risk level. Never a new judgement.
+// When the headline verdict differs from what the numeric score alone implied,
+// SAY SO. A silent correction is its own credibility problem: a user who
+// notices a "Medium" label over a 35/100 score and finds no explanation has
+// been given a second reason to distrust the number, not a reassurance.
+// Renders nothing on the ordinary path, which is the overwhelming majority.
+function VerdictAdjustmentNote({ project }) {
+  const { t } = useTranslation();
+  const adjustment = project?.verdictAdjustment;
+  if (!adjustment?.reason) return null;
+  const message = t(`verdict.adjusted.${adjustment.reason}`, {
+    from: t(`common.${String(adjustment.from || '').toLowerCase()}Risk`),
+    to: t(`common.${String(adjustment.to || '').toLowerCase()}Risk`),
+  });
+  if (!message || message.startsWith('verdict.')) return null;
+  return (
+    <p className="inline-note verdict-adjustment-note">
+      <Info size={14} aria-hidden="true" /> {message}
+    </p>
+  );
+}
+
 function securityVerdictFor(project, t) {
   const level = String(project.scamRisk?.level || '').toLowerCase();
   if (level === 'high') return { text: t('trustCard.verdict.highRisk'), color: '#ff756e' };
@@ -5434,10 +5455,11 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
           <ScoreHistoryStrip project={project} history={history} />
           <RiskPill level={project.riskLevel} />
           <span className="confidence-badge">{confidence.label}</span>
-          <strong>{riskBadge(project.trustScore)}</strong>
+          <strong>{riskBadgeForLevel(project.riskLevel)}</strong>
           <span className="status-badge">{project.status}</span>
           <KhanAiVerdictMark revealed={revealScan} />
         </div>
+        <VerdictAdjustmentNote project={project} />
       </div>
 
       <div className="dashboard-top-row">

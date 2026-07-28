@@ -968,6 +968,14 @@ export default {
     },
     badges: { partner: 'Tərəfdaş', investor: 'İnvestor' },
   },
+  verdict: {
+    adjusted: {
+      cleanEvidence: 'Başlıq {{from}} əvəzinə {{to}} göstərilir: bu token üçün heç bir fırıldaq göstəricisi və yüksək səviyyəli risk faktoru tapılmadı. Trust Score-un özü aktiv tipinə görə məhdudlaşdırılmış qalır.',
+      highSeverityEvidence: 'Başlıq {{to}} səviyyəsinə qaldırıldı: yüksək səviyyəli risk siqnalı təsdiqləndi və bu, rəqəmsal baldan üstündür.',
+      scamRiskHigh: 'Başlıq {{to}} səviyyəsinə qaldırıldı: fırıldaq riski modeli yüksək risk nəticəsi verdi və bu, rəqəmsal baldan üstündür.',
+      speculativeFloor: '{{from}} əvəzinə {{to}} göstərilir: spekulyativ aktiv fərdi yoxlamaları nə qədər təmiz olsa da, heç vaxt aşağı riskli sayılmır.',
+    },
+  },
   pricing: {
     eyebrow: 'Qiymətlər',
     title: 'KHAN Trust üçün planlar',

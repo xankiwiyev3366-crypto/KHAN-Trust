@@ -968,6 +968,14 @@ export default {
     },
     badges: { partner: 'Ortak', investor: 'Yatırımcı' },
   },
+  verdict: {
+    adjusted: {
+      cleanEvidence: 'Başlık {{from}} yerine {{to}} olarak gösteriliyor: bu token için dolandırıcılık göstergesi ve yüksek önem dereceli risk faktörü bulunamadı. Trust Score ise varlık türüne göre sınırlı kalır.',
+      highSeverityEvidence: 'Başlık {{to}} seviyesine yükseltildi: yüksek önem dereceli bir risk sinyali doğrulandı ve bu, sayısal puanın önüne geçer.',
+      scamRiskHigh: 'Başlık {{to}} seviyesine yükseltildi: dolandırıcılık riski modeli yüksek risk kararı verdi ve bu, sayısal puanın önüne geçer.',
+      speculativeFloor: '{{from}} yerine {{to}} olarak gösteriliyor: spekülatif bir varlık, bireysel kontrolleri ne kadar temiz olursa olsun asla düşük riskli olarak derecelendirilmez.',
+    },
+  },
   pricing: {
     eyebrow: 'Fiyatlandırma',
     title: 'KHAN Trust için planlar',

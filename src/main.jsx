@@ -210,6 +210,7 @@ import { isCardPaymentEnabled, startStripeCheckout, stripeUnavailableMessage } f
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
 import { planUsdAmount, PLAN_USD_AMOUNT } from './lib/pricing.js';
+import { resolveTokenAge, exactLaunchDate } from './lib/tokenAge.js';
 import { fetchEntitlement, fetchAccountEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
 import { buildAdvancedResearch, buildPremiumAnalysis, buildLocalizedRiskSummary, friendlyMissingFields } from './premiumResearch.js';
 import { useGroundedAnalysis, mergeAnalysis } from './groundedAnalysis.js';
@@ -608,13 +609,18 @@ async function lookupSolanaTokenUncached(address, report) {
   const github = socialLinks.github || '';
   const discord = socialLinks.discord || '';
   const socialMetadataAvailable = Boolean(dex?.primaryPair || jupiter || coingecko);
-  // Real asset age priority: CoinGecko's genesis_date (authoritative for
-  // listed assets, no RPC dependency) first, then the mint's own genesis
-  // transaction on-chain. A DEX pair's first-liquidity date is never used -
-  // if neither real source resolves, age is unknown, not estimated.
-  const createdAt = coingecko?.genesisDate ? new Date(coingecko.genesisDate).getTime() : mintCreatedAt;
-  const tokenAgeSource = coingecko?.genesisDate ? 'CoinGecko genesis date' : (mintCreatedAt ? 'Solana mint genesis transaction' : null);
-  const tokenAgeDays = createdAt ? daysSince(createdAt) : null;
+  // Real asset age. The priority list and the lower-bound semantics live in
+  // src/lib/tokenAge.js so all three lookup lanes resolve age identically —
+  // see that file for why the oldest liquidity pool is now a valid (and still
+  // non-estimated) fourth source.
+  const age = resolveTokenAge({
+    coingeckoGenesisDate: coingecko?.genesisDate,
+    mintCreatedAt,
+    oldestPairCreatedAt: dex?.oldestPairCreatedAt,
+  });
+  const createdAt = age.createdAt;
+  const tokenAgeSource = age.sourceLabel;
+  const tokenAgeDays = age.tokenAgeDays;
   // Real indexed/on-chain holder counts only. getTokenLargestAccounts (rpc)
   // never contributes here - it only returns the top 20 accounts. GoPlus is
   // a last-resort fallback, only used when RPC and Jupiter both have nothing.
@@ -653,7 +659,7 @@ async function lookupSolanaTokenUncached(address, report) {
     telegram,
     github,
     logoUrl,
-    launchDate: createdAt ? new Date(createdAt).toISOString().slice(0, 10) : '',
+    launchDate: exactLaunchDate(age),
     description: coingecko?.description || (token.name || jupiter?.name
       ? `${token.name || jupiter.name} is a Solana token profile enriched with public market and on-chain signals.`
       : 'Solana token profile enriched with public market and on-chain signals.'),
@@ -671,6 +677,9 @@ async function lookupSolanaTokenUncached(address, report) {
       marketCapIsFdv,
       tokenAgeDays,
       tokenAgeSource,
+      // Lets the UI render "3y 7mo or older" rather than a false precise age,
+      // and lets the scoring model know it may only use this as a floor.
+      tokenAgeIsLowerBound: age.isLowerBound,
       holderCount,
       topHolderPercent: holderAnalytics?.topHolderPercent ?? rpc?.topHolderPercent ?? goPlus?.topHolderPercent ?? null,
       topTenHolderPercent: holderAnalytics?.topTenHolderPercent ?? rpc?.topTenHolderPercent ?? jupiter?.topHoldersPercentage ?? goPlus?.topTenHolderPercent ?? null,
@@ -952,15 +961,18 @@ async function lookupGenericChainTokenUncached(chainId, address, report) {
   const telegram = socialLinks.telegram || '';
   const github = socialLinks.github || '';
   const discord = socialLinks.discord || '';
-  // Real asset age priority: CoinGecko's genesis_date, then the chain's
-  // own contract-deployment timestamp (via the server-side evm-explorer
-  // proxy). A DEX pair's first-liquidity date is never used.
-  // If neither real source resolves, age stays unknown.
-  const createdAt = coingecko?.genesisDate ? new Date(coingecko.genesisDate).getTime() : explorerCreatedAt;
-  const tokenAgeSource = coingecko?.genesisDate
-    ? 'CoinGecko genesis date'
-    : (explorerCreatedAt ? `${chainLabelFor(chainId)} block explorer contract creation` : null);
-  const tokenAgeDays = createdAt ? daysSince(createdAt) : null;
+  // Real asset age — same shared hierarchy as the Solana lane, see
+  // src/lib/tokenAge.js. The explorer label keeps its chain name.
+  const age = resolveTokenAge({
+    coingeckoGenesisDate: coingecko?.genesisDate,
+    explorerCreatedAt,
+    oldestPairCreatedAt: dex?.oldestPairCreatedAt,
+  });
+  const createdAt = age.createdAt;
+  const tokenAgeSource = age.source === 'explorerGenesis'
+    ? `${chainLabelFor(chainId)} block explorer contract creation`
+    : age.sourceLabel;
+  const tokenAgeDays = age.tokenAgeDays;
   const liquidityUsd = Number(dex?.primaryPair?.liquidity?.usd || 0);
   const totalLiquidityUsd = Number(dex?.totalLiquidityUsd || liquidityUsd || 0);
   const realMarketCapUsd = Number(coingecko?.realMarketCapUsd || dex?.primaryPair?.marketCap || geckoTerminal?.marketCapUsd || 0);
@@ -992,7 +1004,7 @@ async function lookupGenericChainTokenUncached(chainId, address, report) {
     telegram,
     github,
     logoUrl,
-    launchDate: createdAt ? new Date(createdAt).toISOString().slice(0, 10) : '',
+    launchDate: exactLaunchDate(age),
     description: coingecko?.description || (name
       ? `${name} is ${article} ${chainLabel} token profile enriched with public market signals.`
       : `${chainLabel} token profile enriched with public market signals.`),
@@ -1015,6 +1027,7 @@ async function lookupGenericChainTokenUncached(chainId, address, report) {
       marketCapIsFdv,
       tokenAgeDays,
       tokenAgeSource,
+      tokenAgeIsLowerBound: age.isLowerBound,
       holderCount: goPlus?.holderCount ?? null,
       topHolderPercent: goPlus?.topHolderPercent ?? null,
       topTenHolderPercent: goPlus?.topTenHolderPercent ?? null,
@@ -1116,8 +1129,15 @@ async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel, report) {
   const proxyDex = proxyDexResult.status === 'fulfilled' ? proxyDexResult.value : null;
   const blockchair = blockchairResult.status === 'fulfilled' ? blockchairResult.value : null;
   if (!detail) throw new Error('No public CoinGecko data was found for this asset.');
-  const createdAt = detail.genesisDate ? new Date(detail.genesisDate).getTime() : null;
-  const tokenAgeDays = createdAt ? daysSince(createdAt) : null;
+  // Native assets have no mint/contract to inspect, so CoinGecko's genesis
+  // date is the only exact source; the wrapped-representation DEX pool still
+  // provides a lower bound when it is missing.
+  const age = resolveTokenAge({
+    coingeckoGenesisDate: detail.genesisDate,
+    oldestPairCreatedAt: proxyDex?.oldestPairCreatedAt,
+  });
+  const createdAt = age.createdAt;
+  const tokenAgeDays = age.tokenAgeDays;
   const socialLinks = mergeSocialLinks({ website: detail.website, twitter: detail.twitter, telegram: detail.telegram, github: detail.github });
   const liquidityUsd = proxyDex?.primaryPair ? Number(proxyDex.primaryPair.liquidity?.usd || 0) : null;
   const totalLiquidityUsd = proxyDex ? Number(proxyDex.totalLiquidityUsd || liquidityUsd || 0) : null;
@@ -1133,7 +1153,7 @@ async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel, report) {
     telegram: socialLinks.telegram || '',
     github: socialLinks.github || '',
     logoUrl: detail.logoUrl,
-    launchDate: createdAt ? new Date(createdAt).toISOString().slice(0, 10) : '',
+    launchDate: exactLaunchDate(age),
     description: detail.description || `${detail.name} is ${chainLabel}'s native chain asset.`,
     status: 'Live CoinGecko data',
     lastUpdate: new Date().toISOString().slice(0, 10),
@@ -1158,7 +1178,8 @@ async function lookupNativeCoinGeckoAsset(coingeckoId, chainLabel, report) {
       marketCapRank: detail.marketCapRank,
       watchlistUsers: detail.watchlistUsers,
       tokenAgeDays,
-      tokenAgeSource: createdAt ? 'CoinGecko genesis date' : null,
+      tokenAgeSource: age.sourceLabel,
+      tokenAgeIsLowerBound: age.isLowerBound,
       holderCount: blockchair?.holderCount ?? null,
       topHolderPercent: null,
       topTenHolderPercent: null,
@@ -1330,7 +1351,7 @@ function buildPdfReportData(project = {}) {
       liquidityUsd: formatCurrency(data.totalLiquidityUsd ?? data.liquidityUsd),
       marketCapUsd: formatCurrency(data.marketCapUsd),
     },
-    tokenAge: project.realData ? formatAge(data.tokenAgeDays) : formatAge(project.launchDate ? daysSince(project.launchDate) : null),
+    tokenAge: project.realData ? formatAge(data.tokenAgeDays, data.tokenAgeIsLowerBound) : formatAge(project.launchDate ? daysSince(project.launchDate) : null),
     scoreBreakdown: project.scoreBreakdown || {},
     generatedDate: new Date().toLocaleString(PDF_LOCALE_MAP[language] || 'en-US', { dateStyle: 'medium', timeStyle: 'short' }),
     labels: translate('pdfReport', null, language),
@@ -3581,7 +3602,7 @@ function ComparePage({ projects, navigate }) {
             <CompareRow label={t('compare.rows.marketCap')} first={formatCurrency(first.realData?.marketCapUsd)} second={formatCurrency(second.realData?.marketCapUsd)} />
             <CompareRow label={t('compare.rows.liquidity')} first={formatCurrency(first.realData?.totalLiquidityUsd ?? first.realData?.liquidityUsd)} second={formatCurrency(second.realData?.totalLiquidityUsd ?? second.realData?.liquidityUsd)} />
             <CompareRow label={t('compare.rows.holderCount')} first={formatNumber(first.realData?.holderCount || first.holders)} second={formatNumber(second.realData?.holderCount || second.holders)} />
-            <CompareRow label={t('compare.rows.tokenAge')} first={formatAge(first.realData?.tokenAgeDays)} second={formatAge(second.realData?.tokenAgeDays)} />
+            <CompareRow label={t('compare.rows.tokenAge')} first={formatAge(first.realData?.tokenAgeDays, first.realData?.tokenAgeIsLowerBound)} second={formatAge(second.realData?.tokenAgeDays, second.realData?.tokenAgeIsLowerBound)} />
             <CompareRow label={t('compare.rows.largestHolder')} first={formatPercent(first.realData?.topHolderPercent)} second={formatPercent(second.realData?.topHolderPercent)} />
             <CompareRow label={t('compare.rows.topTen')} first={formatPercent(first.realData?.topTenHolderPercent)} second={formatPercent(second.realData?.topTenHolderPercent)} />
             <CompareRow label={t('compare.rows.socialScore')} first={formatScore(first.scoreBreakdown.socialScore)} second={formatScore(second.scoreBreakdown.socialScore)} />
@@ -6482,7 +6503,7 @@ function CommunityProof({ project }) {
     [s.topHolder, project.realData ? formatPercent(project.realData.topHolderPercent) : t('common.notConnected'), Shield],
     [s.liquidity, project.realData ? formatCurrency(project.realData.totalLiquidityUsd ?? project.realData.liquidityUsd) : t('common.notConnected'), BarChart3],
     [marketCapLabel(s.marketCap, project.realData), project.realData ? formatCurrency(project.realData.marketCapUsd) : t('common.notConnected'), LineChart],
-    [s.tokenAge, project.realData ? formatAge(project.realData.tokenAgeDays) : t('common.notConnected'), CalendarDays],
+    [s.tokenAge, project.realData ? formatAge(project.realData.tokenAgeDays, project.realData.tokenAgeIsLowerBound) : t('common.notConnected'), CalendarDays],
     [s.trustScore, `${project.trustScore}/100`, BadgeCheck],
     [s.lastUpdateDate, project.lastUpdate, Clock3],
   ];
@@ -6513,7 +6534,7 @@ function RealDataSection({ project, data }) {
     [r.concentrationStatus, holderConcentrationStatus(data), FileWarning],
     [r.liquidityUsd, formatCurrency(data.totalLiquidityUsd ?? data.liquidityUsd), BarChart3],
     [marketCapLabel(r.marketCapUsd, data), formatCurrency(data.marketCapUsd), LineChart],
-    [r.tokenAge, data.tokenAgeSource ? `${formatAge(data.tokenAgeDays)} (${data.tokenAgeSource})` : formatAge(data.tokenAgeDays), CalendarDays],
+    [r.tokenAge, data.tokenAgeSource ? `${formatAge(data.tokenAgeDays, data.tokenAgeIsLowerBound)} (${data.tokenAgeSource})` : formatAge(data.tokenAgeDays, data.tokenAgeIsLowerBound), CalendarDays],
     [r.trustScore, `${project.trustScore}/100`, BadgeCheck],
     [r.website, socialPresenceState('website', project, data), Globe2],
     [r.twitter, socialPresenceState('twitter', project, data), ExternalLink],
@@ -6562,7 +6583,7 @@ function RealDataPreview({ data }) {
       <strong>{t('liveDataPreview.title')}</strong>
       <span>{t('liveDataPreview.liquidity', { value: formatCurrency(data.liquidityUsd) })}</span>
       <span>{t('liveDataPreview.marketCap', { value: `${formatCurrency(data.marketCapUsd)}${data.marketCapIsFdv ? ' (FDV)' : ''}` })}</span>
-      <span>{t('liveDataPreview.tokenAge', { value: formatAge(data.tokenAgeDays) })}</span>
+      <span>{t('liveDataPreview.tokenAge', { value: formatAge(data.tokenAgeDays, data.tokenAgeIsLowerBound) })}</span>
       <span>{t('liveDataPreview.holderSignal', { count: formatNumber(data.holderCount), source: data.holderSource || t('common.notAvailable') })}</span>
     </div>
   );

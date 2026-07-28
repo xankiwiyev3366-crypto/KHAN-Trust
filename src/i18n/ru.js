@@ -45,6 +45,7 @@ export default {
     ageDays: '{{count}} дн.',
     ageMonths: '{{count}} мес.',
     ageYears: '{{count}} г.',
+    ageAtLeast: '{{age}} или больше',
     riskSuffix: '{{level}} риск',
     mainnet: 'Mainnet',
     devnet: 'Devnet',

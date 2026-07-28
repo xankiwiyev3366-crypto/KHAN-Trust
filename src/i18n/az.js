@@ -45,6 +45,7 @@ export default {
     ageDays: '{{count}} gün',
     ageMonths: '{{count}} ay',
     ageYears: '{{count}} il',
+    ageAtLeast: '{{age}} və ya daha çox',
     riskSuffix: '{{level}} Risk',
     mainnet: 'Mainnet',
     devnet: 'Devnet',

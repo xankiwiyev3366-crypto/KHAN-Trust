@@ -46,12 +46,18 @@ export function formatNumber(value) {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(number);
 }
 
-export function formatAge(days) {
+// `isLowerBound` marks an age that was resolved from the earliest observed
+// liquidity pool rather than from the asset's own genesis (see
+// src/lib/tokenAge.js). The token is AT LEAST this old and may be older, so it
+// renders as "3 years or older" — never as a precise age it has not earned.
+export function formatAge(days, isLowerBound = false) {
   if (days === null || days === undefined) return translate('common.notAvailable');
-  if (days < 1) return translate('common.ageLessThanDay');
-  if (days < 30) return translate('common.ageDays', { count: days });
-  if (days < 365) return translate('common.ageMonths', { count: Math.round(days / 30) });
-  return translate('common.ageYears', { count: Math.round(days / 365) });
+  let base;
+  if (days < 1) base = translate('common.ageLessThanDay');
+  else if (days < 30) base = translate('common.ageDays', { count: days });
+  else if (days < 365) base = translate('common.ageMonths', { count: Math.round(days / 30) });
+  else base = translate('common.ageYears', { count: Math.round(days / 365) });
+  return isLowerBound ? translate('common.ageAtLeast', { age: base }) : base;
 }
 
 export function formatPercent(value) {

@@ -42,8 +42,37 @@ function shell(bodyHtml, unsubscribeUrl) {
 </div>`;
 }
 
+// The link a PERSON sees and may hover over before clicking. Uses the clean
+// /unsubscribe path (rewritten in netlify.toml) because a bare
+// /.netlify/functions/... URL in a footer reads like something worth not
+// clicking, and an opt-out people distrust gets replaced by the spam button.
 export function unsubscribeUrl(token) {
+  return `${APP_URL}/unsubscribe?token=${encodeURIComponent(token || '')}`;
+}
+
+// The URL a MAIL PROVIDER posts to for one-click unsubscribe. Deliberately the
+// direct function path, not the pretty rewrite: this one is never seen by a
+// human, and it must survive a POST with no room for error. Taking the shortest
+// path that cannot be affected by redirect handling is worth more here than
+// consistency with the visible link.
+function oneClickUrl(token) {
   return `${APP_URL}/.netlify/functions/lifecycle-unsubscribe?token=${encodeURIComponent(token || '')}`;
+}
+
+// RFC 8058 one-click unsubscribe.
+//
+// Gmail and Yahoo have required this on bulk senders since 2024. Without it a
+// lifecycle sequence is judged on reputation alone and quietly loses the inbox
+// — no bounce, no error, just delivery decaying until the whole system is
+// sending into spam and nobody knows. The two headers go together:
+// List-Unsubscribe alone is the old mailto/link form, and it is the -Post
+// header that promises the URL accepts an unattended POST.
+export function listUnsubscribeHeaders(token) {
+  if (!token) return {};
+  return {
+    'List-Unsubscribe': `<${oneClickUrl(token)}>`,
+    'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+  };
 }
 
 // One builder per stage. Each returns { subject, html }. `ctx` is the same

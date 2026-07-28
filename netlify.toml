@@ -130,6 +130,20 @@
   to = "/.netlify/functions/verify-badge?projectId=:projectId"
   status = 200
 
+# Lifecycle email opt-out. The footer link people actually see and hover over,
+# so it should look like the product rather than like /.netlify/functions/... —
+# an opt-out that looks untrustworthy gets replaced by the spam button, which
+# costs the sending domain far more than the unsubscribe does. Additive and
+# path-specific, like every redirect here; still no catch-all.
+#
+# The machine-readable RFC 8058 List-Unsubscribe header deliberately does NOT
+# use this path — it points straight at the function, so the unattended
+# one-click POST never depends on redirect handling. See _lifecycleTemplates.mjs.
+[[redirects]]
+  from = "/unsubscribe"
+  to = "/.netlify/functions/lifecycle-unsubscribe"
+  status = 200
+
 # Referral & Invite System: the public invite link is /signup?ref=<CODE>.
 # /signup is not a real file, so without this it 404s. A transparent rewrite
 # (status 200, query string preserved by Netlify) serves the hash-routed SPA,

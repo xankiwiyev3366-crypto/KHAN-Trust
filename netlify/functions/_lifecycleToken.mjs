@@ -35,33 +35,64 @@ export function isUnsubscribeConfigured() {
   return Boolean(secret());
 }
 
-function tag(userId) {
-  return crypto.createHmac('sha256', secret()).update(`unsub:${userId}`).digest('hex').slice(0, 32);
+// Tokens are scoped to ONE action. The prefix is inside the HMAC, so an
+// unsubscribe token is not a valid resubscribe token and vice versa — they are
+// different capabilities that happen to name the same user, and a link scanner
+// or a forwarded email must not be able to turn one into the other.
+//
+// 'unsubscribe' keeps the original `unsub:` prefix so every link in every email
+// already sent goes on working. Changing it would silently break the opt-out in
+// mail people are holding right now, which is the one thing that must never
+// break.
+const ACTIONS = { unsubscribe: 'unsub', resubscribe: 'resub' };
+
+function tag(userId, action) {
+  const prefix = ACTIONS[action];
+  if (!prefix) return '';
+  return crypto.createHmac('sha256', secret()).update(`${prefix}:${userId}`).digest('hex').slice(0, 32);
 }
 
 // `<userId>.<tag>`. The id is in the clear because the endpoint needs to know
-// WHO to unsubscribe; the tag is what makes it unforgeable. A user id is not a
+// WHO to act on; the tag is what makes it unforgeable. A user id is not a
 // secret — it is not a credential and grants nothing on its own.
-export function unsubscribeTokenFor(user) {
-  if (!secret() || !user?.id) return '';
-  return `${user.id}.${tag(user.id)}`;
+export function lifecycleTokenFor(user, action) {
+  if (!secret() || !user?.id || !ACTIONS[action]) return '';
+  return `${user.id}.${tag(user.id, action)}`;
 }
 
-// Returns the verified user id, or '' if the token is malformed or forged.
-// Uses a timing-safe comparison: this is a small surface, but a tag oracle is
-// exactly the kind of thing that is cheap to close now and awkward later.
-export function verifyUnsubscribeToken(token) {
-  if (!secret() || typeof token !== 'string') return '';
+export function unsubscribeTokenFor(user) {
+  return lifecycleTokenFor(user, 'unsubscribe');
+}
+
+// The way back. An unsubscribe that cannot be undone is a one-way door, and
+// this one can be walked through by accident — the endpoint is a GET, so a mail
+// client's link prefetcher can trip it without the user ever clicking. Issuing
+// the reverse capability alongside costs nothing and is the difference between
+// "I clicked by mistake" and "I have lost my alerts and must email support".
+export function resubscribeTokenFor(user) {
+  return lifecycleTokenFor(user, 'resubscribe');
+}
+
+// Returns the verified user id, or '' if the token is malformed, forged, or
+// presented for the wrong action. Uses a timing-safe comparison: this is a
+// small surface, but a tag oracle is exactly the kind of thing that is cheap to
+// close now and awkward later.
+export function verifyLifecycleToken(token, action = 'unsubscribe') {
+  if (!secret() || typeof token !== 'string' || !ACTIONS[action]) return '';
   const separator = token.lastIndexOf('.');
   if (separator <= 0) return '';
   const userId = token.slice(0, separator);
   const provided = token.slice(separator + 1);
-  const expected = tag(userId);
-  if (provided.length !== expected.length) return '';
+  const expected = tag(userId, action);
+  if (!expected || provided.length !== expected.length) return '';
   try {
     if (!crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected))) return '';
   } catch {
     return '';
   }
   return userId;
+}
+
+export function verifyUnsubscribeToken(token) {
+  return verifyLifecycleToken(token, 'unsubscribe');
 }

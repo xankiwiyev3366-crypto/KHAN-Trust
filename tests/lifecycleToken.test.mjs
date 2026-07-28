@@ -6,10 +6,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   unsubscribeTokenFor,
+  resubscribeTokenFor,
   verifyUnsubscribeToken,
+  verifyLifecycleToken,
   isUnsubscribeConfigured,
 } from '../netlify/functions/_lifecycleToken.mjs';
-import { buildLifecycleEmail, TEMPLATE_IDS } from '../netlify/functions/_lifecycleTemplates.mjs';
+import {
+  buildLifecycleEmail,
+  listUnsubscribeHeaders,
+  unsubscribeUrl,
+  TEMPLATE_IDS,
+} from '../netlify/functions/_lifecycleTemplates.mjs';
 
 test('a token round-trips to the user it was issued for', () => {
   assert.equal(isUnsubscribeConfigured(), true);
@@ -46,6 +53,53 @@ test('an id with dots still round-trips (the tag is split off the LAST dot)', ()
   assert.equal(verifyUnsubscribeToken(token), 'a.b.c');
 });
 
+// ── Action scoping ───────────────────────────────────────────────────────────
+//
+// THE PROPERTY THAT MATTERS: the two capabilities cannot be substituted for one
+// another. If they could, a link prefetcher that follows the unsubscribe URL
+// could equally undo it, and whichever the scanner fetched last would decide
+// the user's preference instead of the user.
+test('an unsubscribe token is not a resubscribe token, and vice versa', () => {
+  const unsub = unsubscribeTokenFor({ id: 'user-123' });
+  const resub = resubscribeTokenFor({ id: 'user-123' });
+
+  assert.ok(unsub && resub);
+  assert.notEqual(unsub, resub, 'the same string must not authorise both actions');
+
+  assert.equal(verifyLifecycleToken(unsub, 'unsubscribe'), 'user-123');
+  assert.equal(verifyLifecycleToken(resub, 'resubscribe'), 'user-123');
+
+  // Presented for the other action: refused.
+  assert.equal(verifyLifecycleToken(unsub, 'resubscribe'), '');
+  assert.equal(verifyLifecycleToken(resub, 'unsubscribe'), '');
+});
+
+test('resubscribe tokens are deterministic and unforgeable, like unsubscribe ones', () => {
+  assert.equal(resubscribeTokenFor({ id: 'u' }), resubscribeTokenFor({ id: 'u' }));
+  const token = resubscribeTokenFor({ id: 'user-123' });
+  assert.equal(verifyLifecycleToken(token.replace('user-123', 'user-999'), 'resubscribe'), '');
+  assert.equal(verifyLifecycleToken('user-123', 'resubscribe'), '');
+});
+
+test('an unknown action authorises nothing', () => {
+  const token = unsubscribeTokenFor({ id: 'user-123' });
+  for (const action of ['delete', '', null, 'UNSUBSCRIBE']) {
+    assert.equal(verifyLifecycleToken(token, action), '', `action=${String(action)} must not verify`);
+  }
+  // Omitting it entirely is NOT unknown — it means unsubscribe, which is what
+  // keeps every already-sent link working.
+  assert.equal(verifyLifecycleToken(token), 'user-123');
+});
+
+// Backwards compatibility. Emails already delivered carry the original token,
+// and their opt-out link must keep working forever — the recipient has no way
+// to get a newer one.
+test('the unsubscribe token format is unchanged, so links in old mail still work', () => {
+  const token = unsubscribeTokenFor({ id: 'user-123' });
+  assert.match(token, /^user-123\.[0-9a-f]{32}$/);
+  assert.equal(verifyUnsubscribeToken(token), 'user-123', 'the default action is still unsubscribe');
+});
+
 // ── Templates ────────────────────────────────────────────────────────────────
 
 const ctx = { name: 'Sam', email: 's@x.com', watchedCount: 3 };
@@ -68,8 +122,35 @@ test('an unknown stage builds nothing rather than an empty email', () => {
 test('every template carries a working unsubscribe link', () => {
   for (const id of TEMPLATE_IDS) {
     const email = buildLifecycleEmail(id, ctx, 'my-token');
-    assert.match(email.html, /lifecycle-unsubscribe\?token=my-token/, `${id} has no unsubscribe link`);
+    assert.match(email.html, /\/unsubscribe\?token=my-token/, `${id} has no unsubscribe link`);
   }
+});
+
+test('the human-facing opt-out link uses the clean path, not the raw function URL', () => {
+  const url = unsubscribeUrl('abc');
+  assert.match(url, /\/unsubscribe\?token=abc$/);
+  assert.doesNotMatch(url, /\.netlify\/functions/, 'a footer link should look like the product');
+});
+
+// RFC 8058. Gmail and Yahoo require these on bulk senders; without them the
+// sequence loses the inbox on reputation with no bounce and no error.
+test('lifecycle mail carries both one-click unsubscribe headers', () => {
+  const headers = listUnsubscribeHeaders('tok-1');
+  assert.match(headers['List-Unsubscribe'], /^<https?:\/\/.+>$/, 'must be a bracketed URI');
+  assert.match(headers['List-Unsubscribe'], /token=tok-1/);
+  assert.equal(headers['List-Unsubscribe-Post'], 'List-Unsubscribe=One-Click',
+    'the -Post header is what promises the URL accepts an unattended POST');
+});
+
+// The header is machine-consumed and must not depend on redirect handling.
+test('the one-click header points straight at the function, not the rewrite', () => {
+  const headers = listUnsubscribeHeaders('tok-1');
+  assert.match(headers['List-Unsubscribe'], /\.netlify\/functions\/lifecycle-unsubscribe/);
+});
+
+test('no token yields no headers rather than a broken one', () => {
+  assert.deepEqual(listUnsubscribeHeaders(''), {});
+  assert.deepEqual(listUnsubscribeHeaders(null), {});
 });
 
 test('templates state that risk alerts are unaffected by unsubscribing', () => {

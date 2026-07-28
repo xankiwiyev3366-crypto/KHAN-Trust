@@ -41,7 +41,13 @@ export function getAdminNotifyEmail() {
 // Existing fire-and-forget callers (report-submit.mjs) that only `await`
 // this without reading the result are unaffected - {ok: false, ...} is
 // still falsy-safe to ignore.
-export async function sendEmail({ to, subject, text, html }) {
+//
+// `headers` is an optional map of extra MIME headers. It exists for RFC 8058
+// List-Unsubscribe on bulk mail: Gmail and Yahoo require a one-click
+// unsubscribe header on bulk senders, and without it a lifecycle sequence is
+// filtered on reputation no matter how good the copy is. Transactional callers
+// pass nothing and are completely unaffected.
+export async function sendEmail({ to, subject, text, html, headers }) {
   if (!RESEND_API_KEY) return { ok: false, reason: 'missing_api_key' };
   if (!to) return { ok: false, reason: 'missing_recipient' };
   try {
@@ -51,7 +57,13 @@ export async function sendEmail({ to, subject, text, html }) {
         Authorization: `Bearer ${RESEND_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ from: FROM_ADDRESS, to: [to], subject, ...(html ? { html } : { text }) }),
+      body: JSON.stringify({
+        from: FROM_ADDRESS,
+        to: [to],
+        subject,
+        ...(headers && Object.keys(headers).length ? { headers } : {}),
+        ...(html ? { html } : { text }),
+      }),
     });
     if (!response.ok) {
       // Resend's error body names the actual problem (e.g. "You can only

@@ -27,8 +27,9 @@ import { sendEmail, isEmailConfigured } from './_email.mjs';
 import { listNotificationsStrict } from './_notificationStore.mjs';
 import { nextStageFor, buildContext, REASSURANCE_LOOKBACK_MS } from './_lifecycleEngine.mjs';
 import { getLifecycle, recordSent, recordSkipped, sentLogFor } from './_lifecycleStore.mjs';
-import { buildLifecycleEmail } from './_lifecycleTemplates.mjs';
+import { buildLifecycleEmail, listUnsubscribeHeaders } from './_lifecycleTemplates.mjs';
 import { unsubscribeTokenFor } from './_lifecycleToken.mjs';
+import { recordLifecycleEmailSent } from './_growthRecord.mjs';
 
 export const config = { schedule: '0 9 * * *' };
 
@@ -140,14 +141,25 @@ export async function handler() {
 
       if (!decision.stage) continue;
 
-      const email = buildLifecycleEmail(decision.stage.id, ctx, unsubscribeTokenFor(user));
+      const unsubToken = unsubscribeTokenFor(user);
+      const email = buildLifecycleEmail(decision.stage.id, ctx, unsubToken);
       if (!email) continue;
 
-      const result = await sendEmail({ to: ctx.email, subject: email.subject, html: email.html });
+      const result = await sendEmail({
+        to: ctx.email,
+        subject: email.subject,
+        html: email.html,
+        // RFC 8058. Bulk mail without this is filtered on reputation alone.
+        headers: listUnsubscribeHeaders(unsubToken),
+      });
       // Recorded ONLY on provider acceptance. Recording before the send would
       // let one outage silently consume a user's single shot at that stage.
       if (result.ok) {
         await recordSent(user.id, decision.stage.id, now);
+        // Fail-soft by contract: losing an analytics row must never cost the
+        // user their write-once record of having been emailed, which is the
+        // thing that stops a duplicate send.
+        await recordLifecycleEmailSent({ userId: user.id, stage: decision.stage.id });
         sent += 1;
       } else {
         failures.push({ userId: user.id, stage: decision.stage.id, reason: result.reason });

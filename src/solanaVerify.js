@@ -4,7 +4,12 @@
 
 import { translate } from './i18n/index.js';
 
-const RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || '';
+// No RPC URL is read here on purpose. The getTransaction lookup runs entirely
+// in verify-solana-payment.mjs against the server-side SOLANA_RPC_URL, so the
+// only thing the CLIENT needs configured to offer manual crypto payment is the
+// destination wallet. This check previously also required VITE_SOLANA_RPC_URL,
+// which meant removing that browser-inlined variable (it leaked the provider
+// key) would have silently reported crypto payments as "not configured".
 const PAYMENT_WALLET = import.meta.env.VITE_KHAN_PAYMENT_WALLET || '';
 const VERIFY_ENDPOINT = '/.netlify/functions/verify-solana-payment';
 
@@ -20,7 +25,7 @@ function authToken() {
 }
 
 export function isSolanaVerificationConfigured() {
-  return Boolean(RPC_URL && PAYMENT_WALLET);
+  return Boolean(PAYMENT_WALLET);
 }
 
 // Localized via the module-level translate() mirror rather than a React hook —

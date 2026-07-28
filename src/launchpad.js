@@ -3,7 +3,7 @@
 // only on i18n translate. The on-chain mint flow (createLaunchpadSplToken) and
 // profile builder stay in main.jsx and import these back.
 import { translate } from './i18n/index.js';
-import { SOLANA_RPC_URL, SOLANA_DEVNET_RPC_URL } from './constants/endpoints.js';
+import { SOLANA_PUBLIC_RPC_URL, SOLANA_DEVNET_RPC_URL } from './constants/endpoints.js';
 
 export function parseTokenAmount(value, decimals) {
   const raw = String(value || '').trim();
@@ -32,7 +32,7 @@ export function launchpadNetworkConfig(network = 'devnet') {
   if (network === 'mainnet-beta') {
     return {
       network,
-      rpcUrl: SOLANA_RPC_URL,
+      rpcUrl: SOLANA_PUBLIC_RPC_URL,
       label: translate('common.mainnet'),
       explorerCluster: '',
       profileNetwork: 'mainnet-beta',

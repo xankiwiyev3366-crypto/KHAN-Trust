@@ -4,7 +4,28 @@
 // data (plus one derived devnet URL). No app state.
 import { clusterApiUrl } from '@solana/web3.js';
 
-export const SOLANA_RPC_URL = import.meta.env?.VITE_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+// The SCANNER's Solana RPC endpoint.
+//
+// This is our own server-side proxy (netlify/functions/solana-rpc.mjs), NOT a
+// provider URL. It used to be `import.meta.env.VITE_SOLANA_RPC_URL`, which Vite
+// inlines into the browser bundle — so pointing it at a keyed provider (as the
+// deploy notes recommend, since the public endpoint throttles browser traffic)
+// shipped that provider's API key to every visitor. The credential now lives in
+// the server-only `SOLANA_RPC_URL` and never reaches the client.
+//
+// Nothing that submits a transaction uses this; see SOLANA_PUBLIC_RPC_URL.
+export const SOLANA_RPC_URL = '/.netlify/functions/solana-rpc';
+
+// The WALLET's Solana RPC endpoint — wallet connection, payment verification
+// and Launchpad minting.
+//
+// These submit transactions and confirm them over a websocket subscription,
+// neither of which survives a stateless 10-second function, so they keep
+// talking to a provider directly. THIS VALUE IS PUBLIC: it is inlined into the
+// browser bundle, so it must never carry an API key. Leave it unset to use the
+// public endpoint, or set it to a provider URL whose credential is safe to
+// expose (a domain-restricted or otherwise public-scoped key).
+export const SOLANA_PUBLIC_RPC_URL = import.meta.env?.VITE_SOLANA_PUBLIC_RPC_URL || 'https://api.mainnet-beta.solana.com';
 export const SOLANA_DEVNET_RPC_URL = clusterApiUrl('devnet');
 export const DEXSCREENER_TOKEN_PAIRS_BASE_URL = 'https://api.dexscreener.com/token-pairs/v1';
 export const DEXSCREENER_SEARCH_URL = 'https://api.dexscreener.com/latest/dex/search';

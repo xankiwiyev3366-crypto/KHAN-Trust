@@ -7,9 +7,16 @@ import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
 // api.mainnet-beta.solana.com rejects many browser-origin requests with HTTP
 // 403 (getAccountInfo, sendTransaction, confirmTransaction all hit this) -
 // it's only usable as a last-resort fallback. Production should set
-// VITE_SOLANA_RPC_URL to a provider that allows browser/CORS traffic
+// VITE_SOLANA_PUBLIC_RPC_URL to a provider that allows browser/CORS traffic
 // (Helius, QuickNode, Triton, etc).
-const MAINNET_RPC_URL = import.meta.env.VITE_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+//
+// This value IS shipped to the browser, so whatever it points at must be safe
+// to expose - a domain-restricted or otherwise public-scoped endpoint. The
+// scanner's keyed provider lives behind a server proxy instead; see
+// SOLANA_RPC_URL in src/constants/endpoints.js.
+import { SOLANA_PUBLIC_RPC_URL } from '../constants/endpoints.js';
+
+const MAINNET_RPC_URL = SOLANA_PUBLIC_RPC_URL;
 
 // Only auto-reconnect a wallet that is genuinely installed/ready. Solflare's
 // adapter (and some others) treat "Loadable" as "not installed, but

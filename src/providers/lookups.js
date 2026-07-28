@@ -438,7 +438,21 @@ export async function fetchMintAccountInfo(address) {
 // indefinitely for high-traffic mints (SOL, BONK, USDC, ...) - if the mint's
 // full history can't be reached within the cap, the real age is unknown and
 // must be reported as such rather than estimated.
-export const MINT_CREATION_LOOKUP_MAX_PAGES = 6;
+// PAGE CAP LOWERED FROM 6 TO 2.
+//
+// Measured on production, this walk was the single slowest call in a scan — one
+// page request against BONK blocked for 7.9 seconds, and six of them are
+// sequential by construction (each needs the previous page's last signature).
+// It also could not succeed for a high-traffic mint: six pages of 1000 does not
+// reach genesis for a token with millions of signatures, so the cost was paid
+// in full and the result was null anyway.
+//
+// Two pages still resolves the case that MATTERS most: a genuinely new token
+// has a short history, and a new token is exactly where an exact launch date
+// carries rug-detection value. Mature mints now fall through to the
+// earliest-liquidity lower bound (src/lib/tokenAge.js), which is sufficient for
+// the maturity model precisely because a lower bound can only understate age.
+export const MINT_CREATION_LOOKUP_MAX_PAGES = 2;
 export const MINT_CREATION_LOOKUP_PAGE_SIZE = 1000;
 
 export async function fetchMintCreationTimestamp(address) {

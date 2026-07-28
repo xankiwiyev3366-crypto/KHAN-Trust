@@ -164,20 +164,41 @@ test('the result page is not indexable', async () => {
   assert.equal(res.headers['Cache-Control'], 'no-store');
 });
 
+// THE PRODUCTION DEFECT THIS PINS: the fallback named JWT_SECRET, a variable
+// this codebase defines nowhere — auth signs with AUTH_SECRET. So on a
+// deployment that had not set a dedicated secret, every opt-out answered
+// "preferences cannot be changed right now". That was the live behaviour.
+test('AUTH_SECRET alone is enough to make the opt-out work', async () => {
+  reset();
+  const saved = process.env.LIFECYCLE_UNSUBSCRIBE_SECRET;
+  delete process.env.LIFECYCLE_UNSUBSCRIBE_SECRET;
+  process.env.AUTH_SECRET = 'the-real-auth-secret';
+  try {
+    const token = unsubscribeTokenFor({ id: 'u1' });
+    assert.ok(token, 'a token must be issuable from AUTH_SECRET alone');
+    const res = await get({ token });
+    assert.match(res.body, /Unsubscribed/);
+    assert.equal(users.get('u1').emailOptOut, true);
+  } finally {
+    delete process.env.AUTH_SECRET;
+    process.env.LIFECYCLE_UNSUBSCRIBE_SECRET = saved;
+  }
+});
+
 // With no secret the tokens would be forgeable, so the endpoint must refuse to
 // act rather than act on anything it is handed.
 test('with no secret configured, nothing is actioned', async () => {
   reset();
   const saved = process.env.LIFECYCLE_UNSUBSCRIBE_SECRET;
-  const savedJwt = process.env.JWT_SECRET;
+  const savedAuth = process.env.AUTH_SECRET;
   delete process.env.LIFECYCLE_UNSUBSCRIBE_SECRET;
-  delete process.env.JWT_SECRET;
+  delete process.env.AUTH_SECRET;
   try {
     const res = await get({ token: 'anything' });
     assert.match(res.body, /cannot be changed right now/);
     assert.equal(updates.length, 0);
   } finally {
     process.env.LIFECYCLE_UNSUBSCRIBE_SECRET = saved;
-    if (savedJwt !== undefined) process.env.JWT_SECRET = savedJwt;
+    if (savedAuth !== undefined) process.env.AUTH_SECRET = savedAuth;
   }
 });

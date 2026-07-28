@@ -23,12 +23,24 @@ import crypto from 'node:crypto';
 // was before the caller could configure it — which is both a real hazard in a
 // function runtime and the reason this was untestable.
 //
-// Falls back to the JWT secret so a deployment that has not set a dedicated one
+// Falls back to AUTH_SECRET so a deployment that has not set a dedicated one
 // still produces unguessable tokens. Never defaults to a literal: with no
 // secret at all the feature reports itself unconfigured rather than issuing
 // forgeable tokens.
+//
+// IT MUST BE AUTH_SECRET, not JWT_SECRET. This fell back to `JWT_SECRET` — a
+// variable this codebase has never defined anywhere: _authStore signs its
+// tokens with AUTH_SECRET, and .env.example lists only that. So the fallback
+// could never fire, the documented "no action is needed" was false, and the
+// live endpoint answered every opt-out with "preferences cannot be changed
+// right now". A mailer whose unsubscribe link does nothing is the precise
+// failure this whole design exists to prevent.
+//
+// Sharing AUTH_SECRET is safe because the two uses are domain-separated: every
+// message here is prefixed `unsub:` / `resub:`, which no session token format
+// can collide with.
 function secret() {
-  return process.env.LIFECYCLE_UNSUBSCRIBE_SECRET || process.env.JWT_SECRET || '';
+  return process.env.LIFECYCLE_UNSUBSCRIBE_SECRET || process.env.AUTH_SECRET || '';
 }
 
 export function isUnsubscribeConfigured() {

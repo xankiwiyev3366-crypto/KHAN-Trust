@@ -30,6 +30,9 @@ function ctx(overrides = {}) {
     activeDays: 1,
     hasPremium: false,
     hasWallet: false,
+    // A confirmed-quiet period. Stated explicitly because the reassurance
+    // email is only permitted on a confirmed zero — see the tests below.
+    recentRiskAlerts: 0,
     ...overrides,
   };
 }
@@ -159,6 +162,45 @@ test('the reassurance email recurs, but only for someone actually being monitore
   // Watching nothing: there is nothing to reassure them about.
   const notWatching = ctx({ createdAt: ago(40 * DAY_MS), watchedCount: 0, sentLog: sent });
   assert.notEqual(nextStageFor(notWatching, NOW).stage?.id, 'nothingChanged');
+});
+
+// The contradiction this prevents: a risk alert on Tuesday, then "nothing
+// crossed a risk threshold" on Friday covering the same week. One of the two is
+// false and the user cannot tell which, which discredits the alert channel.
+test('the reassurance email is never sent over a period that had a risk alert', () => {
+  const sent = { welcome: ago(30 * DAY_MS), day1: ago(29 * DAY_MS), day3: ago(28 * DAY_MS), day5: ago(27 * DAY_MS), day7: ago(26 * DAY_MS), premiumOffer: ago(25 * DAY_MS) };
+  const base = { createdAt: ago(40 * DAY_MS), watchedCount: 3, sentLog: sent };
+
+  // Confirmed quiet: the email is honest, and due.
+  assert.equal(nextStageFor(ctx({ ...base, recentRiskAlerts: 0 }), NOW).stage?.id, 'nothingChanged');
+
+  // Something was actually reported: the claim would be false.
+  assert.notEqual(nextStageFor(ctx({ ...base, recentRiskAlerts: 1 }), NOW).stage?.id, 'nothingChanged');
+  assert.notEqual(nextStageFor(ctx({ ...base, recentRiskAlerts: 9 }), NOW).stage?.id, 'nothingChanged');
+});
+
+// ABSENCE IS NOT ZERO. An unreadable alert history means we do not know the
+// week was quiet — and "we do not know" may never be rendered as "nothing
+// happened" in an unattended email.
+test('an unknown alert history suppresses the reassurance email rather than assuming quiet', () => {
+  const sent = { welcome: ago(30 * DAY_MS), day1: ago(29 * DAY_MS), day3: ago(28 * DAY_MS), day5: ago(27 * DAY_MS), day7: ago(26 * DAY_MS), premiumOffer: ago(25 * DAY_MS) };
+  const base = { createdAt: ago(40 * DAY_MS), watchedCount: 3, sentLog: sent };
+
+  for (const unknown of [null, undefined, NaN]) {
+    assert.notEqual(
+      nextStageFor(ctx({ ...base, recentRiskAlerts: unknown }), NOW).stage?.id,
+      'nothingChanged',
+      `recentRiskAlerts=${String(unknown)} must not be treated as a quiet week`,
+    );
+  }
+});
+
+test('buildContext keeps an unreadable alert history as null, never 0', () => {
+  const user = { id: 'u', email: 'e@x.com', createdAt: new Date(NOW).toISOString() };
+  assert.equal(buildContext({ user }).recentRiskAlerts, null);
+  assert.equal(buildContext({ user, recentRiskAlerts: null }).recentRiskAlerts, null);
+  assert.equal(buildContext({ user, recentRiskAlerts: 0 }).recentRiskAlerts, 0);
+  assert.equal(buildContext({ user, recentRiskAlerts: 4 }).recentRiskAlerts, 4);
 });
 
 test('mostRecentSend ignores malformed entries rather than throwing', () => {

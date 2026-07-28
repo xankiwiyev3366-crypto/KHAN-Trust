@@ -24,7 +24,8 @@ import { getSubscription } from './_alertsStore.mjs';
 import { readWalletLinks } from './_walletLinkStore.mjs';
 import { resolveUserTier, TIER } from './_watchTiers.mjs';
 import { sendEmail, isEmailConfigured } from './_email.mjs';
-import { nextStageFor, buildContext } from './_lifecycleEngine.mjs';
+import { listNotificationsStrict } from './_notificationStore.mjs';
+import { nextStageFor, buildContext, REASSURANCE_LOOKBACK_MS } from './_lifecycleEngine.mjs';
 import { getLifecycle, recordSent, recordSkipped, sentLogFor } from './_lifecycleStore.mjs';
 import { buildLifecycleEmail } from './_lifecycleTemplates.mjs';
 import { unsubscribeTokenFor } from './_lifecycleToken.mjs';
@@ -42,6 +43,31 @@ const USER_SCAN_LIMIT = 500;
 // always processes the same first 50.
 function byStalest(a, b) {
   return (a.lastTouched || 0) - (b.lastTouched || 0);
+}
+
+// How many risk alerts this user was actually sent in the reassurance window.
+//
+// Returns null — NOT 0 — when the history cannot be read, because the one email
+// that consumes this ("nothing crossed a risk threshold") may only be sent on a
+// confirmed-quiet period. An unreadable store means unknown, and the engine
+// treats unknown as "do not claim it".
+//
+// Only called for users who watch something, since that is the only way the
+// reassurance stage can be reached at all; it keeps this to one extra read for
+// the users it can matter for, and none for the rest.
+async function countRecentRiskAlerts(userId, now) {
+  try {
+    const items = await listNotificationsStrict(userId);
+    if (!Array.isArray(items)) return null;
+    const since = now - REASSURANCE_LOOKBACK_MS;
+    return items.filter((item) => {
+      if (item?.type !== 'risk_alert') return false;
+      const at = Date.parse(item.at || '');
+      return Number.isFinite(at) && at >= since;
+    }).length;
+  } catch {
+    return null;
+  }
 }
 
 export async function handler() {
@@ -88,13 +114,20 @@ export async function handler() {
         resolveUserTier(user.id).catch(() => TIER.FREE),
       ]);
 
+      const watchedCount = Array.isArray(subscription?.tokens) ? subscription.tokens.length : 0;
+
+      // Only users who watch something can reach the reassurance stage, so the
+      // extra read is only paid for them.
+      const recentRiskAlerts = watchedCount > 0 ? await countRecentRiskAlerts(user.id, now) : null;
+
       const ctx = buildContext({
         user,
         retention,
         sentLog: sentLogFor(record),
-        watchedCount: Array.isArray(subscription?.tokens) ? subscription.tokens.length : 0,
+        watchedCount,
         hasPremium: tier === TIER.PREMIUM,
         hasWallet: Boolean(walletLinks[user.id]),
+        recentRiskAlerts,
       });
 
       const decision = nextStageFor(ctx, now);

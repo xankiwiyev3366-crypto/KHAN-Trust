@@ -121,6 +121,11 @@ const BUILDERS = {
     };
   },
 
+  // DO NOT re-add "and Telegram" to the delivery line. The Telegram channel is
+  // built but deliberately unshipped (parked on wip/telegram-enrollment), so
+  // nothing writes a chat id and no Premium user can receive a Telegram alert.
+  // Naming a channel that cannot deliver is exactly the kind of claim this file
+  // exists to prevent — and it would be charged for.
   premiumOffer(ctx, unsub) {
     const watched = Number(ctx.watchedCount || 0);
     return {
@@ -128,7 +133,7 @@ const BUILDERS = {
       html: shell(`
         <p>You are watching ${watched} token${watched === 1 ? '' : 's'}, and on the free plan we re-check ${watched === 1 ? 'it' : 'them'} every 12 hours.</p>
         <p>For most tokens that is fine. For anything moving quickly, twelve hours is the difference between a warning and a post-mortem.</p>
-        <p>Premium re-checks every 30 minutes, alerts you by email and Telegram, and raises the limit from 5 tokens to 100. It also removes the daily scan cap and unlocks the full analysis and export tools.</p>
+        <p>Premium re-checks every 30 minutes, emails you the moment something moves, and raises the limit from 5 tokens to 100. It also removes the daily scan cap and unlocks the full analysis and export tools.</p>
         ${button(`${APP_URL}/#/pricing`, 'See Premium')}
         <p style="color:#666;font-size:14px">Cancel any time. The free scanner stays free either way.</p>
       `, unsub),

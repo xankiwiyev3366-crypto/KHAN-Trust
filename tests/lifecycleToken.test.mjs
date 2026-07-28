@@ -83,6 +83,17 @@ test('user-supplied names are escaped into the body', () => {
   assert.match(email.html, /&lt;script&gt;/);
 });
 
+// Telegram is built but deliberately parked, so nothing writes a chat id and no
+// user — free or paying — can actually receive a Telegram alert. Selling it in
+// an unattended email is a claim that would keep re-sending itself forever.
+test('no template promises a delivery channel that does not ship', () => {
+  for (const id of TEMPLATE_IDS) {
+    const email = buildLifecycleEmail(id, ctx, 'tok');
+    assert.doesNotMatch(email.html, /telegram/i, `${id} names Telegram as a delivery channel`);
+    assert.doesNotMatch(email.subject, /telegram/i, `${id} names Telegram in its subject`);
+  }
+});
+
 test('no template invents a statistic — counts come from the user context', () => {
   const email = buildLifecycleEmail('premiumOffer', { ...ctx, watchedCount: 7 }, 'tok');
   assert.match(email.html, /7 tokens/);

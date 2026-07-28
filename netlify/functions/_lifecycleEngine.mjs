@@ -108,7 +108,18 @@ export const STAGES = [
     minAgeMs: 7 * DAY_MS,
     windowMs: Infinity,
     repeatMs: 7 * DAY_MS,
-    isRelevant: (ctx) => ctx.watchedCount > 0,
+    // ...and only when it is TRUE. This email asserts a fact about the period
+    // it covers ("nothing crossed a risk threshold"), so it must not follow a
+    // risk alert for the same window — a user who was warned on Tuesday and
+    // told on Friday that nothing happened learns that one of the two emails
+    // is lying, and has no way to tell which. That single contradiction
+    // discredits the alert channel, which is the whole product.
+    //
+    // `recentRiskAlerts` is null when the alert history could not be read.
+    // Null is NOT zero: an unreadable history means we do not know the period
+    // was quiet, and the only honest response to not knowing is to say
+    // nothing. Same absence-is-not-zero rule the growth warehouse follows.
+    isRelevant: (ctx) => ctx.watchedCount > 0 && ctx.recentRiskAlerts === 0,
   },
 ];
 
@@ -195,7 +206,7 @@ export function nextStageFor(ctx, now = Date.now()) {
 // Builds the decision context from the raw records the cron already has. Kept
 // here (rather than in the cron) so the shape the engine reasons about is
 // defined next to the rules that read it.
-export function buildContext({ user, retention, sentLog, watchedCount, hasPremium, hasWallet }) {
+export function buildContext({ user, retention, sentLog, watchedCount, hasPremium, hasWallet, recentRiskAlerts }) {
   const createdAt = Date.parse(user?.createdAt || '');
   const days = Array.isArray(retention?.days) ? retention.days : [];
   return {
@@ -211,7 +222,15 @@ export function buildContext({ user, retention, sentLog, watchedCount, hasPremiu
     lastSeen: retention?.lastSeen || null,
     hasPremium: Boolean(hasPremium),
     hasWallet: Boolean(hasWallet),
+    // Deliberately NOT coerced to 0. Only a real count of zero may license the
+    // "nothing changed" claim; unknown stays null and suppresses it.
+    recentRiskAlerts: Number.isFinite(recentRiskAlerts) ? Number(recentRiskAlerts) : null,
   };
 }
+
+// How far back "nothing changed" looks when checking that it is true. Derived
+// from the stage's own repeat interval so the claim always covers exactly the
+// period since the last such email, and cannot drift apart from it.
+export const REASSURANCE_LOOKBACK_MS = STAGE_BY_ID.get('nothingChanged').repeatMs;
 
 export { DAY_MS };

@@ -50,10 +50,22 @@ function userKey(userId) {
   return `notif:${userId}`;
 }
 
+// Reads the list and THROWS if the store cannot be read.
+//
+// listNotifications() below swallows that failure on purpose — an unreadable
+// bell must render as empty, never as an error page. But a caller that is about
+// to assert something about the ABSENCE of alerts needs to tell "there were
+// none" apart from "we could not look": those produce the same empty array and
+// mean opposite things. The lifecycle mailer is that caller, and it may only
+// claim a quiet week on the first of the two.
+export async function listNotificationsStrict(userId) {
+  const data = await store().get(userKey(userId), { type: 'json' });
+  return Array.isArray(data) ? data : [];
+}
+
 export async function listNotifications(userId) {
   try {
-    const data = await store().get(userKey(userId), { type: 'json' });
-    return Array.isArray(data) ? data : [];
+    return await listNotificationsStrict(userId);
   } catch {
     // Fails open: an unreadable bell shows as empty, never as an error page.
     return [];

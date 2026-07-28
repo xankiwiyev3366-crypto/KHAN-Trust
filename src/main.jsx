@@ -142,6 +142,7 @@ import { useCorpusRecord } from './tokenCorpus.js';
 import { ANALYST_QUESTIONS, answerQuestion, translateSignalKeys, translatedCategory } from './khanAnalyst.js';
 import { detectRiskAlerts, useWatchlistAlertCount } from './riskAlerts.js';
 import { TRUST_CATEGORIES, buildRiskHistory, validHistory, describeChange } from './riskHistory.js';
+import { resolveRoute } from './lib/routes.js';
 import { buildTrustGraph, filterPointsByRange, scoreExtent, timeExtent, downsamplePoints, TRUST_GRAPH_RANGES, MARKER_TYPES } from './trustGraph.js';
 import { useSinceLastVisit } from './sinceLastVisit.js';
 import { useWatchtowerReport, describeReason, describeCadence, MONITORED_DIMENSIONS, STATUS_TONE } from './watchtower.js';
@@ -370,6 +371,12 @@ import {
 } from './khanHolderAnalytics.js';
 
 const WATCHLIST_KEY = 'khan-trust-watchlist-v1';
+
+// Canonical page id for whatever is in the address bar. Alias resolution lives
+// in src/lib/routes.js so it is testable without mounting the app.
+function currentRoute() {
+  return resolveRoute(window.location.hash);
+}
 
 
 const navItems = [
@@ -1451,7 +1458,9 @@ function shareText(project = {}, channel = 'x') {
 
 // Pages that require authentication before the user can enter.
 // Clicking these in the nav shows the gate modal rather than navigating.
-const GATED_PAGES = new Set(['watchlist', 'alerts', 'add', 'launchpad', 'profile', 'referral']);
+// Canonical ids only - callers resolve aliases through resolveRoute() before
+// checking, so 'alerts' does not need (and must not have) a second entry here.
+const GATED_PAGES = new Set(['watchlist', 'add', 'launchpad', 'profile', 'referral']);
 
 // Route content is swapped purely by `page` state (there is no router library).
 // On its own that swap is a hard cut: the outgoing page vanishes and the
@@ -1516,7 +1525,7 @@ function RouteTransition({ routeKey, children }) {
 function App() {
   const { t } = useTranslation();
   const { user, isLoading: authLoading, gate } = useAuth();
-  const [page, setPage] = useState(() => window.location.hash.replace('#/', '') || 'home');
+  const [page, setPage] = useState(currentRoute);
   const [authModalMode, setAuthModalMode] = useState(null); // null = closed
   const [query, setQuery] = useState('');
   const [searchState, setSearchState] = useState({ status: 'idle', message: '' });
@@ -1584,7 +1593,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const onHash = () => setPage(window.location.hash.replace('#/', '') || 'home');
+    const onHash = () => setPage(currentRoute());
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
@@ -1675,7 +1684,10 @@ function App() {
   const navigate = (target, options = {}) => {
     setRevealScan(Boolean(options.revealScan));
     window.location.hash = `/${target}`;
-    setPage(target);
+    // Resolved, not stored raw: navigate('alerts') must land on the same state
+    // the hashchange listener would produce, or an in-app link to an alias would
+    // render a blank page while the same URL typed into the address bar worked.
+    setPage(resolveRoute(target));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -1734,7 +1746,10 @@ function App() {
   // is resumed automatically. Use this for all user-initiated nav clicks;
   // keep `navigate` for programmatic/internal routing that should not gate.
   const navTo = useCallback((target) => {
-    if (GATED_PAGES.has(target) && !user) {
+    // Resolved first, so an alias cannot walk past the gate. Without this,
+    // navTo('alerts') would miss a GATED_PAGES entry listed under its canonical
+    // name and hand a signed-out visitor the page instead of the sign-in modal.
+    if (GATED_PAGES.has(resolveRoute(target)) && !user) {
       gate(() => navigate(target));
       return;
     }
@@ -2113,7 +2128,7 @@ function App() {
         {page === 'pricing' && <PricingPage navigate={navigate} />}
         {page === 'whitepaper' && <WhitepaperPage navigate={navigate} />}
         {page === 'compare' && <ComparePage projects={projects} navigate={navigate} />}
-        {(page === 'watchlist' || page === 'alerts') && pageAuthReady && (
+        {page === 'watchlist' && pageAuthReady && (
           <WatchlistPage projects={projects} watchlist={watchlist} toggleWatch={toggleWatch} navigate={navigate} />
         )}
         {/* Not in GATED_PAGES: the scanner is gated by a connected WALLET, not
@@ -2529,11 +2544,14 @@ const SIDEBAR_ITEMS = [
 // Exact route matching for the sidebar only - intentionally separate from
 // the top Header's isActive(), which also has to light up "Explore" while
 // viewing a project/report page. Sidebar items are one-to-one with routes,
-// so each one matches only its own page id (plus the explicit "/dashboard"
-// and "/comparison" aliases called out in the spec) - never two at once.
+// so each one matches only its own page id - never two at once.
+//
+// The /dashboard and /comparison aliases used to be special-cased here. They
+// are resolved in ROUTE_ALIASES before `page` is ever set now, so by the time
+// this runs there is only ever the canonical id - which is the point: the
+// active state and the rendered page read the same value, and cannot disagree
+// the way they did when one knew about an alias and the other did not.
 function isSidebarActive(page, id) {
-  if (id === 'home') return page === 'home' || page === 'dashboard';
-  if (id === 'compare') return page === 'compare' || page === 'comparison';
   if (id === 'early-stage') return page === 'early-stage' || page.startsWith('early-stage/') || page === 'early-stage-submit';
   return page === id;
 }

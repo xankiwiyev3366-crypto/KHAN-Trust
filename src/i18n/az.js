@@ -980,6 +980,20 @@ export default {
       speculativeFloor: '{{from}} əvəzinə {{to}} göstərilir: spekulyativ aktiv fərdi yoxlamaları nə qədər təmiz olsa da, heç vaxt aşağı riskli sayılmır.',
     },
   },
+  premiumPitch: {
+    eyebrow: 'Premium',
+    title: 'Qrafikdən əvvəl bilin',
+    lead: '{{name}} tokenini indiki vəziyyətində oxuyursunuz. Premium onu sizin üçün oxumaqda davam edir - hər 30 dəqiqədə bir - və likvidlik azalandıqda, iri sahib çıxdıqda və ya kontrakt səlahiyyəti yenidən aktivləşdikdə sizə məlumat verir.',
+    outcomes: [
+      'İzlədiyiniz tokenlər 12 saat əvəzinə hər 30 dəqiqədə yenidən yoxlanılır',
+      'Risk artan kimi e-poçt və Telegram bildirişləri - növbəti ziyarətinizə qədər yox',
+      '5 əvəzinə 100 tokeni izləyin',
+      'Gündəlik limit olmadan limitsiz skan',
+      'Tam AI təhlili, sahib klaster xəritəsi, bal tarixçəsi və PDF ixrac',
+    ],
+    cta: 'Premium planlarına baxın',
+    reassurance: 'İstənilən vaxt ləğv edin. Pulsuz skaner pulsuz qalır.',
+  },
   pricing: {
     eyebrow: 'Qiymətlər',
     title: 'KHAN Trust üçün planlar',
@@ -1019,8 +1033,8 @@ export default {
       premium: {
         name: 'Premium',
         price: 'Ayda $9 və ya ayda 9 USDT',
-        description: 'Premium-dakı hər şey, aylıq hesablanır. Ömürlük ilə eyni funksiyalar — istənilən vaxt ləğv edin.',
-        features: ['Limitsiz layihə analizi', 'Tam AI Analizi və tövsiyələr', 'Ətraflı Holder və Təhlükəsizlik Analizi', 'Trust Score Tarixçəsi və Müqayisə', 'İzləmə siyahısı, monitorinq və real vaxt xəbərdarlıqları', 'PDF ixracı və qabaqcıl analitika'],
+        description: 'İzlədiyiniz hər şeyin hər 30 dəqiqədə bir yoxlanılan fətən monitorinqi, risk artan kimi e-poçt və Telegram bildirişləri ilə. Üstəlik limitsiz skan və tam AI araşdırma dəsti. İstənilən vaxt ləğv edin.',
+        features: ['Hər 30 dəqiqədə e-poçt və Telegram bildirişləri', '100 tokenə qədər izləyin', 'Limitsiz layihə təhlili', 'Tam AI təhlili və tövsiyələr', 'Ǝtraflı sahib və təhlükəsizlik təhlili', 'Bal tarixçəsi, müqayisə və PDF ixrac'],
         cta: 'Premium-u Aç',
       },
       earlySupporter: {

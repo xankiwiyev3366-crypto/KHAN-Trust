@@ -4405,6 +4405,45 @@ function PremiumUpgradeCTA({ navigate, text }) {
   );
 }
 
+// THE Premium pitch on a token report. One section, rendered once, for free
+// users only.
+//
+// It replaces three consecutive upgrade CTAs — one under each of Advanced AI
+// Research, Premium AI Analysis and AI Investment Thesis — whose copy was
+// near-indistinguishable to anyone who is not the person who named them
+// ("a deeper structured breakdown", "risk confidence scoring and signals",
+// "institutional-grade AI research"). Three walls that sound like one thing do
+// not triple desire; they read as being nickel-and-dimed, and they devalue each
+// other.
+//
+// It also leads with OUTCOMES rather than feature names. Depth of analysis is a
+// commodity a free tool can match; being told, quickly, that something you hold
+// has changed is not. The order below is deliberate: the monitoring promise
+// first, the analysis second.
+function PremiumPitch({ project, navigate }) {
+  const { t } = useTranslation();
+  const { hasPremium } = usePremiumEntitlement();
+  if (hasPremium) return null;
+  const outcomes = t('premiumPitch.outcomes');
+  return (
+    <section className="detail-section premium-pitch">
+      <SectionTitle icon={Crown} eyebrow={t('premiumPitch.eyebrow')} title={t('premiumPitch.title')} />
+      <p className="premium-pitch-lead">{t('premiumPitch.lead', { name: project?.name || t('scoring.shareText.thisToken') })}</p>
+      <ul className="premium-pitch-list">
+        {Array.isArray(outcomes) && outcomes.map((item) => (
+          <li key={item}><CheckCircle2 size={16} /> <span>{item}</span></li>
+        ))}
+      </ul>
+      <div className="premium-pitch-actions">
+        <button className="primary-button" type="button" onClick={() => navigate('pricing')}>
+          {t('premiumPitch.cta')} <ArrowRight size={16} />
+        </button>
+        <small>{t('premiumPitch.reassurance')}</small>
+      </div>
+    </section>
+  );
+}
+
 function ResearchList({ items, tone = 'neutral' }) {
   if (!items?.length) return null;
   const Icon = tone === 'good' ? CheckCircle2 : tone === 'bad' ? AlertTriangle : Info;
@@ -4464,12 +4503,14 @@ function AdvancedResearchCard({ project, navigate, peerBenchmark = null }) {
     peerBenchmark,
   });
   if (!project.assetCategory) return null; // nothing to analyze yet
+  // A section header with nothing under it is worse than no section: it costs
+  // the free user vertical space and tells them nothing. The single
+  // PremiumPitch in ProjectProfile speaks for all three of these cards.
+  if (!hasPremium) return null;
   return (
     <section className="detail-section premium-ai-card">
       <SectionTitle icon={Sparkles} eyebrow={t('advancedResearch.eyebrow')} title={t('advancedResearch.title')} />
-      {!hasPremium ? (
-        <PremiumUpgradeCTA navigate={navigate} text={t('advancedResearch.lockedText')} />
-      ) : (
+      {!hasPremium ? null : (
         (() => {
           // The deterministic build FIRST — it renders immediately and is
           // complete on its own. The AI overlay replaces only the prose fields
@@ -4516,12 +4557,14 @@ function PremiumAnalysisCard({ project, navigate, peerBenchmark = null }) {
     peerBenchmark,
   });
   if (!project.assetCategory) return null;
+  // A section header with nothing under it is worse than no section: it costs
+  // the free user vertical space and tells them nothing. The single
+  // PremiumPitch in ProjectProfile speaks for all three of these cards.
+  if (!hasPremium) return null;
   return (
     <section className="detail-section premium-ai-card">
       <SectionTitle icon={Brain} eyebrow={t('premiumAnalysis.eyebrow')} title={t('premiumAnalysis.title')} />
-      {!hasPremium ? (
-        <PremiumUpgradeCTA navigate={navigate} text={t('premiumAnalysis.lockedText')} />
-      ) : (
+      {!hasPremium ? null : (
         (() => {
           // Deterministic first, AI prose overlaid. riskConfidenceScore,
           // aiConfidence, dataQuality, bullish, bearish and missingInfo are NOT
@@ -4587,12 +4630,14 @@ function InvestmentThesisCard({ project, navigate }) {
   } catch {
     stamp = new Date(generatedAt).toLocaleString();
   }
+  // A section header with nothing under it is worse than no section: it costs
+  // the free user vertical space and tells them nothing. The single
+  // PremiumPitch in ProjectProfile speaks for all three of these cards.
+  if (!hasPremium) return null;
   return (
     <section className="detail-section premium-ai-card ai-live">
       <SectionTitle icon={TrendingUp} eyebrow={t('investmentThesis.eyebrow')} title={t('investmentThesis.title')} />
-      {!hasPremium ? (
-        <PremiumUpgradeCTA navigate={navigate} text={t('investmentThesis.lockedText')} />
-      ) : (
+      {!hasPremium ? null : (
         (() => {
           const thesis = buildInvestmentThesis(project);
           return (
@@ -4869,10 +4914,14 @@ function PricingPage({ navigate }) {
     if (!result?.ok) setPaymentMessage(result?.message || stripeUnavailableMessage());
   };
 
+  // Lifetime is NOT in this row. It already occupies the hero card at the top
+  // of the page, and listing it again here rendered the same plan, price and
+  // CTA twice on one screen — three cards presenting four offers. This row is
+  // the answer to "what else is there?", so it holds the two plans the hero
+  // does not: Free and monthly Premium.
   const plans = [
     { ...t('pricing.plans.free'), action: () => navigate('home') },
     { ...t('pricing.plans.premium'), action: () => beginCheckout('premium'), featured: true },
-    { ...t('pricing.plans.earlySupporter'), action: () => beginCheckout('early_supporter') },
   ];
 
   // Combine both plans' real (non-coming-soon) tools for the top value
@@ -5605,6 +5654,9 @@ function ProjectProfile({ project, projects = [], revealScan = false, navigate, 
           <AdvancedResearchCard project={project} navigate={navigate} peerBenchmark={peerBenchmark} />
           <PremiumAnalysisCard project={project} navigate={navigate} peerBenchmark={peerBenchmark} />
           <InvestmentThesisCard project={project} navigate={navigate} />
+          {/* Renders only for free users; the three cards above render only for
+              paid ones, so exactly one of the two states is ever on screen. */}
+          <PremiumPitch project={project} navigate={navigate} />
           <RiskFlags flags={project.riskFlags} />
           <Timeline items={project.timeline} />
           <Roadmap phases={project.roadmap} />

@@ -1041,6 +1041,20 @@ export default {
       speculativeFloor: 'Shown as {{to}} rather than {{from}}: a speculative asset is never rated low risk, however clean its individual checks are.',
     },
   },
+  premiumPitch: {
+    eyebrow: 'Premium',
+    title: 'Know before the chart does',
+    lead: 'You are reading {{name}} as it looks right now. Premium keeps reading it for you - every 30 minutes - and messages you the moment liquidity drains, a whale exits, or a contract authority comes back to life.',
+    outcomes: [
+      'Your watched tokens re-checked every 30 minutes instead of every 12 hours',
+      'Alerts by email and Telegram the moment risk rises - not on your next visit',
+      'Watch up to 100 tokens instead of 5',
+      'Unlimited scans, with no daily cap',
+      'Full AI analysis, holder cluster map, score history and PDF export',
+    ],
+    cta: 'See Premium plans',
+    reassurance: 'Cancel any time. The free scanner stays free.',
+  },
   pricing: {
     eyebrow: 'Pricing',
     title: 'Plans for KHAN Trust',
@@ -1078,8 +1092,8 @@ export default {
       premium: {
         name: 'Premium',
         price: '$9/month or 9 USDT/month',
-        description: 'Everything in Premium, billed monthly. Same features as Lifetime — cancel any time.',
-        features: ['Unlimited project analyses', 'Full AI Analysis & recommendations', 'Detailed Holder & Security Analysis', 'Trust Score History & Compare', 'Watchlist, monitoring & real-time alerts', 'PDF export & advanced analytics'],
+        description: 'Continuous monitoring of everything you watch, checked every 30 minutes, with alerts by email and Telegram the moment risk rises. Plus unlimited scans and the full AI research suite. Cancel any time.',
+        features: ['Alerts every 30 minutes, by email and Telegram', 'Watch up to 100 tokens', 'Unlimited project analyses', 'Full AI Analysis & recommendations', 'Detailed Holder & Security Analysis', 'Trust Score History, Compare & PDF export'],
         cta: 'Unlock Premium',
       },
       earlySupporter: {

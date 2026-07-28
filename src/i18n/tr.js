@@ -980,6 +980,20 @@ export default {
       speculativeFloor: '{{from}} yerine {{to}} olarak gösteriliyor: spekülatif bir varlık, bireysel kontrolleri ne kadar temiz olursa olsun asla düşük riskli olarak derecelendirilmez.',
     },
   },
+  premiumPitch: {
+    eyebrow: 'Premium',
+    title: 'Grafikten önce öğrenin',
+    lead: '{{name}} tokenini şu anki haliyle okuyorsunuz. Premium onu sizin için okumaya devam eder - her 30 dakikada bir - ve likidite çekildiğinde, büyük bir sahip çıktığında veya bir kontrat yetkisi yeniden etkinleştiğinde size haber verir.',
+    outcomes: [
+      'İzlediğiniz tokenler 12 saat yerine her 30 dakikada bir kontrol edilir',
+      'Risk arttığı anda e-posta ve Telegram uyarıları - bir sonraki ziyaretinizde değil',
+      '5 yerine 100 tokene kadar izleyin',
+      'Günlük sınır olmadan sınırsız tarama',
+      'Tam AI analizi, sahip küme haritası, puan geçmişi ve PDF dışa aktarma',
+    ],
+    cta: 'Premium planları görün',
+    reassurance: 'İstediğiniz zaman iptal edin. Ücretsiz tarama ücretsiz kalır.',
+  },
   pricing: {
     eyebrow: 'Fiyatlandırma',
     title: 'KHAN Trust için planlar',
@@ -1020,8 +1034,8 @@ export default {
       premium: {
         name: 'Premium',
         price: 'Ayda $9 veya ayda 9 USDT',
-        description: "Premium'daki her şey, aylık faturalandırılır. Ömür Boyu ile aynı özellikler — istediğiniz zaman iptal edin.",
-        features: ['Sınırsız proje analizi', 'Tam Yapay Zekâ Analizi ve öneriler', 'Ayrıntılı Holder ve Güvenlik Analizi', 'Trust Score Geçmişi ve Karşılaştırma', 'İzleme listesi, izleme ve gerçek zamanlı uyarılar', 'PDF dışa aktarımı ve gelişmiş analitik'],
+        description: 'İzlediğiniz her şeyin 30 dakikada bir kontrol edilen sürekli izlemesi, risk arttığı anda e-posta ve Telegram uyarılarıyla. Ayrıca sınırsız tarama ve tam AI araştırma seti. İstediğiniz zaman iptal edin.',
+        features: ['Her 30 dakikada e-posta ve Telegram uyarıları', '100 tokene kadar izleyin', 'Sınırsız proje analizi', 'Tam AI analizi ve öneriler', 'Detaylı sahip ve güvenlik analizi', 'Puan geçmişi, karşılaştırma ve PDF dışa aktarma'],
         cta: "Premium'un Kilidini Aç",
       },
       earlySupporter: {

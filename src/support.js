@@ -4,6 +4,8 @@
 // calls transparently fall back to a localStorage-backed mock with the same
 // shape, so the full flow is still testable end-to-end in dev.
 
+import { isDevFunctionUnavailable } from './devFallback.js';
+
 export const TICKET_CATEGORIES = [
   { id: 'general', label: 'General Question' },
   { id: 'bug', label: 'Report a Bug' },
@@ -41,9 +43,6 @@ function writeFallbackStore(store) {
   }
 }
 
-function isFunctionUnavailable(error) {
-  return Boolean(error) && (error.status === undefined || error.status === 404);
-}
 
 async function callFunction(path, options) {
   const response = await fetch(`/.netlify/functions/${path}`, options);
@@ -97,7 +96,7 @@ export async function submitSupportTicket(payload) {
       body: JSON.stringify(payload),
     });
   } catch (error) {
-    if (!isFunctionUnavailable(error)) throw error;
+    if (!isDevFunctionUnavailable(error)) throw error;
     const store = readFallbackStore();
     const now = new Date().toISOString();
     const ticket = {
@@ -132,7 +131,7 @@ export async function fetchMyTickets({ email, wallet }) {
     const data = await callFunction(`support-user-tickets?${params.toString()}`, { method: 'GET' });
     return data.tickets || [];
   } catch (error) {
-    if (!isFunctionUnavailable(error)) throw error;
+    if (!isDevFunctionUnavailable(error)) throw error;
     const store = readFallbackStore();
     return store.tickets
       .filter((ticket) => (email && ticket.email?.toLowerCase() === email.toLowerCase()) || (wallet && ticket.wallet === wallet))
@@ -161,7 +160,7 @@ export async function fetchSupportTickets(token, { status = 'all', category = 'a
     });
     return data;
   } catch (error) {
-    if (!isFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
+    if (!isDevFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
     const store = readFallbackStore();
     let tickets = store.tickets.filter((ticket) => !ticket.archived);
     if (status === 'archived') tickets = store.tickets.filter((ticket) => ticket.archived);
@@ -188,7 +187,7 @@ export async function fetchSupportTicket(token, id) {
     });
     return data.ticket;
   } catch (error) {
-    if (!isFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
+    if (!isDevFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
     const store = readFallbackStore();
     return store.tickets.find((ticket) => ticket.id === id) || null;
   }
@@ -202,7 +201,7 @@ async function performAdminAction(token, body) {
       body: JSON.stringify(body),
     });
   } catch (error) {
-    if (!isFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
+    if (!isDevFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
     const store = readFallbackStore();
     const index = store.tickets.findIndex((ticket) => ticket.id === body.ticketId);
     if (index === -1) throw new Error('Ticket not found.');

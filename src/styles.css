@@ -12225,3 +12225,100 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Two-audience hero (Phase 1) ────────────────────────────────────────────
+   Traders and token teams get one card each, sized identically. The equal
+   weight is the design requirement, not a stylistic preference: making either
+   card visually dominant tells the other audience the site is not for them. */
+
+.hero-paths {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0 16px;
+}
+
+.hero-path {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(25, 23, 16, 0.9), rgba(12, 12, 10, 0.94));
+}
+
+.hero-path p {
+  margin: 0;
+  flex: 1;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.hero-path .primary-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.hero-path-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+}
+
+/* ── Conflict-of-interest statement ────────────────────────────────────────
+   Quiet but present on every page. Deliberately not hidden behind a legal
+   link: the claim it makes is what the scores rest on. */
+
+.footer-coi {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 14px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+  text-align: center;
+}
+
+.about-coi {
+  margin-top: 22px;
+}
+
+/* ── Verification landing (Phase 1 entry point) ────────────────────────────── */
+
+.verify-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.62fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 18px;
+}
+
+.verify-benefits {
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,0.02);
+}
+
+.verify-benefits h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.verify-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@media (max-width: 860px) {
+  .hero-paths,
+  .verify-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,11 +1,16 @@
 // "Early Stage Projects" feature - client module. Mirrors report.js: real
-// calls go to netlify/functions/early-stage-*; when those functions are
-// unreachable (plain `vite dev`, no Netlify Functions server) calls
-// transparently fall back to a localStorage-backed mock with the same shape,
-// so the full flow is testable end-to-end in dev.
+// calls go to netlify/functions/early-stage-*.
+//
+// IN DEVELOPMENT ONLY, when those functions are unreachable (plain `vite dev`,
+// no Netlify Functions server), calls fall back to a localStorage-backed store
+// with the same shape so the flow is testable end-to-end. That fallback is
+// gated by isDevFunctionUnavailable() and is compiled out of the production
+// bundle entirely — see src/devFallback.js for what it used to do in
+// production and why that was wrong.
 //
 // Fully additive: this module is only imported by the lazy-loaded Early Stage
 // UI. It touches no existing store, API, or route.
+import { isDevFunctionUnavailable } from './devFallback.js';
 
 // Canonical stage list, mirrored server-side in _earlyStageStore.mjs. `id` is
 // what gets stored/validated; `label` is the English display fallback (the UI
@@ -46,9 +51,6 @@ function writeFallbackStore(store) {
   }
 }
 
-function isFunctionUnavailable(error) {
-  return Boolean(error) && (error.status === undefined || error.status === 404);
-}
 
 async function callFunction(path, options) {
   const response = await fetch(`/.netlify/functions/${path}`, options);
@@ -137,11 +139,17 @@ function isVisible(p) {
 }
 
 // ---- Curated first-party projects ----------------------------------------
-// Mirror of netlify/functions/_curatedProjects.mjs (same pattern the discovery
-// mock seed uses): the server merges these into the real list at read time;
-// this copy powers the no-Functions dev fallback so KHAN is present and
-// searchable in plain `vite dev` too. KHAN is genuinely pre-launch ($KHAN
-// contract "coming soon"), so it belongs in Early Stage.
+// Mirror of netlify/functions/_curatedProjects.mjs: the server merges these into
+// the real list at read time; this copy powers the no-Functions dev fallback so
+// KHAN is present and searchable in plain `vite dev` too. KHAN is genuinely
+// pre-launch ($KHAN contract "coming soon"), so it belongs in Early Stage.
+//
+// KEEP THIS RECORD BYTE-EQUIVALENT TO THE SERVER'S. It is a mirror, and the
+// conflict-of-interest corrections applied there (teamVerified false, no
+// holder-utility claim, explicit self-listing disclosure in riskNotes) are the
+// whole point — a dev fallback that still showed KHAN a self-granted "Verified
+// team" badge would be a fixture that contradicts production. The reasoning
+// lives in the server module's header; do not restate it, do not diverge.
 const CURATED_PROJECTS = [
   {
     id: 'esc-khan-trust',
@@ -150,7 +158,7 @@ const CURATED_PROJECTS = [
     name: 'KHAN Trust',
     symbol: 'KHAN',
     logoUrl: '/favicon.svg',
-    description: 'AI-powered crypto trust scoring, community-first project profiles, and public risk signals - plus the $KHAN token powering future holder utility across the KHAN ecosystem.',
+    description: 'AI-powered crypto trust scoring, community-first project profiles, and public risk signals. Listed here by KHAN Trust itself, which also operates this directory.',
     stage: 'live_platform',
     launchStatus: 'Building in public',
     estimatedLaunch: '',
@@ -163,12 +171,12 @@ const CURATED_PROJECTS = [
     github: 'https://github.com/khantrust',
     contractAddress: '',
     communitySize: 1280,
-    teamVerified: true,
+    teamVerified: false,
     buildingProgress: 65,
     builtWithLaunchpad: false,
     launchpadUrl: '',
     featured: true,
-    overview: 'KHAN Trust turns raw on-chain and social data into explainable trust scores and public profiles for crypto projects. The $KHAN token underpins future holder utility across the ecosystem and is not live yet, so KHAN is building trust in the open ahead of its public token launch.',
+    overview: 'KHAN Trust turns raw on-chain and social data into explainable trust scores and public profiles for crypto projects. The $KHAN token is a separate community token, is not live yet, and grants no access to any part of the platform.',
     roadmap: [
       { title: 'Phase 1 - KHAN Community', detail: 'In progress' },
       { title: 'Phase 2 - KHAN Trust Portal', detail: 'Completed', done: true },
@@ -176,7 +184,7 @@ const CURATED_PROJECTS = [
     ],
     team: [], progressTimeline: [], milestones: [],
     whyEarlyStage: 'The $KHAN token contract is not live yet ("coming soon"), so KHAN is listed here as a pre-launch project building trust in the open ahead of its public token launch.',
-    riskNotes: '',
+    riskNotes: 'KHAN Trust operates this directory and listed this entry itself. It was not submitted by a third party, was not auto-discovered, and has not passed the wallet-signature verification that other projects must complete.',
     source: '', sourceUrl: '', discoveredAt: '', launchedAt: '',
     createdAt: '2026-06-01T00:00:00.000Z', updatedAt: '2026-06-01T00:00:00.000Z',
   },
@@ -197,102 +205,24 @@ function collidesCurated(p, sigs) {
   return false;
 }
 
-// ---- Auto-discovery (Phase 2) --------------------------------------------
-// The real discovery pipeline lives server-side (netlify/functions/
-// _discoveryProviders + _discoveryEngine + early-stage-discover-run) and the
-// list endpoint returns manual + discovered already merged. This client-side
-// mock set is ONLY used by the dev fallback below (plain `vite dev`, no
-// Netlify Functions) so the merged experience - cards, badges, filters,
-// sorting, search, autocomplete - is fully testable locally without any API.
-const DISCOVERY_MOCK_SEED = [
-  // `launchedAgoDays` (dev-only) synthesizes a fresh launch date at build time so
-  // the "New / Recently launched" badge + filter are demonstrable in plain
-  // `vite dev`. Real discovered projects carry a concrete `launchedAt` ISO from
-  // the DexScreener provider instead.
-  { name: 'Aurora Pulse', symbol: 'AURP', chain: 'Solana', category: 'Newly Launched', stage: 'mainnet_live', launchStatus: 'Recently launched', description: 'Freshly launched Solana token just detected on DexScreener.', website: 'https://aurorapulse.xyz', twitter: 'https://x.com/aurorapulse', source: 'DexScreener', launchedAgoDays: 0 },
-  { name: 'Nimbus Cash', symbol: 'NMBS', chain: 'Base', category: 'Newly Launched', stage: 'mainnet_live', launchStatus: 'Recently launched', description: 'New Base token with a live pool, launched in the last 24 hours.', website: 'https://nimbus.cash', source: 'DexScreener', launchedAgoDays: 1 },
-  { name: 'Lumen Protocol', symbol: 'LMN', chain: 'Ethereum', category: 'DeFi', stage: 'launching_soon', launchStatus: 'Newly Listed', description: 'Cross-margin lending protocol newly listed on aggregators.', website: 'https://lumenprotocol.io', twitter: 'https://x.com/lumenprotocol', communitySize: 4200, source: 'CoinGecko' },
-  { name: 'Solstice SDK', symbol: '', chain: 'Solana', category: 'Infrastructure', stage: 'building', launchStatus: 'Active development', description: 'Open-source Rust SDK for building Solana programs faster.', github: 'https://github.com/solstice-labs/solstice', website: 'https://solstice.dev', communitySize: 1300, source: 'GitHub' },
-  { name: 'Nova Markets', symbol: 'NOVA', chain: 'Solana', category: 'DEX', stage: 'pre_sale', launchStatus: 'Presale', description: 'High-throughput orderbook DEX built for the Solana ecosystem.', website: 'https://novamarkets.xyz', telegram: 'https://t.me/novamarkets', communitySize: 5600, source: 'Solana Ecosystem' },
-  { name: 'Coral Social', symbol: 'CORAL', chain: 'Base', category: 'SocialFi', stage: 'launching_soon', launchStatus: 'Launching soon', description: 'Onchain social graph and creator monetization on Base.', website: 'https://coral.social', twitter: 'https://x.com/coralsocial', communitySize: 3400, source: 'Base Ecosystem' },
-  { name: 'Frostbyte Games', symbol: 'FRB', chain: 'Avalanche', category: 'Gaming', stage: 'pre_sale', launchStatus: 'Whitelist open', description: 'On-chain strategy game running on an Avalanche subnet.', website: 'https://frostbyte.gg', telegram: 'https://t.me/frostbyte', communitySize: 7200, source: 'Avalanche Ecosystem' },
-  { name: 'Cascade Rollup', symbol: '', chain: 'Ethereum', category: 'Layer 2', stage: 'testnet', launchStatus: 'Devnet', description: 'ZK rollup for high-frequency apps, currently on public testnet.', website: 'https://cascade.build', github: 'https://github.com/cascade-rollup/node', source: 'Testnet Projects' },
-];
-
-function slugifyClient(value) {
-  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'project';
-}
-
-function hashClient(str) {
-  let h = 5381;
-  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
-  return h.toString(36);
-}
+// ---- Auto-discovery ------------------------------------------------------
+// Discovery lives ENTIRELY server-side (netlify/functions/_discoveryProviders +
+// _discoveryEngine + early-stage-discover-run); the list endpoint returns
+// manual + discovered already merged.
+//
+// A client-side mirror of ~8 invented projects used to live here as a dev
+// fallback. It has been deleted along with the server-side mock providers it
+// mirrored. It was compiled into the PRODUCTION bundle and rendered whenever
+// the early-stage-list call failed, so a transient function error showed real
+// visitors invented projects attributed to DexScreener and CoinGecko.
+//
+// The dev fallback below now serves only genuinely local data: curated
+// first-party records and whatever the developer submitted into localStorage.
+// It discovers nothing, because a browser with no Functions server cannot
+// discover anything, and saying otherwise was the bug.
 
 function normNameClient(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
-}
-
-function siteHostClient(value) {
-  try { return new URL(String(value)).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; }
-}
-
-function signaturesClient(p) {
-  const sigs = [];
-  const n = normNameClient(p.name); if (n) sigs.push(`name:${n}`);
-  const sym = String(p.symbol || '').trim().toUpperCase(); if (sym) sigs.push(`sym:${sym}`);
-  const host = siteHostClient(p.website); if (host) sigs.push(`site:${host}`);
-  const ca = String(p.contractAddress || '').trim().toLowerCase(); if (ca) sigs.push(`ca:${ca}`);
-  return sigs;
-}
-
-// Build normalized discovered projects and drop any that collide (by name /
-// symbol / website / contract) with the manually submitted ones - mirroring
-// the server engine's dedupe so dev matches production behavior.
-function buildDiscoveredFallback(manualVisible) {
-  const now = new Date().toISOString();
-  const seen = new Set();
-  for (const p of manualVisible) for (const s of signaturesClient(p)) seen.add(s);
-  const out = [];
-  for (const raw of DISCOVERY_MOCK_SEED) {
-    const project = {
-      id: `esd-${slugifyClient(raw.name)}-${hashClient(`${normNameClient(raw.name)}|${raw.source || ''}`)}`,
-      origin: 'discovered',
-      source: raw.source || 'Discovery',
-      sourceUrl: raw.website || raw.github || '',
-      discoveredAt: now,
-      launchedAt: raw.launchedAt || (raw.launchedAgoDays != null ? new Date(Date.now() - raw.launchedAgoDays * 86400000).toISOString() : ''),
-      name: raw.name,
-      symbol: String(raw.symbol || '').toUpperCase(),
-      logoUrl: raw.logoUrl || '',
-      description: raw.description || '',
-      stage: raw.stage || 'idea',
-      launchStatus: raw.launchStatus || '',
-      estimatedLaunch: raw.estimatedLaunch || '',
-      chain: raw.chain || '',
-      category: raw.category || '',
-      website: raw.website || '',
-      twitter: raw.twitter || '',
-      telegram: raw.telegram || '',
-      discord: raw.discord || '',
-      github: raw.github || '',
-      contractAddress: raw.contractAddress || '',
-      communitySize: Math.max(0, Number(raw.communitySize) || 0),
-      teamVerified: false,
-      buildingProgress: 0,
-      builtWithLaunchpad: false,
-      launchpadUrl: '',
-      featured: false,
-      overview: '', roadmap: [], team: [], progressTimeline: [], milestones: [],
-      whyEarlyStage: '', riskNotes: '',
-      createdAt: now, updatedAt: now,
-    };
-    const sigs = signaturesClient(project);
-    if (sigs.some((s) => seen.has(s))) continue;
-    for (const s of sigs) seen.add(s);
-    out.push(project);
-  }
-  return out;
 }
 
 // ---- Public API ----------------------------------------------------------
@@ -305,7 +235,7 @@ export async function submitEarlyStageProject(payload) {
       body: JSON.stringify(payload),
     });
   } catch (error) {
-    if (!isFunctionUnavailable(error)) throw error;
+    if (!isDevFunctionUnavailable(error)) throw error;
     const store = readFallbackStore();
     const project = buildLocalProject(payload);
     store.projects = [project, ...store.projects];
@@ -321,7 +251,7 @@ export async function fetchEarlyStageProjects({ stage = 'all', chain = 'all', ca
   try {
     return await callFunction(`early-stage-list?${params.toString()}`);
   } catch (error) {
-    if (!isFunctionUnavailable(error)) throw error;
+    if (!isDevFunctionUnavailable(error)) throw error;
     const store = readFallbackStore();
     // Curated first-party projects (KHAN) are always present and win over any
     // manual/discovered collision, mirroring the server.
@@ -330,10 +260,10 @@ export async function fetchEarlyStageProjects({ stage = 'all', chain = 'all', ca
       .filter(isVisible)
       .map((p) => ({ ...p, origin: p.origin || 'community' }))
       .filter((p) => !collidesCurated(p, sigs));
-    // Merge in auto-discovered mocks (deduped against manual), mirroring the
-    // server's merged list so the dev experience matches production.
-    const discovered = buildDiscoveredFallback([...CURATED_PROJECTS, ...manualVisible])
-      .filter((p) => !collidesCurated(p, sigs));
+    // No discovered projects: discovery is a server-side network job and this
+    // branch runs precisely when the server is unreachable. Reporting an empty
+    // discovered set is the honest answer — see the auto-discovery note above.
+    const discovered = [];
     let visible = [...CURATED_PROJECTS, ...manualVisible, ...discovered];
     if (origin !== 'all') visible = visible.filter((p) => (p.origin || 'community') === origin);
     if (stage !== 'all') visible = visible.filter((p) => p.stage === stage);
@@ -365,18 +295,18 @@ export async function fetchEarlyStageProject(id) {
     const data = await callFunction(`early-stage-get?id=${encodeURIComponent(id)}`);
     return data.project;
   } catch (error) {
-    if (!isFunctionUnavailable(error)) throw error;
+    if (!isDevFunctionUnavailable(error)) throw error;
     const store = readFallbackStore();
     // Curated project ids ('esc-') resolve from the in-code curated list.
     if (String(id).startsWith('esc-')) {
       return CURATED_PROJECTS.find((p) => p.id === id) || null;
     }
-    // Discovered project ids ('esd-') resolve from the same mock discovery set
-    // the list fallback builds (deduped against manual submissions).
+    // Discovered project ids ('esd-') are produced only by the server-side
+    // discovery engine. With the server unreachable there is nothing local to
+    // resolve them against, so this is a genuine "not found" rather than a
+    // reason to invent a record.
     if (String(id).startsWith('esd-')) {
-      const manualVisible = store.projects.filter(isVisible).map((p) => ({ ...p, origin: p.origin || 'community' }));
-      const found = buildDiscoveredFallback(manualVisible).find((p) => p.id === id);
-      return found || null;
+      return null;
     }
     const project = store.projects.find((p) => p.id === id);
     return project && isVisible(project) ? { ...project, origin: project.origin || 'community' } : null;
@@ -393,7 +323,7 @@ export async function fetchEarlyStageAdmin(token, { status = 'all', search = '' 
       headers: { Authorization: `Bearer ${token}` },
     });
   } catch (error) {
-    if (!isFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
+    if (!isDevFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
     const store = readFallbackStore();
     let projects = store.projects;
     if (status !== 'all') projects = projects.filter((p) => p.status === status);
@@ -427,7 +357,7 @@ async function performAdminAction(token, body) {
       body: JSON.stringify(body),
     });
   } catch (error) {
-    if (!isFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
+    if (!isDevFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
     const store = readFallbackStore();
     const index = store.projects.findIndex((p) => p.id === body.projectId);
     if (index === -1) throw new Error('Project not found.');

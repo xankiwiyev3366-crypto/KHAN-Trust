@@ -12,7 +12,28 @@ import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { markMilestone } from './_referralStore.mjs';
 import { planUsdAmount } from '../../src/lib/pricing.js';
 
-const RPC_URL = process.env.VITE_SOLANA_RPC_URL || '';
+// THE KEYED ENDPOINT, ON THE PAYMENT PATH — read from the right variable.
+//
+// This line read ONLY `VITE_SOLANA_RPC_URL`. That variable was retired when a
+// previous deployment set it to a keyed Helius endpoint and Vite inlined the
+// key into every visitor's bundle (see .env.example and README_DEPLOY.md, both
+// of which instruct the operator to DELETE it from Netlify and rotate the key).
+// Following that instruction — the correct thing to do — silently downgraded
+// live payment verification to the unkeyed fallback below, because nothing else
+// here supplied a URL.
+//
+// `api.mainnet-beta.solana.com` is aggressively rate-limited. A throttled
+// getTransaction is indistinguishable here from a transaction that does not
+// exist, so the failure mode is a customer who really paid being told their
+// payment could not be verified. That is the worst class of bug this file can
+// have, and it was reachable purely by doing the documented cleanup.
+//
+// `SOLANA_RPC_URL` is the server-side, never-inlined variable that already
+// holds the keyed URL for the rest of the backend. Preferring it makes this
+// function consistent with _khanIndexer.mjs, which resolves the same way. The
+// retired name is kept as a second choice ONLY so a deployment that has not yet
+// finished the migration keeps working; it must not be re-added to Netlify.
+const RPC_URL = process.env.SOLANA_RPC_URL || process.env.VITE_SOLANA_RPC_URL || '';
 const PAYMENT_WALLET = process.env.VITE_KHAN_PAYMENT_WALLET || '';
 
 // Only these SPL token mints count toward a payment. Both are 6-decimal USD

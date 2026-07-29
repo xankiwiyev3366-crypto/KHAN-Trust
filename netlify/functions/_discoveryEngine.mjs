@@ -21,8 +21,8 @@ function clampUrl(value, max = 300) {
   return URL_PATTERN.test(clean) ? clean : '';
 }
 
-// name -> comparable key: lowercase alphanumerics only ("Nova Markets" ->
-// "novamarkets"), so spacing/punctuation/casing differences still dedupe.
+// name -> comparable key: lowercase alphanumerics only ("Jito Network" ->
+// "jitonetwork"), so spacing/punctuation/casing differences still dedupe.
 export function normName(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
@@ -94,8 +94,21 @@ export function normalizeDiscovered(raw, provider, now = new Date().toISOString(
     origin: 'discovered',
     // Which provider produced this record. Kept internal (not surfaced by the
     // public list/get) and used by reconciliation to prune orphaned records
-    // when a provider stops running (e.g. mock -> real switch).
+    // when a provider stops running.
     providerId: provider?.id || '',
+    // PROVENANCE STAMP. Written only by a provider that fetched this record
+    // from a live public API (every provider now does; see the header of
+    // _discoveryProviders.mjs for why fabricated ones were removed).
+    //
+    // This exists to purge what is ALREADY in the production cache. The deleted
+    // mock providers reused the real ids ('dexscreener', 'coingecko',
+    // 'github'), so pruning by "is this provider still running?" alone would
+    // MISS them — those ids still run — and the reconciliation rule that
+    // preserves a running provider's cached records through a transient empty
+    // fetch would keep serving invented projects indefinitely. An unstamped
+    // record is by definition pre-purge and is dropped on the first run,
+    // whatever the providers did.
+    real: provider?.real === true,
     source,
     sourceUrl: clampUrl(raw.sourceUrl || raw.website || raw.github),
     discoveredAt: now,
@@ -148,10 +161,13 @@ export function normalizeDiscovered(raw, provider, now = new Date().toISOString(
 //     (fresh data wins; its old records are dropped).
 //   - a provider that is registered/running but returned nothing this run
 //     (transient error/empty) keeps its previously cached records, so a blip
-//     doesn't wipe a source.
+//     doesn't wipe a source — but ONLY if those records carry the `real`
+//     provenance stamp.
 //   - everything else is an orphan and is DROPPED: records from a provider no
-//     longer running (e.g. mock entries after the real flag is switched on),
-//     and legacy records with no providerId.
+//     longer running, legacy records with no providerId, and every unstamped
+//     record — which is precisely the fabricated set the deleted mock providers
+//     wrote. See the `real` field in normalizeDiscovered for why the stamp is
+//     needed rather than pruning by provider id alone.
 // discoveredAt is preserved for a record whose id already existed, so the
 // "discovered on" date stays the first-seen date across runs.
 export async function runDiscovery({ manualProjects = [], existingDiscovered = [], limitPerProvider = 20 } = {}) {
@@ -204,8 +220,16 @@ export async function runDiscovery({ manualProjects = [], existingDiscovered = [
   // replaced providers, orphaned providers, and legacy (no providerId) entries -
   // are intentionally left out, which removes stale/mock data from the cache.
   let prunedOrphans = 0;
+  let prunedUnstamped = 0;
   let preservedOnError = 0;
   for (const p of existingDiscovered || []) {
+    // Unstamped records are pre-purge fabrications. Dropped unconditionally,
+    // BEFORE the transient-protection rule can rescue them.
+    if (p?.real !== true) {
+      prunedUnstamped += 1;
+      prunedOrphans += 1;
+      continue;
+    }
     const pid = p.providerId;
     const keepOnTransient = pid && runningIds.has(pid) && !producedByProvider.has(pid);
     if (!keepOnTransient) {
@@ -227,6 +251,11 @@ export async function runDiscovery({ manualProjects = [], existingDiscovered = [
       providerCount: providers.length,
       discoveredCount: projects.length,
       prunedOrphans,
+      // Observable proof the fabricated-record purge ran. Expected to be
+      // non-zero exactly once (the first run after this change), then zero
+      // forever. A recurring non-zero value means something is writing
+      // unstamped records again.
+      prunedUnstamped,
       preservedOnError,
       providers: providerStats,
     },

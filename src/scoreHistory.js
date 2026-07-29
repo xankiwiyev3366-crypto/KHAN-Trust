@@ -8,15 +8,13 @@
 import { useEffect, useState } from 'react';
 import { snapshotMetrics, validHistory } from './riskHistory.js';
 import { getCachedWalletToken, walletAuthHeaders } from './walletSession.js';
+import { isDevFunctionUnavailable } from './devFallback.js';
 
 const FALLBACK_KEY = 'khan-trust-score-history-fallback-v1';
 const LAST_RECORDED_KEY = 'khan-trust-score-history-lastrecorded-v1';
 const AUTH_TOKEN_KEY = 'khan-trust-auth-token-v1';
 const MAX_ENTRIES = 180;
 
-function isFunctionUnavailable(error) {
-  return Boolean(error) && (error.status === undefined || error.status === 404);
-}
 
 // The READ endpoint (score-history-get) is Premium-gated server-side
 // (requireFeature 'scoreHistory', added in the feature-gate commit), so a
@@ -159,7 +157,7 @@ export async function fetchScoreHistory(key, wallet) {
     });
     return Array.isArray(result.history) ? result.history : [];
   } catch (error) {
-    if (!isFunctionUnavailable(error)) throw error;
+    if (!isDevFunctionUnavailable(error)) throw error;
     const store = readJson(FALLBACK_KEY, {});
     return store[key] || [];
   }
@@ -222,7 +220,7 @@ export async function recordScoreSnapshot(project, score, riskLevel, wallet) {
       body: JSON.stringify({ key, snapshot }),
     });
   } catch (error) {
-    if (!isFunctionUnavailable(error)) throw error;
+    if (!isDevFunctionUnavailable(error)) throw error;
     const store = readJson(FALLBACK_KEY, {});
     const existing = (store[key] || []).filter((entry) => entry.date !== today);
     store[key] = [...existing, snapshot].slice(-MAX_ENTRIES);

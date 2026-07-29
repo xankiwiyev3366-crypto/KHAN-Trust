@@ -63,6 +63,7 @@ export default {
     whitepaper: 'Whitepaper',
     about: 'About',
     khan: '$KHAN',
+    verify: 'Get Verified',
     support: 'Support',
   },
   sidebar: {
@@ -78,9 +79,6 @@ export default {
     trustMovers: 'Trust Movers',
     categories: 'Categories',
     referral: 'Refer & Earn',
-    promoTitle: 'Join the KHAN Ecosystem',
-    promoText: 'Follow the $KHAN token and community roadmap. No token-gated access is active today.',
-    promoCta: 'Learn More',
   },
   earlyStage: {
     eyebrow: 'Pre-launch',
@@ -108,8 +106,8 @@ export default {
     openLaunchpad: 'Open KHAN Launchpad',
     launch: 'Estimated launch',
     community: 'Community size',
-    emptyTitle: 'No early-stage projects yet',
-    emptyText: 'Be the first to list your pre-launch project and start building trust with the KHAN community.',
+    emptyTitle: 'No projects match this view',
+    emptyText: 'Try clearing the filters, or list your own pre-launch project to start building trust in the open.',
     notFoundTitle: 'Project not found',
     notFoundText: 'This early-stage project may have been removed or is not yet approved.',
     overview: 'Overview',
@@ -196,7 +194,7 @@ export default {
       logo: 'Logo URL',
       stage: 'Current stage',
       launchStatus: 'Launch status',
-      launchStatusPh: 'e.g. Coming Soon',
+      launchStatusPh: 'e.g. Testnet live',
       estimatedLaunch: 'Estimated launch date',
       estimatedLaunchPh: 'e.g. Q3 2026',
       chain: 'Blockchain',
@@ -423,6 +421,10 @@ export default {
       contact: 'Contact',
     },
     copyright: '© {{year}} KHAN Trust. All rights reserved.',
+    // Conflict-of-interest statement. Shown in the footer on every page and on
+    // the About page. KHAN Trust sells assessment, so the absence of a position
+    // in what it assesses is the thing that makes the assessment worth anything.
+    conflictOfInterest: 'KHAN Trust does not hold, trade, or promote the tokens it analyzes or verifies. Verification is a paid assessment service and is not an endorsement or investment advice.',
   },
   languageSwitcher: {
     label: 'Language',
@@ -448,13 +450,20 @@ export default {
   home: {
     eyebrow: 'Trust before hype.',
     title: 'KHAN Trust',
-    subtitle: 'Check token risk before you buy.',
-    explainer: 'KHAN Trust helps users understand holder, liquidity, social and founder risks.',
+    subtitle: "Know what you're holding. Prove what you're building.",
+    explainer: 'On-chain risk analysis for traders. Verified trust profiles for token teams.',
+    // The two audiences the platform now serves, presented side by side with
+    // equal visual weight. A single-audience hero would hide one of them.
+    tradersLabel: 'For traders',
+    tradersText: 'Scan any token for holder, liquidity, contract and founder risk - free, no account needed.',
+    tradersCta: 'Scan any token free',
+    teamsLabel: 'For token teams',
+    teamsText: 'Prove your project is what you say it is, with a public trust profile and a verified badge.',
+    teamsCta: 'Verify your project',
     flowSteps: ['Paste token contract', 'Get Trust Score', 'Read simple risk explanation', 'Share result'],
     flowAriaLabel: 'KHAN Trust flow',
     exploreProjects: 'Explore Projects',
     addProject: 'Add Project',
-    viewKhan: 'View $KHAN',
     joinTelegram: 'Join Telegram',
     liveTrustRadar: 'Live trust radar',
     projectSignals: 'Project Signals',
@@ -466,7 +475,7 @@ export default {
     exploreEyebrow: 'Explore',
     exploreTitle: 'Trust profiles, not hype feeds',
     emptyNoSavedTitle: 'No saved live profiles',
-    emptyNoSavedText: 'Search a token contract address to create the first real trust profile.',
+    emptyNoSavedText: 'Search a token contract address to open its live trust profile.',
   },
   checkToken: {
     eyebrow: 'Token checker',
@@ -762,12 +771,12 @@ export default {
     accessNote: 'Premium unlocks Saved Reports, a wallet-synced Watchlist, KHAN Launchpad token creation, and the Premium badge on top of everything free.',
     activeTitle: 'Premium Active',
     activeNote: 'Your connected wallet has a verified payment on record. Your Premium tools are unlocked below.',
-    comingSoonLabel: 'Coming soon',
     badgeLabel: 'Premium',
     badgeTooltip: 'This wallet has an active Premium subscription.',
-    // Each item is [title, description, status]. 'active' tools are real and
-    // unlocked immediately; 'comingSoon' items are not built yet and are
-    // shown only as a transparent roadmap note, never claimed as included.
+    // Each item is [title, description, status]. Every entry is a tool that
+    // exists and unlocks immediately - nothing here is a promise about future
+    // work. Two 'comingSoon' rows advertising unbuilt features were removed;
+    // a paid feature list is not a roadmap.
     // The KHAN Founding Member Badge and Lifetime Recognition are exclusive to
     // the KHAN Founding Member plan (see earlySupporter.items below) - they must
     // never appear in this list.
@@ -776,8 +785,6 @@ export default {
       ['Synced Watchlist', 'Your watchlist follows your wallet instead of just one browser.', 'active'],
       ['Token Creation (Launchpad)', 'Create devnet and mainnet Solana tokens through KHAN Launchpad. Real SOL network fees still apply on mainnet.', 'active'],
       ['Premium Badge', 'A badge shown next to your wallet while your subscription is active.', 'active'],
-      ['Future Premium AI features', 'Expanded AI-assisted analysis, planned for a future release.', 'comingSoon'],
-      ['Future Advanced Research features', 'Deeper liquidity, holder, and transparency research tools, planned for a future release.', 'comingSoon'],
     ],
     unlockedMessageTitle: 'Here is what you just unlocked',
     savedReports: {
@@ -1204,7 +1211,7 @@ export default {
       noLiquidity: 'Creating a token does not create liquidity.',
       noTrading: 'People cannot trade your token unless liquidity/listing is added later.',
       noAdvice: 'KHAN Launchpad does not provide financial advice.',
-      metadataComingSoon: 'On-chain metadata upload is coming soon. This version creates the SPL token and KHAN Trust profile.',
+      metadataComingSoon: 'This creates the SPL token and its KHAN Trust profile. On-chain metadata upload is not part of this step.',
     },
     network: {
       label: 'Network',
@@ -1344,7 +1351,7 @@ export default {
     submit: 'Generate Trust Profile',
     submitErrorNoData: 'Run Solana token lookup before saving. KHAN Trust only saves real live-token profiles.',
     devnetTool: 'Devnet tool',
-    devnetTitle: 'KHAN Launchpad — Devnet MVP',
+    devnetTitle: 'KHAN Launchpad — Devnet',
     devnetText: 'Create Solana devnet test tokens with Phantom approval, verify metadata, and instantly generate a KHAN Trust profile.',
     openLaunchpad: 'Open Launchpad',
   },
@@ -1756,7 +1763,7 @@ export default {
     connectTitle: 'Connect a wallet to scan',
     connectText: 'The scan reads your wallet\'s public data. It never asks for a signature, and never asks for your seed phrase or private key.',
     unsupportedTitle: 'This chain is not supported yet',
-    unsupportedText: 'The approval scanner currently supports Solana. Support for other chains is planned.',
+    unsupportedText: 'The approval scanner supports Solana.',
     scanning: 'Scanning your wallet...',
     rescan: 'Scan again',
     lastScan: 'Last scanned {{time}}',
@@ -1857,23 +1864,20 @@ export default {
     stripTitle: 'One ecosystem for trust, token utility, and community',
     items: [
       ['KHAN Trust Platform', 'Public trust profiles, token scans, risk reports, and Launchpad profile creation.'],
-      ['KHAN Token', 'Planned community and utility layer for future premium research and holder benefits.'],
+      ['KHAN Token', 'A separate community token. It grants no access to KHAN Trust and is not required to use any part of the platform.'],
       ['KHAN Community', 'Official X and Telegram channels for updates, education, and ecosystem announcements.'],
     ],
     tokenRoleEyebrow: 'Ecosystem',
     tokenRoleTitle: 'KHAN Token Role',
-    tokenRoleText: 'KHAN is planned as the community and utility token of the KHAN Trust ecosystem. KHAN Trust is the platform layer, KHAN Token is the future utility layer, and the KHAN Community gathers through the official X and Telegram channels. No profit or investment promise.',
-    foundationEyebrow: 'Roadmap Foundation',
-    foundationTitle: 'Verified and holder benefit systems',
+    tokenRoleText: 'KHAN Trust is the platform. KHAN Token is a separate community token, and the KHAN Community gathers through the official X and Telegram channels. Every KHAN Trust feature - free and paid alike - works without holding any token. No profit or investment promise.',
+    foundationEyebrow: 'Verification',
+    foundationTitle: 'How project verification works',
     verificationBadge: 'Verification foundation',
     verificationText: 'Project profiles default to Unverified until an owner connects a wallet, signs a KHAN Trust verification message, and an admin approves the request. Approved projects show a "Verified by KHAN Trust" badge everywhere.',
     verificationItems: ['Verified Project Profiles', 'Ownership Verification', 'Team Verification'],
-    holderBadge: 'Holder utility foundation',
-    holderText: 'Future KHAN holder benefits are documented as roadmap utilities. No token-gated access is active in this MVP.',
-    holderItems: ['Premium Research Features', 'PDF Risk Reports', 'Wallet Connect', 'Advanced Analytics', 'Priority Support', 'Holder Badges'],
     pageEyebrow: '$KHAN',
     pageTitle: 'KHAN Ecosystem',
-    pageSubtitle: 'KHAN Trust, KHAN Token, and the KHAN Community are connected parts of one ecosystem for crypto trust signals, public project profiles, and future holder utility.',
+    pageSubtitle: 'KHAN Trust, KHAN Token, and the KHAN Community are separate parts of one ecosystem. Holding the token grants no access to the platform.',
   },
   profileSections: {
     profileEyebrow: 'Profile',
@@ -2074,6 +2078,7 @@ export default {
       ['KHAN Trust', 'shows crypto project trust signals.'],
     ],
     viewMethodology: 'View Trust Score Methodology',
+    conflictTitle: 'Conflicts of interest',
   },
   methodology: {
     title: 'How the Trust Score works',
@@ -2125,6 +2130,23 @@ export default {
     statusSubmitting: 'Submitting verification request...',
     statusSubmitted: 'Verification request submitted. Status is now pending review.',
     statusSubmitFailed: 'Could not submit verification request.',
+  },
+  verify: {
+    eyebrow: 'For token teams',
+    title: 'Get your project verified',
+    subtitle: 'A KHAN Trust verified profile is a public, checkable statement that the wallet behind this token proved it controls the project - not a logo you uploaded yourself.',
+    fieldLabel: 'Your token contract address',
+    submit: 'Analyse my project',
+    nextStepNote: 'This runs the same free analysis every visitor sees. You will land on your project report, where you can start verification from the wallet that controls the token.',
+    includesTitle: 'What verification gives you',
+    includes: [
+      'A public trust profile at a permanent, indexable URL',
+      'The "Verified by KHAN Trust" badge across the platform',
+      'An embeddable badge for your own site',
+      'Wallet-signature proof of ownership, shown publicly',
+    ],
+    reachNote: 'Verified badges appear wherever your token is analysed on KHAN Trust - in scan results, watchlists and reports.',
+    questionsCta: 'Questions about verification',
   },
   support: {
     eyebrow: 'Support',

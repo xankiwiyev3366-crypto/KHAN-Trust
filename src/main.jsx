@@ -402,7 +402,14 @@ const navItems = [
   { id: 'launchpad', icon: Sparkles },
   { id: 'whitepaper', icon: BookOpen },
   { id: 'about', icon: Info },
-  { id: 'khan', icon: Star },
+  // The token-team entry point. Sits beside Pricing rather than in the sidebar:
+  // the sidebar is the signed-in trader's workspace, and verification is sold
+  // to a different person entirely.
+  { id: 'verify', icon: BadgeCheck },
+  // '$KHAN' was a nav entry here — a permanent link promoting a token from
+  // inside the product that rates tokens. The #/khan route still resolves (a
+  // URL that has been shared is a promise, see src/lib/routes.js), it is simply
+  // no longer advertised on every screen.
   { id: 'support', icon: LifeBuoy },
 ];
 
@@ -2134,6 +2141,7 @@ function App() {
         {page === 'add' && pageAuthReady && <AddProjectPage onAdd={addProject} navigate={navigate} />}
         {page === 'launchpad' && pageAuthReady && <LaunchpadPage onCreateProfile={saveProjectProfile} navigate={navigate} />}
         {page === 'pricing' && <PricingPage navigate={navigate} />}
+        {page === 'verify' && <VerifyLandingPage onTokenCheck={handleTokenCheck} navigate={navigate} />}
         {page === 'whitepaper' && <WhitepaperPage navigate={navigate} />}
         {page === 'compare' && <ComparePage projects={projects} navigate={navigate} />}
         {page === 'watchlist' && pageAuthReady && (
@@ -2622,14 +2630,10 @@ function Sidebar({ page, navigate, navTo, alertCount }) {
           );
         })}
       </nav>
-      <div className="sidebar-promo">
-        <Crown size={28} />
-        <strong>{t('sidebar.promoTitle')}</strong>
-        <p>{t('sidebar.promoText')}</p>
-        <button className="sidebar-promo-cta" onClick={() => navigate('khan')}>
-          {t('sidebar.promoCta')} <ArrowRight size={14} />
-        </button>
-      </div>
+      {/* The "Join the KHAN Ecosystem — follow the $KHAN token and community
+          roadmap" promo that lived here is gone. It advertised a token to
+          people who came to assess tokens, from inside the assessment product,
+          which is precisely the conflict the footer statement now disclaims. */}
     </aside>
   );
 }
@@ -2997,15 +3001,32 @@ function HomePage({ projects, query, setQuery, searchState, scanProgress, onSear
                 </div>
               ))}
             </div>
+            {/* TWO AUDIENCES, EQUAL WEIGHT.
+                The platform sells to traders (risk analysis) and to token teams
+                (verified profiles). They want opposite things from the same
+                data, so the first screen has to address both or one of them
+                bounces. Deliberately two peer cards rather than a primary and a
+                secondary button: making either the "real" CTA tells the other
+                audience it is in the wrong place. */}
+            <div className="hero-paths">
+              <div className="hero-path">
+                <span className="hero-path-label">{t('home.tradersLabel')}</span>
+                <p>{t('home.tradersText')}</p>
+                <button className="primary-button" onClick={() => navigate('explore')}>
+                  {t('home.tradersCta')} <ArrowRight size={18} />
+                </button>
+              </div>
+              <div className="hero-path">
+                <span className="hero-path-label">{t('home.teamsLabel')}</span>
+                <p>{t('home.teamsText')}</p>
+                <button className="primary-button" onClick={() => navigate('verify')}>
+                  {t('home.teamsCta')} <BadgeCheck size={18} />
+                </button>
+              </div>
+            </div>
             <div className="hero-actions">
-              <button className="primary-button" onClick={() => navigate('explore')}>
-                {t('home.exploreProjects')} <ArrowRight size={18} />
-              </button>
               <button className="secondary-button" onClick={() => navigate('add')}>
                 {t('home.addProject')} <Plus size={18} />
-              </button>
-              <button className="ghost-button" onClick={() => navigate('khan')}>
-                {t('home.viewKhan')} <Star size={18} />
               </button>
               <a className="secondary-button" href={OFFICIAL_KHAN_LINKS.telegram} target="_blank" rel="noreferrer" onClick={() => trackSocialClick('Telegram Community', OFFICIAL_KHAN_LINKS.telegram)}>
                 {t('home.joinTelegram')} <MessageCircle size={18} />
@@ -3052,7 +3073,6 @@ function HomePage({ projects, query, setQuery, searchState, scanProgress, onSear
       <SinceLastVisitPanel projects={projects} navigate={navigate} />
       <RetentionDashboard projects={projects} watchlist={watchlist} navigate={navigate} alertCount={alertCount} />
       <CheckAnyTokenSection onTokenCheck={onTokenCheck} navigate={navigate} />
-      <KhanEcosystemStrip navigate={navigate} />
       <section className="content-band">
         <SectionTitle icon={BarChart3} eyebrow={t('home.exploreEyebrow')} title={t('home.exploreTitle')} />
         <div className="project-grid">
@@ -3062,7 +3082,13 @@ function HomePage({ projects, query, setQuery, searchState, scanProgress, onSear
         </div>
         {!featured.length && <KhanAiEmptyState title={t('home.emptyNoSavedTitle')} text={t('home.emptyNoSavedText')} />}
       </section>
-      <KhanTokenRole navigate={navigate} />
+      {/* KhanEcosystemStrip and KhanTokenRole used to render here. Both were
+          $KHAN token promotion sitting on the landing page of a product whose
+          entire job is to tell people whether a token is worth trusting — the
+          exact conflict the footer now discloses. Both components still exist
+          and still render on #/khan and About, where someone has actively asked
+          about the ecosystem; they are simply no longer advertised to a visitor
+          who came to check a contract address. */}
       <FutureFoundationSection />
       <Disclaimer />
     </>
@@ -3109,6 +3135,85 @@ function CheckAnyTokenSection({ onTokenCheck, navigate }) {
           </div>
         </form>
       </div>
+    </section>
+  );
+}
+
+// The token-team entry point — the destination of the hero's "Verify your
+// project" path.
+//
+// WHAT THIS IS AND, MORE IMPORTANTLY, WHAT IT IS NOT
+//
+// It is NOT a second verification flow. Verification already exists end to end
+// (netlify/functions/verification-request + verification-admin-review +
+// verify-badge, driven by the "Request verification" action on a project's own
+// report). What did not exist was any way to FIND it: the only route in was to
+// already know the token, scan it, open its report, and notice a button. A
+// token team arriving at khantrust.net had nowhere to land.
+//
+// So this page does exactly one thing: take a contract address, run the same
+// free scan every visitor gets (onTokenCheck — the identical function the home
+// page's checker calls, no duplicate scan path), and land the team on their own
+// report, where the existing verification action already lives.
+//
+// Phase 2 replaces the final hop with quote → tier → payment → ownership proof.
+// It extends this page rather than adding another, which is why the scan step
+// is wired to the shared checker from the start.
+function VerifyLandingPage({ onTokenCheck, navigate }) {
+  const { t } = useTranslation();
+  const [contractAddress, setContractAddress] = useState('');
+  const [state, setState] = useState({ status: 'idle', message: '' });
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setState({ status: 'loading', message: t('checkToken.checking') });
+    // Same scanner, same failure semantics: when live data is unavailable this
+    // returns an explicit error rather than a score. A verification pitch built
+    // on an invented preview would poison the product it is selling.
+    setState(await onTokenCheck(contractAddress));
+  };
+
+  return (
+    <section className="page-section verify-page">
+      <SectionTitle icon={BadgeCheck} eyebrow={t('verify.eyebrow')} title={t('verify.title')} />
+      <p className="section-subtitle">{t('verify.subtitle')}</p>
+
+      <div className="verify-grid">
+        <form className="token-check-card" onSubmit={submit}>
+          <label className="form-field">
+            <span>{t('verify.fieldLabel')}</span>
+            <input
+              value={contractAddress}
+              onChange={(event) => setContractAddress(event.target.value)}
+              placeholder={t('checkToken.placeholder')}
+              autoComplete="off"
+            />
+          </label>
+          {state.message && <p className={`lookup-message ${state.status === 'error' ? 'error' : ''}`}>{state.message}</p>}
+          <button className="primary-button" type="submit" disabled={state.status === 'loading'}>
+            <Search size={18} /> {state.status === 'loading' ? t('checkToken.submitChecking') : t('verify.submit')}
+          </button>
+          <p className="verify-note">{t('verify.nextStepNote')}</p>
+        </form>
+
+        <div className="verify-benefits">
+          <h3>{t('verify.includesTitle')}</h3>
+          <div className="foundation-list">
+            {t('verify.includes').map((item) => (
+              <span key={item}><CheckCircle2 size={15} /> {item}</span>
+            ))}
+          </div>
+          <p className="verify-note">{t('verify.reachNote')}</p>
+          <button className="ghost-button" type="button" onClick={() => navigate('support')}>
+            {t('verify.questionsCta')} <LifeBuoy size={18} />
+          </button>
+        </div>
+      </div>
+
+      {/* Verification is an assessment sold to the subject of the assessment.
+          Saying plainly what it is not belongs on the page that sells it, not
+          only in the footer. */}
+      <Disclaimer text={t('footer.conflictOfInterest')} />
     </section>
   );
 }
@@ -6062,13 +6167,12 @@ function FutureFoundationSection() {
             {t('ecosystem.verificationItems').map((item) => <span key={item}><CheckCircle2 size={15} /> {item}</span>)}
           </div>
         </div>
-        <div>
-          <span className="status-badge">{t('ecosystem.holderBadge')}</span>
-          <p>{t('ecosystem.holderText')}</p>
-          <div className="foundation-list">
-            {t('ecosystem.holderItems').map((item) => <span key={item}><CheckCircle2 size={15} /> {item}</span>)}
-          </div>
-        </div>
+        {/* The holder-benefit panel that sat here — "Premium Research
+            Features / PDF Risk Reports / Advanced Analytics / Holder Badges"
+            presented as forthcoming $KHAN holder utility — has been removed.
+            Every one of those is a KHAN Trust product feature, sold for money
+            and available to anyone; listing them as token-holder benefits
+            implied the token gates the product, which it never has. */}
       </div>
     </section>
   );
@@ -9682,6 +9786,14 @@ function AboutPage({ openMethodology, navigate }) {
       <button className="primary-button" onClick={openMethodology}>
         {t('about.viewMethodology')} <Info size={18} />
       </button>
+      {/* Stated here in full, not only in the footer: About is where someone
+          deciding whether to trust the scoring comes to read, and "who pays
+          you, and do you hold what you rate" is the first question that
+          deserves an answer. */}
+      <div className="about-panel about-coi">
+        <h3>{t('about.conflictTitle')}</h3>
+        <p>{t('footer.conflictOfInterest')}</p>
+      </div>
       <KhanEcosystemStrip navigate={navigate} />
       <FutureFoundationSection />
       <Disclaimer />
@@ -10600,6 +10712,11 @@ function Footer({ navigate }) {
           </nav>
         </div>
       </div>
+      {/* Conflict-of-interest statement, on every page rather than buried in
+          the legal pages. KHAN Trust now takes money from the token teams it
+          assesses, so the fact that it holds no position in what it scores is
+          not a footnote — it is the reason a score means anything. */}
+      <p className="footer-coi">{t('footer.conflictOfInterest')}</p>
       <div className="footer-bottom">
         <span>{t('footer.copyright', { year: 2026 })}</span>
       </div>

@@ -125,9 +125,37 @@
 
 # Verification-as-Network (Direction 4): embeddable "Verified by KHAN Trust"
 # badge SVG. Additive, path-specific - no catch-all.
+#
+# TWO SHAPES, because the two callers know different things.
+#
+# /badge/<chain>/<contract> is the form a project embeds on their own site: an
+# external owner knows their contract address and has no reason to know a KHAN
+# Trust project id. Declared FIRST because it is the canonical one going
+# forward. Two path segments, so it cannot collide with the single-segment rule
+# below.
+#
+# /badge/<projectId> is the original. It stays because embeds using it are
+# already live on other people's websites and a published URL is a promise -
+# the same rule src/lib/routes.js states for the SPA's route aliases.
+#
+# Netlify preserves the query string through a rewrite, so the JS widget's
+# ?contract=&chain= form reaches the function through either path.
+[[redirects]]
+  from = "/badge/:chain/:contract"
+  to = "/.netlify/functions/verify-badge?chain=:chain&contract=:contract"
+  status = 200
+
 [[redirects]]
   from = "/badge/:projectId"
   to = "/.netlify/functions/verify-badge?projectId=:projectId"
+  status = 200
+
+# JSON transport of the same badge state, read cross-origin by /badge.js on
+# third-party sites. Same data, same resolver (_badgeState.mjs), same cache
+# policy - a script cannot read pixels, which is the only reason it is separate.
+[[redirects]]
+  from = "/badge-status"
+  to = "/.netlify/functions/verify-badge-status"
   status = 200
 
 # Lifecycle email opt-out. The footer link people actually see and hover over,

@@ -1,14 +1,40 @@
-// GET (rewritten from /badge/:projectId, see netlify.toml)
-// Returns an embeddable SVG "Verified by KHAN Trust" badge for one project,
-// read from the EXISTING verification store (no verification logic changes).
-// This is Direction 4 - Verification-as-Network: KHAN's rarest, least-copyable
-// asset is signature-proven project ownership. Turning it into a badge projects
-// embed on their own sites creates a two-sided trust network (projects prove
-// themselves -> users trust the KHAN badge -> more of both) AND earns backlinks
-// that compound the SEO surface from Direction 2. Additive: a brand-new
-// /badge/* surface that touches nothing existing.
+// GET /badge/:projectId  (rewritten in netlify.toml)
+// GET /badge/:projectId?contract=<addr>&chain=<id>
+// GET /.netlify/functions/verify-badge?contract=<addr>&chain=<id>
+//
+// The embeddable SVG badge. Direction 4 — Verification-as-Network: KHAN's
+// rarest, least-copyable asset is signature-proven project ownership, and a
+// badge projects put on their own sites turns it into a two-sided network while
+// earning backlinks that compound the /token/* SEO surface.
+//
+// PHASE 3 CHANGED TWO THINGS AND KEPT EVERYTHING ELSE.
+//
+//   1. Five states instead of two. "Pending", "Expired" and "Revoked" were
+//      previously all flattened into "Unverified", which is true but useless:
+//      an owner mid-review and an owner whose year lapsed both need to know
+//      which one they are, and the badge is the surface they are actually
+//      looking at.
+//   2. It can be addressed by CONTRACT, not only by an internal project id. An
+//      external site owner knows their contract address; they have no reason to
+//      know a KHAN Trust project id. The projectId form still works — embeds
+//      using it are already live and a URL that has been published is a promise.
+//
+// The state itself is decided in _badgeState.mjs, shared with the JSON endpoint
+// the JavaScript widget calls, so the two transports cannot disagree.
+//
+// NOTHING THE CALLER SENDS CAN PRODUCE A STATE. The query string carries an
+// address and a chain name. There is no `status`, `verified` or `score`
+// parameter, and adding one would end the product: a badge whose host page can
+// influence what it says is a badge that says whatever that page wants.
 import { readStatuses } from './_verificationStore.mjs';
-import { isVerificationActive } from '../../src/lib/verificationTiers.js';
+import {
+  BADGE_STATES,
+  BADGE_CACHE_CONTROL,
+  resolveBadgeState,
+  parseBadgeTarget,
+  candidateKeys,
+  lookupRecord,
+} from './_badgeState.mjs';
 
 function escapeXml(value) {
   return String(value == null ? '' : value)
@@ -19,60 +45,50 @@ function escapeXml(value) {
     .replace(/'/g, '&apos;');
 }
 
-// Pure, side-effect-free SVG renderer so it can be unit-tested without Blobs.
+// What each state says and what colour it says it in.
+//
+// Only VERIFIED gets a positive colour. Gold — this product's "good" colour —
+// is not used at all: it was previously doing persuasive work for a "Rated"
+// claim that had nothing behind it, and reintroducing it for a pending or
+// expired badge would repeat the same trick more quietly.
+const STATE_PRESENTATION = {
+  [BADGE_STATES.VERIFIED]: { text: 'Verified ✓', color: '#2f9e5f', width: 74 },
+  [BADGE_STATES.UNVERIFIED]: { text: 'Unverified', color: '#6b6b6b', width: 70 },
+  [BADGE_STATES.PENDING]: { text: 'Pending', color: '#8a7326', width: 56 },
+  [BADGE_STATES.EXPIRED]: { text: 'Expired', color: '#7a5c2e', width: 54 },
+  [BADGE_STATES.REVOKED]: { text: 'Revoked', color: '#a33a2f', width: 60 },
+};
+
+// Pure, side-effect-free renderer so it can be unit-tested without Blobs.
 // Shields-style two-segment badge.
 //
-// THE BADGE MAY ONLY ASSERT WHAT THIS SERVICE CAN SUBSTANTIATE.
-//
-// The non-verified branch used to render a gold "Rated" badge. `/badge/:id`
-// takes an arbitrary string and never checked that anything existed behind it,
-// so `/badge/whatever-i-typed` returned a gold KHAN Trust badge reading
-// "Rated". Nothing had rated it. Nothing had ever heard of it. The badge is
-// designed to be embedded on someone else's website, which makes it the single
-// most portable claim this platform emits — and it was assertable by anyone,
-// about anything, for free.
-//
-// "Rated" also could not be substantiated even in the honest case: a rating
-// comes from a completed scan in the corpus, and this function reads the
-// VERIFICATION store, which knows only whether an ownership request was
-// approved. It never had the fact it was asserting.
-//
-// So there are two states, and the gold one is gone:
-//   verified  -> green "Verified ✓". Provable: an owner signed with the
-//                controlling wallet and an admin approved it.
-//   anything  -> neutral grey "Unverified". True of a rejected project, a
-//   else        pending one, and a project id that does not exist, without
-//                distinguishing between them — review state is not public, and
-//                a badge is the wrong place to leak it.
-//
-// Every badge KHAN Trust itself hands out is the verified one: VerifiedBadgeEmbed
-// in src/main.jsx renders the snippet only on a verified project's profile. So
-// this narrowing costs no legitimate embed anything.
-export function renderBadgeSvg(status) {
-  const verified = status === 'verified';
+// Every dynamic value is escaped, and every one of them comes from the table
+// above rather than from the request — there is deliberately no path by which
+// caller input reaches the SVG body. That is stricter than escaping alone:
+// escaping protects against injection, a closed vocabulary protects against a
+// badge being made to say something true-looking that we never authorised.
+export function renderBadgeSvg(state) {
+  const presentation = STATE_PRESENTATION[state] || STATE_PRESENTATION[BADGE_STATES.UNVERIFIED];
   const label = 'KHAN Trust';
-  const value = verified ? 'Verified ✓' : 'Unverified';
-  // Grey, not gold. Gold is this product's "good" colour and it was doing
-  // persuasive work on behalf of a claim that did not exist.
-  const valueColor = verified ? '#2f9e5f' : '#6b6b6b';
   const labelWidth = 78;
-  const valueWidth = verified ? 74 : 70;
+  const valueWidth = presentation.width;
   const total = labelWidth + valueWidth;
   const labelMid = labelWidth / 2;
   const valueMid = labelWidth + valueWidth / 2;
+  const accessibleName = `${label}: ${presentation.text}`;
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${total}" height="20" role="img" aria-label="${escapeXml(label)}: ${escapeXml(value)}">
-<title>${escapeXml(label)}: ${escapeXml(value)}</title>
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${total}" height="20" role="img" aria-label="${escapeXml(accessibleName)}">
+<title>${escapeXml(accessibleName)}</title>
 <linearGradient id="s" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
 <clipPath id="r"><rect width="${total}" height="20" rx="3" fill="#fff"/></clipPath>
 <g clip-path="url(#r)">
 <rect width="${labelWidth}" height="20" fill="#0d0d0d"/>
-<rect x="${labelWidth}" width="${valueWidth}" height="20" fill="${valueColor}"/>
+<rect x="${labelWidth}" width="${valueWidth}" height="20" fill="${presentation.color}"/>
 <rect width="${total}" height="20" fill="url(#s)"/>
 </g>
 <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
 <text x="${labelMid}" y="14">${escapeXml(label)}</text>
-<text x="${valueMid}" y="14">${escapeXml(value)}</text>
+<text x="${valueMid}" y="14">${escapeXml(presentation.text)}</text>
 </g>
 </svg>`;
 }
@@ -82,33 +98,55 @@ export async function handler(event) {
     if (event.httpMethod !== 'GET') {
       return { statusCode: 405, headers: { 'Content-Type': 'text/plain' }, body: 'Method not allowed' };
     }
-    const projectId = (event.queryStringParameters?.projectId || '').trim();
-    let status = 'unverified';
-    if (projectId) {
+
+    const query = event.queryStringParameters || {};
+    const projectId = String(query.projectId || '').trim();
+    const rawContract = String(query.contract || '').trim();
+
+    // A contract, when supplied, must be well-formed for its chain. An
+    // unparseable address or an unknown chain is not an error page — a broken
+    // <img> on a customer's website helps nobody — it is an honest "we have not
+    // verified this", rendered as a normal badge.
+    let keys = [];
+    if (rawContract) {
+      const target = parseBadgeTarget({ contract: rawContract, chain: query.chain });
+      if (target.ok) {
+        keys = candidateKeys({ contract: target.contract, chain: target.chain, projectId });
+      } else if (projectId) {
+        keys = candidateKeys({ projectId });
+      }
+    } else if (projectId) {
+      keys = candidateKeys({ projectId });
+    }
+
+    let state = BADGE_STATES.UNVERIFIED;
+    if (keys.length) {
       try {
         const statuses = await readStatuses();
-        const record = statuses[projectId];
-        // EXPIRY MATTERS MOST HERE. This badge is an <img> on somebody else's
-        // website; nobody reloads it deliberately and nothing on this platform
-        // controls when it is fetched. A lapsed verification whose badge kept
-        // rendering green would keep asserting a verification that ended, on a
-        // page KHAN Trust does not own, indefinitely. The short Cache-Control
-        // below is the only other bound on that.
-        status = isVerificationActive(record) ? 'verified' : 'unverified';
+        state = resolveBadgeState(lookupRecord(statuses, keys));
       } catch {
         // Fail closed. An unreadable store is not evidence of verification.
-        status = 'unverified';
+        state = BADGE_STATES.UNVERIFIED;
       }
     }
+
     return {
       statusCode: 200,
       headers: {
         'Content-Type': 'image/svg+xml; charset=utf-8',
-        // Short cache so a freshly-approved verification shows up quickly, but
-        // embeds still load fast.
-        'Cache-Control': 'public, max-age=300, s-maxage=600',
+        'Cache-Control': BADGE_CACHE_CONTROL,
+        // The SVG is a public image with no cookies, no auth and no
+        // per-requester variation, so it may be read cross-origin. Stated
+        // explicitly rather than relied upon: <img> does not need CORS, but a
+        // site fetching the badge to inline it does, and there is nothing here
+        // worth withholding.
+        'Access-Control-Allow-Origin': '*',
+        // No user-specific input is read, so nothing may be varied on. Saying
+        // so stops a CDN inventing a cache key from a header we never used.
+        'Vary': 'Accept-Encoding',
+        'X-Content-Type-Options': 'nosniff',
       },
-      body: renderBadgeSvg(status),
+      body: renderBadgeSvg(state),
     };
   } catch (error) {
     return { statusCode: 500, headers: { 'Content-Type': 'text/plain' }, body: `verify-badge error: ${error.message}` };

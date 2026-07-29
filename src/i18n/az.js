@@ -36,6 +36,8 @@ export default {
     verified: 'KHAN Trust tərəfindən təsdiqlənib',
     pendingReview: 'Təsdiq Gözləyir',
     rejected: 'Təsdiq Rədd Edilib',
+    expired: 'Təsdiqin Müddəti Bitib',
+    revoked: 'Təsdiq Ləğv Edilib',
     verifiedShort: 'Təsdiqlənib',
     pendingShort: 'Gözləyir',
     rejectedShort: 'Rədd edilib',
@@ -231,8 +233,13 @@ export default {
   verifiedEmbed: {
     eyebrow: 'Təsdiqlənib',
     title: 'KHAN Trust nişanınızı yerləşdirin',
-    description: 'Bu layihə KHAN Trust tərəfindən təsdiqlənib. Nişanı vebsaytınıza və ya sənədlərinizə əlavə edin ki, ziyarətçilər bunu təsdiq edə bilsin — o, canlı etibar səhifənizə keçid verir.',
+    description: 'Nişanı vebsaytınıza və ya sənədlərinizə əlavə edin ki, ziyarətçilər bu layihəni KHAN Trust-da təsdiq edə bilsin. Vəziyyətini serverlərimizdən canlı oxuyur və ictimai etibar profilinizə keçid verir.',
     copy: 'Yerləşdirmə kodunu kopyala',
+    formats: { html: 'HTML', script: 'JavaScript vidcet', markdown: 'Markdown', url: 'Şəkil URL-i' },
+    hints: { html: 'HTML icazə verilən hər yerdə işləyir.', script: 'Daha zəngin nişan, işıqlı və qaranlıq səhifələrə uyğunlaşır.', markdown: 'README və sənəd saytları üçün.', url: 'URL qəbul edən, lakin markup qəbul etməyən yerlər üçün.' },
+    notePending: 'Təsdiqiniz hələ baxılır. Nişan təsdiqlənənədək “Gözləyir” göstərir — indi saytınıza əlavə edə bilərsiniz, özü yenilənəcək.',
+    noteExpired: 'Təsdiqinizin müddəti bitib, ona görə nişan indi “Müddəti bitib” göstərir. Təsdiqlənmiş vəziyyəti bərpa etmək üçün yeniləyin.',
+    liveNote: 'Nişan həmişə cari vəziyyətinizi göstərir. Təsdiqinizin müddəti bitsə və ya geri alınsa, bütün yerləşdirmələr bir neçə dəqiqə ərzində özü yenilənir — kodu dəyişməyə ehtiyac yoxdur.',
   },
   // My Profile page, plus the two bits of profile UI that also render inside
   // the header/mobile-nav dropdown (email verification badge+action) so both

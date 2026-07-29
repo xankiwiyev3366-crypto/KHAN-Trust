@@ -491,6 +491,12 @@ const VERIFICATION_BADGE_CONFIG = {
   [VERIFICATION_STATUS.VERIFIED]: { className: 'status-pill-verified', Icon: BadgeCheck, key: 'common.verified' },
   [VERIFICATION_STATUS.PENDING]: { className: 'status-pill-pending', Icon: Clock3, key: 'common.pendingReview' },
   [VERIFICATION_STATUS.REJECTED]: { className: 'status-pill-rejected', Icon: X, key: 'common.rejected' },
+  // Both reuse the 'rejected' pill styling — not-currently-verified is one
+  // visual state — while keeping distinct words, because "your verification
+  // expired" and "your verification was withdrawn" are different facts and the
+  // owner needs to know which one applies to them.
+  [VERIFICATION_STATUS.EXPIRED]: { className: 'status-pill-rejected', Icon: Clock3, key: 'common.expired' },
+  [VERIFICATION_STATUS.REVOKED]: { className: 'status-pill-rejected', Icon: X, key: 'common.revoked' },
 };
 
 function VerifiedBadge({ status, size = 14 }) {
@@ -512,6 +518,8 @@ const VERIFICATION_SHORT_KEY = {
   [VERIFICATION_STATUS.PENDING]: 'common.pendingShort',
   [VERIFICATION_STATUS.REJECTED]: 'common.rejectedShort',
   [VERIFICATION_STATUS.UNVERIFIED]: 'common.unverifiedShort',
+  [VERIFICATION_STATUS.EXPIRED]: 'common.expired',
+  [VERIFICATION_STATUS.REVOKED]: 'common.revoked',
 };
 
 function translatedVerificationStatusLabel(status) {
@@ -5831,29 +5839,81 @@ function ProjectCard({ project, navigate }) {
   );
 }
 
-// Verification-as-Network (Direction 4): on a VERIFIED project's profile, the
-// owner gets a copyable "Verified by KHAN Trust" badge to embed on their own
-// site/socials. Every embed is a backlink and a trust signal for KHAN, turning
-// verification into a two-sided network. Rendered only for verified projects,
-// so it never appears where it shouldn't; purely additive to the profile.
+// Verification-as-Network (Direction 4): the owner gets copyable badge embeds
+// for their own site. Every embed is a backlink and a trust signal, turning
+// verification into a two-sided network.
+//
+// PHASE 3: THREE FORMATS, AND IT NO LONGER HIDES ITSELF WHEN NOT VERIFIED.
+//
+// It used to render only for a VERIFIED project — which sounds careful and was
+// actually backwards. The badge is now truthful about all five states, so
+// withholding the snippet from an owner mid-review or one whose year lapsed
+// helps nobody: the pending owner cannot prepare their site, and the expired
+// owner never finds out their badge has stopped saying "Verified". Both are
+// exactly the people who most need to see it. A REVOKED project still gets
+// nothing — handing someone embed code for a badge we withdrew would be an
+// invitation to keep displaying it.
+//
+// Every snippet points at the canonical /token/<contract> profile. There is
+// deliberately no /t/<chain>/<contract>: a second URL for one token splits its
+// ranking, and these embeds are precisely the backlinks that would be split.
 function VerifiedBadgeEmbed({ project }) {
   const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-  if (project.verificationStatus !== VERIFICATION_STATUS.VERIFIED) return null;
+  const [copiedKey, setCopiedKey] = useState('');
+
+  const status = project.verificationStatus;
+  // Revoked is deliberately absent from this list; see the header.
+  const offerEmbed = [
+    VERIFICATION_STATUS.VERIFIED,
+    VERIFICATION_STATUS.PENDING,
+    'expired',
+  ].includes(status);
+  if (!offerEmbed) return null;
 
   const base = OFFICIAL_KHAN_LINKS.website; // https://khantrust.net
   const hasContract = project.contract && !['Not provided', 'Not available'].includes(project.contract);
+  const chain = project.chainId || 'solana';
   const linkUrl = hasContract ? `${base}/token/${encodeURIComponent(project.contract)}` : base;
-  const badgeUrl = `${base}/badge/${encodeURIComponent(project.id)}`;
-  const snippet = `<a href="${linkUrl}" target="_blank" rel="noopener"><img src="${badgeUrl}" alt="Verified by KHAN Trust" height="20" /></a>`;
+  // Contract-addressed when we have one — the form an external site owner can
+  // read and check — falling back to the project id for a profile with no
+  // contract, which is the shape every pre-Phase-3 embed already uses.
+  const badgeUrl = hasContract
+    ? `${base}/badge/${encodeURIComponent(chain)}/${encodeURIComponent(project.contract)}`
+    : `${base}/badge/${encodeURIComponent(project.id)}`;
+  const previewUrl = hasContract
+    ? `/badge/${encodeURIComponent(chain)}/${encodeURIComponent(project.contract)}`
+    : `/badge/${encodeURIComponent(project.id)}`;
 
-  const copy = async () => {
+  const snippets = [
+    {
+      key: 'html',
+      label: t('verifiedEmbed.formats.html'),
+      hint: t('verifiedEmbed.hints.html'),
+      code: `<a href="${linkUrl}" target="_blank" rel="noopener"><img src="${badgeUrl}" alt="Verified by KHAN Trust" height="20" /></a>`,
+    },
+    {
+      key: 'script',
+      label: t('verifiedEmbed.formats.script'),
+      hint: t('verifiedEmbed.hints.script'),
+      code: hasContract
+        ? `<script src="${base}/badge.js" async></script>\n<div data-khan-badge data-contract="${project.contract}" data-chain="${chain}"></div>`
+        : `<script src="${base}/badge.js" async></script>\n<div data-khan-badge data-project-id="${project.id}"></div>`,
+    },
+    {
+      key: 'markdown',
+      label: t('verifiedEmbed.formats.markdown'),
+      hint: t('verifiedEmbed.hints.markdown'),
+      code: `[![Verified by KHAN Trust](${badgeUrl})](${linkUrl})`,
+    },
+  ];
+
+  const copy = async (key, code) => {
     try {
-      await navigator.clipboard.writeText(snippet);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
+      await navigator.clipboard.writeText(code);
+      setCopiedKey(key);
+      window.setTimeout(() => setCopiedKey(''), 1600);
     } catch {
-      setCopied(false);
+      setCopiedKey('');
     }
   };
 
@@ -5861,22 +5921,64 @@ function VerifiedBadgeEmbed({ project }) {
     <section className="detail-section verified-embed-section">
       <SectionTitle icon={BadgeCheck} eyebrow={t('verifiedEmbed.eyebrow')} title={t('verifiedEmbed.title')} />
       <p className="inline-note">{t('verifiedEmbed.description')}</p>
+
       {/* Relative src so the on-page preview uses the current origin; the
-          copyable snippet below uses the absolute production URL for embedding
-          on other sites. */}
+          copyable snippets use the absolute production URL for other sites.
+          The preview is the REAL endpoint, not a mock-up, so an owner whose
+          badge says Pending or Expired sees exactly that here. */}
       <div className="verified-embed-preview">
-        <img src={`/badge/${encodeURIComponent(project.id)}`} alt="Verified by KHAN Trust" height="20" />
+        <img src={previewUrl} alt="KHAN Trust badge" height="20" />
       </div>
-      <textarea
-        className="verified-embed-code"
-        readOnly
-        value={snippet}
-        rows={3}
-        onFocus={(event) => event.target.select()}
-      />
-      <button className="secondary-button" type="button" onClick={copy}>
-        <Copy size={16} /> {copied ? t('common.copied') : t('verifiedEmbed.copy')}
-      </button>
+
+      {status !== VERIFICATION_STATUS.VERIFIED && (
+        <p className="inline-note verified-embed-state-note">
+          {status === VERIFICATION_STATUS.PENDING ? t('verifiedEmbed.notePending') : t('verifiedEmbed.noteExpired')}
+        </p>
+      )}
+
+      <div className="verified-embed-formats">
+        {snippets.map((snippet) => (
+          <div className="verified-embed-format" key={snippet.key}>
+            <div className="verified-embed-format-head">
+              <strong>{snippet.label}</strong>
+              <span>{snippet.hint}</span>
+            </div>
+            <textarea
+              className="verified-embed-code"
+              readOnly
+              value={snippet.code}
+              rows={snippet.key === 'script' ? 3 : 2}
+              onFocus={(event) => event.target.select()}
+              aria-label={snippet.label}
+            />
+            <button className="secondary-button" type="button" onClick={() => copy(snippet.key, snippet.code)}>
+              <Copy size={16} /> {copiedKey === snippet.key ? t('common.copied') : t('verifiedEmbed.copy')}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* The raw image URL, for the many places that accept a URL but not
+          markup — README badge tables, Notion, Discord, link-in-bio pages. */}
+      <div className="verified-embed-format">
+        <div className="verified-embed-format-head">
+          <strong>{t('verifiedEmbed.formats.url')}</strong>
+          <span>{t('verifiedEmbed.hints.url')}</span>
+        </div>
+        <textarea
+          className="verified-embed-code"
+          readOnly
+          value={badgeUrl}
+          rows={2}
+          onFocus={(event) => event.target.select()}
+          aria-label={t('verifiedEmbed.formats.url')}
+        />
+        <button className="secondary-button" type="button" onClick={() => copy('url', badgeUrl)}>
+          <Copy size={16} /> {copiedKey === 'url' ? t('common.copied') : t('verifiedEmbed.copy')}
+        </button>
+      </div>
+
+      <p className="inline-note">{t('verifiedEmbed.liveNote')}</p>
     </section>
   );
 }

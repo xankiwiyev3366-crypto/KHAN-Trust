@@ -16,11 +16,22 @@
 
 import { isDevFunctionUnavailable } from './devFallback.js';
 
+// EXPIRED and REVOKED were added in Phase 3, and adding them was not optional.
+//
+// The server began emitting both — verification-status.mjs derives 'expired'
+// from a lapsed term on read, and an admin can now revoke. normalizeVerification
+// Status() maps anything it does not recognise to UNVERIFIED, so before this the
+// client silently flattened them. That failed SAFE (nothing was ever wrongly
+// shown as Verified) and failed INFORMATIVE: an owner whose year had lapsed saw
+// the same "Unverified" as somebody who never applied, with no hint that
+// renewing was the thing to do.
 export const VERIFICATION_STATUS = {
   UNVERIFIED: 'unverified',
   PENDING: 'pending',
   VERIFIED: 'verified',
   REJECTED: 'rejected',
+  EXPIRED: 'expired',
+  REVOKED: 'revoked',
 };
 
 const VALID_STATUSES = new Set(Object.values(VERIFICATION_STATUS));

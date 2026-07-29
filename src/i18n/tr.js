@@ -36,6 +36,8 @@ export default {
     verified: 'KHAN Trust tarafından doğrulandı',
     pendingReview: 'Doğrulama Bekliyor',
     rejected: 'Doğrulama Reddedildi',
+    expired: 'Doğrulama Süresi Doldu',
+    revoked: 'Doğrulama İptal Edildi',
     verifiedShort: 'Doğrulandı',
     pendingShort: 'Bekliyor',
     rejectedShort: 'Reddedildi',
@@ -231,8 +233,13 @@ export default {
   verifiedEmbed: {
     eyebrow: 'Doğrulandı',
     title: 'KHAN Trust rozetinizi yerleştirin',
-    description: 'Bu proje KHAN Trust tarafından doğrulandı. Ziyaretçilerin doğrulayabilmesi için rozeti web sitenize veya dokümanlarınıza ekleyin — canlı güven sayfanıza bağlanır.',
+    description: 'Ziyaretçilerin bu projeyi KHAN Trust üzerinde doğrulayabilmesi için rozeti web sitenize veya dokümanlarınıza ekleyin. Durumunu sunucularımızdan canlı okur ve herkese açık güven profilinize bağlanır.',
     copy: 'Yerleştirme kodunu kopyala',
+    formats: { html: 'HTML', script: 'JavaScript bileşeni', markdown: 'Markdown', url: 'Görsel URL’si' },
+    hints: { html: 'HTML’e izin verilen her yerde çalışır.', script: 'Daha zengin rozet, açık ve koyu sayfalara uyum sağlar.', markdown: 'README ve doküman siteleri için.', url: 'URL kabul eden ama işaretleme kabul etmeyen yerler için.' },
+    notePending: 'Doğrulamanız hâlâ inceleniyor. Onaylanana kadar rozet “Beklemede” gösterir — şimdi sitenize ekleyebilirsiniz, kendisi güncellenir.',
+    noteExpired: 'Doğrulamanızın süresi doldu, bu yüzden rozet “Süresi doldu” gösteriyor. Doğrulanmış durumu geri kazanmak için yenileyin.',
+    liveNote: 'Rozet her zaman güncel durumunuzu gösterir. Doğrulamanız sona erer veya geri alınırsa tüm yerleştirmeler birkaç dakika içinde kendiliğinden güncellenir — kodu değiştirmeniz gerekmez.',
   },
   // My Profile page, plus the two bits of profile UI that also render inside
   // the header/mobile-nav dropdown (email verification badge+action) so both

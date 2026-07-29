@@ -190,16 +190,35 @@ test('the embeddable badge never claims a rating for a project nothing rated', (
   assert.ok(!unknown.includes('Rated'), 'the badge still claims an unbacked rating');
   assert.ok(unknown.includes('Unverified'), 'the non-verified badge must say so plainly');
 
-  // Every non-verified status collapses to the same badge: a rejected or
-  // pending review is not public information.
-  for (const status of ['unverified', 'pending', 'rejected', '', 'not-a-status', undefined]) {
-    assert.equal(renderBadgeSvg(status), unknown, `status "${status}" produced a distinguishable badge`);
+  // PHASE 3 NARROWED THIS DELIBERATELY, so the change is recorded rather than
+  // quietly absorbed. This used to assert that EVERY non-verified status
+  // rendered one identical badge, including 'pending'. The badge now has five
+  // states, because flattening them was true but useless: an owner mid-review
+  // and an owner whose year lapsed both saw "Unverified" with no hint which
+  // one they were, and the expired one had no way to learn they needed to
+  // renew. Renderer input is now a resolved STATE (see _badgeState.mjs), not a
+  // raw store status.
+  //
+  // What has NOT changed, and is what this test was actually protecting:
+  //   - no "Rated", ever;
+  //   - a REJECTED review is not published on the applicant's own website;
+  //   - anything unrecognised falls back to the weakest claim.
+  for (const state of ['unverified', 'rejected', '', 'not-a-status', undefined, null]) {
+    assert.equal(renderBadgeSvg(state), unknown, `state "${state}" produced a distinguishable badge`);
   }
 
   // The one provable claim still renders, so live embeds are unaffected.
   const verified = renderBadgeSvg('verified');
   assert.ok(verified.includes('Verified'), 'the verified badge regressed');
   assert.notEqual(verified, unknown);
+
+  // And the three states that ARE now distinguishable must never read as the
+  // provable one. tests/badgeWidget.test.mjs covers each in full.
+  for (const state of ['pending', 'expired', 'revoked']) {
+    const svg = renderBadgeSvg(state);
+    assert.ok(!svg.includes('Rated'), `state "${state}" reintroduced a Rated claim`);
+    assert.ok(!/>Verified/.test(svg), `state "${state}" rendered as verified`);
+  }
 });
 
 test('KHAN Trust does not grant itself the verification it sells', () => {

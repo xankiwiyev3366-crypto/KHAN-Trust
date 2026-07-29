@@ -36,6 +36,8 @@ export default {
     verified: 'Verified by KHAN Trust',
     pendingReview: 'Verification Pending',
     rejected: 'Verification Rejected',
+    expired: 'Verification Expired',
+    revoked: 'Verification Revoked',
     verifiedShort: 'Verified',
     pendingShort: 'Pending',
     rejectedShort: 'Rejected',
@@ -233,8 +235,13 @@ export default {
   verifiedEmbed: {
     eyebrow: 'Verified',
     title: 'Embed your KHAN Trust badge',
-    description: 'This project is verified by KHAN Trust. Add the badge to your website or docs so visitors can confirm it — it links back to your live trust page.',
+    description: 'Add the badge to your website or docs so visitors can confirm this project on KHAN Trust. It reads its state live from our servers and links back to your public trust profile.',
     copy: 'Copy embed code',
+    formats: { html: 'HTML', script: 'JavaScript widget', markdown: 'Markdown', url: 'Image URL' },
+    hints: { html: 'Works anywhere HTML is allowed.', script: 'Richer badge, adapts to light and dark pages.', markdown: 'For READMEs and docs sites.', url: 'For places that accept a URL but not markup.' },
+    notePending: 'Your verification is still under review. The badge shows “Pending” until it is approved — you can add it to your site now and it will update itself.',
+    noteExpired: 'Your verification has expired, so the badge now shows “Expired”. Renew it to restore the verified state.',
+    liveNote: 'The badge always shows your current state. If your verification expires or is withdrawn, every embed updates on its own within a couple of minutes — you never need to change the code.',
   },
   // My Profile page, plus the two bits of profile UI that also render inside
   // the header/mobile-nav dropdown (email verification badge+action) so both

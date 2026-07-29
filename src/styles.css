@@ -12410,3 +12410,71 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
   gap: 8px;
   color: var(--muted);
 }
+
+/* ── Badge embed formats (Phase 3) ──────────────────────────────────────────
+   Four transports of the same badge, stacked so an owner can scan the labels
+   and take only the one their platform accepts. Each is a self-contained
+   block: label, one-line hint, the code, and its own copy button — a single
+   shared copy button next to four textareas is the classic version of this UI
+   and it is never clear which one it copied. */
+
+.verified-embed-formats {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.verified-embed-format + .verified-embed-format,
+.verified-embed-formats + .verified-embed-format {
+  margin-top: 14px;
+}
+
+.verified-embed-format-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin-bottom: 7px;
+}
+
+.verified-embed-format-head strong {
+  font-size: 13.5px;
+}
+
+.verified-embed-format-head span {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* Monospace and horizontally scrollable rather than wrapped: a wrapped embed
+   snippet invites a partial hand-copy, and the whole point of the copy button
+   is that nobody has to select this text at all. */
+.verified-embed-code {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.verified-embed-state-note {
+  margin-top: 10px;
+}
+
+.verified-embed-preview {
+  /* The preview is the live endpoint, so it must not be stretched or recoloured
+     by surrounding rules — an owner judging "does my badge look right" has to
+     be seeing the real thing. */
+  display: flex;
+  align-items: center;
+  min-height: 20px;
+}
+
+.verified-embed-preview img {
+  height: 20px;
+  width: auto;
+  max-width: 100%;
+}

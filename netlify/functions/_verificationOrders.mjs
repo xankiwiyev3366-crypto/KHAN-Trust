@@ -63,6 +63,15 @@ const ORDERS_KEY = 'orders.json';
 //   expired           the term ran out.
 //   revoked           an admin withdrew it.
 //   cancelled         the buyer abandoned it before paying.
+//   refunded          the money was returned. TERMINAL, and deliberately a
+//                     status of its own rather than a flag on 'duplicate' or
+//                     'revoked': a refund can follow any of several paths (a
+//                     duplicate sale, a failed ownership proof, a goodwill
+//                     decision) and flattening it into whichever state preceded
+//                     it would make "how much did we actually refund" a question
+//                     with no answer in the data. The payment signature and the
+//                     original status are BOTH preserved on the record — the
+//                     financial history is never rewritten, only appended to.
 export const ORDER_STATUS = {
   QUOTED: 'quoted',
   PENDING_PAYMENT: 'pending_payment',
@@ -72,6 +81,7 @@ export const ORDER_STATUS = {
   EXPIRED: 'expired',
   REVOKED: 'revoked',
   CANCELLED: 'cancelled',
+  REFUNDED: 'refunded',
 };
 
 function store() {
@@ -117,14 +127,19 @@ export async function putOrder(order) {
     await mirror(
       `INSERT INTO verification_orders
          (id, contract_key, chain, contract, tier, usd_amount, status, buyer_subject,
-          owner_wallet, payment_signature, quote_score, created_at, activated_at, expires_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now())
+          owner_wallet, payment_signature, quote_score, created_at, activated_at, expires_at,
+          badge_token, refunded_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16, now())
        ON CONFLICT (id) DO UPDATE SET
          status = EXCLUDED.status,
          owner_wallet = COALESCE(EXCLUDED.owner_wallet, verification_orders.owner_wallet),
          payment_signature = COALESCE(EXCLUDED.payment_signature, verification_orders.payment_signature),
          activated_at = COALESCE(EXCLUDED.activated_at, verification_orders.activated_at),
          expires_at = COALESCE(EXCLUDED.expires_at, verification_orders.expires_at),
+         -- COALESCE, like every other column here: a later write that does not
+         -- carry the badge token must not erase the one activation recorded.
+         badge_token = COALESCE(EXCLUDED.badge_token, verification_orders.badge_token),
+         refunded_at = COALESCE(EXCLUDED.refunded_at, verification_orders.refunded_at),
          updated_at = now()`,
       [
         order.id, order.contractKey, order.chain, order.contract, order.tierId,
@@ -132,6 +147,7 @@ export async function putOrder(order) {
         order.paymentSignature || null,
         Number.isFinite(order.quoteScore) ? order.quoteScore : null,
         order.createdAt, order.activatedAt || null, order.expiresAt || null,
+        order.badgeToken || null, order.refundedAt || null,
       ]
     );
   } catch { /* non-fatal by contract */ }

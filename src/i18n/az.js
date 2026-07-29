@@ -1637,6 +1637,18 @@ export default {
       title: '{{name}} daha riskli oldu',
       body: 'Etibar Balı indi {{score}}/100 ({{riskLevel}} risk), əvvəl {{previousScore}}/100 ({{previousRiskLevel}} risk) idi.',
     },
+    verificationActive: {
+      title: '{{name}} artıq təsdiqlənib',
+      body: 'Layihə KHAN Trust-a sahibliyini sübut etdi. Təsdiqləmə tokenə kimin nəzarət etdiyini təsdiqləyir — bu, tövsiyə və ya audit deyil.',
+    },
+    verificationExpired: {
+      title: '{{name}} təsdiqləməsinin müddəti bitdi',
+      body: 'Bu layihə KHAN Trust tərəfindən təsdiqlənmişdi və müddəti yenilənmədən başa çatdı. Nişanı indi «Müddəti bitib» göstərir.',
+    },
+    verificationRevoked: {
+      title: '{{name}} təsdiqləməsi ləğv edildi',
+      body: 'KHAN Trust bu layihənin təsdiqləməsini geri götürdü. Artıq təsdiqlənmiş deyil.',
+    },
     milestone: {
       title: 'Mərhələyə çatdınız',
       streak: '{{days}} gün ardıcıl daxil olmusunuz. Ardıcıl yoxlama layihədəki dönüşü erkən tutmağın yoludur.',

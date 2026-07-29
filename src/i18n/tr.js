@@ -1638,6 +1638,18 @@ export default {
       title: '{{name}} daha riskli hale geldi',
       body: 'Güven Puanı şimdi {{score}}/100 ({{riskLevel}} risk), önceden {{previousScore}}/100 ({{previousRiskLevel}} risk) idi.',
     },
+    verificationActive: {
+      title: '{{name}} artık doğrulandı',
+      body: 'Proje, KHAN Trust’a sahipliğini kanıtladı. Doğrulama bir tokeni kimin kontrol ettiğini teyit eder — bir tavsiye ya da denetim değildir.',
+    },
+    verificationExpired: {
+      title: '{{name}} doğrulamasının süresi doldu',
+      body: 'Bu proje KHAN Trust tarafından doğrulanmıştı ve süresi yenilenmeden sona erdi. Rozeti artık «Süresi doldu» gösteriyor.',
+    },
+    verificationRevoked: {
+      title: '{{name}} doğrulaması iptal edildi',
+      body: 'KHAN Trust bu projenin doğrulamasını geri çekti. Artık doğrulanmış değil.',
+    },
     milestone: {
       title: 'Kilometre taşına ulaşıldı',
       streak: '{{days}} gün üst üste giriş yaptınız. Düzenli kontrol, bir projedeki dönüşü erken yakalamanın yoludur.',

@@ -40,7 +40,16 @@ const MAX_NOTIFICATIONS = 100;
 // `risk_alert` is the one that matters - the reason to come back. `milestone` is
 // deliberately the only other one: nothing here exists to manufacture a reason
 // to ping someone.
-export const NOTIFICATION_TYPES = new Set(['risk_alert', 'milestone']);
+//
+// `verification_status` is the third and, like the other two, it had to justify
+// itself. It fires when a token the user is ALREADY WATCHING has its KHAN Trust
+// verification activated, expire or be revoked. That is not a manufactured
+// reason to ping someone: it is a change in the single strongest trust signal
+// the platform issues, about a token the user explicitly asked to be told about.
+// It is a separate type rather than a `risk_alert` because a token BECOMING
+// verified is good news, and delivering good news through the risk channel would
+// train users to ignore the risk channel.
+export const NOTIFICATION_TYPES = new Set(['risk_alert', 'milestone', 'verification_status']);
 
 function store() {
   return getNamedStore(STORE_NAME);

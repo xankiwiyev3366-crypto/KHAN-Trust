@@ -25,6 +25,8 @@
 // the only reason to include it would be that it was convenient.
 import { readStatuses } from './_verificationStore.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
+import { recordEvent } from './_productEvents.mjs';
+import { PRODUCT_EVENTS } from '../../src/lib/productEvents.js';
 import {
   BADGE_STATES,
   BADGE_CACHE_CONTROL,
@@ -123,14 +125,35 @@ export async function handler(event) {
 
     const state = resolveBadgeState(record);
 
+    // A badge impression: this endpoint is what an embedded widget calls to
+    // render, so a call here is a badge being shown on somebody's site.
+    //
+    // TWO HONEST CAVEATS, recorded here rather than discovered later by whoever
+    // reads the number. (1) BADGE_CACHE_CONTROL caches this response for 120
+    // seconds at the edge, so a busy embed reports at most one impression per
+    // two minutes — this is a floor on views, not a count of them. (2) The
+    // dedup key buckets by (contract, session, day) and an embed sends no
+    // session, so repeat views from one page collapse into one per day. Both
+    // undercount, deliberately: an inflated impression count on a page we do not
+    // control would be a number the platform could not stand behind.
+    recordEvent({
+      name: PRODUCT_EVENTS.BADGE_IMPRESSION,
+      chain: target?.ok ? target.chain : '',
+      contract: target?.ok ? target.contract : '',
+      projectId,
+      source: event.headers?.origin || event.headers?.Origin || event.headers?.referer || '',
+      metadata: { state },
+    }).catch(() => {});
+
     return respond(200, {
       state,
       chain: target?.ok ? target.chain : null,
       contract: target?.ok ? target.contract : null,
-      // The canonical profile — /token/<contract>, the surface that already
-      // exists. Never a /t/ route: a second URL for one token splits its
-      // ranking, and every badge is a backlink pointing at whichever we choose.
-      profileUrl: target?.ok ? profileUrl(target.contract) : siteOrigin(),
+      // The canonical profile — /t/<chain>/<contract>. There is exactly one
+      // canonical per token and /token/<contract> permanently 301s to it, so
+      // every badge in the wild is a backlink pointing at the same page rather
+      // than splitting its ranking across two. See _badgeState.profileUrl().
+      profileUrl: target?.ok ? profileUrl(target.chain, target.contract) : siteOrigin(),
       // Only present when there is one. A verified badge with no expiry is a
       // pre-paid admin approval and is permanent; sending `null` says that
       // plainly rather than implying an unknown date.

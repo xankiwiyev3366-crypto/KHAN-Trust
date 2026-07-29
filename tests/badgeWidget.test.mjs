@@ -261,20 +261,48 @@ test('the badge never reintroduces the unbacked "Rated" claim', () => {
 
 // ── The canonical profile link ──────────────────────────────────────────────
 
-test('the badge links to the existing /token/<contract> profile, never a /t/ route', async () => {
+// THIS TEST CHANGED IN PHASE 4, AND THE INVARIANT IT PROTECTS DID NOT.
+//
+// It used to assert `doesNotMatch(profileUrl, /\/t\//)` — the badge must link to
+// /token/<contract> and never to a /t/ route. The reason given was correct: a
+// SECOND canonical URL for one token splits its search ranking, and these embeds
+// are precisely the backlinks that would be split.
+//
+// Phase 4 did not add a second canonical. It moved the only one, because
+// /token/<contract> could not identify a token at all — the same 0x address is a
+// different asset on seven EVM chains, and the corpus lookup behind that URL
+// derived a Solana-shaped identity so it never resolved an EVM token. The old
+// URL now issues a permanent 301 here, which TRANSFERS its accumulated ranking
+// rather than competing with it.
+//
+// So the assertion below is the same invariant restated against the new
+// canonical: ONE profile URL, chain-scoped, and no badge may point anywhere else.
+test('the badge links to the single canonical /t/<chain>/<contract> profile', async () => {
   await seedStatuses({ [`solana:${SOLANA_MINT}`]: { status: 'verified' } });
   const { body } = await jsonFor({ queryStringParameters: { contract: SOLANA_MINT, chain: 'solana' } });
 
-  assert.ok(body.profileUrl.endsWith(`/token/${SOLANA_MINT}`), `unexpected profile URL: ${body.profileUrl}`);
-  // A second canonical URL for one token splits its search ranking, and these
-  // embeds are precisely the backlinks that would be split.
-  assert.doesNotMatch(body.profileUrl, /\/t\//);
-  assert.equal(profileUrl(SOLANA_MINT), `${body.profileUrl}`);
+  assert.ok(body.profileUrl.endsWith(`/t/solana/${SOLANA_MINT}`), `unexpected profile URL: ${body.profileUrl}`);
+  // The superseded shape must not come back: two live canonicals is the harm.
+  assert.doesNotMatch(body.profileUrl, /\/token\//);
+  assert.equal(profileUrl('solana', SOLANA_MINT), body.profileUrl);
+});
+
+test('the profile link is chain-scoped, so one address on two chains is two pages', () => {
+  const evm = '0xaea46a60368a7bd060eec7df8cba43b7ef41ad85';
+  assert.notEqual(profileUrl('ethereum', evm), profileUrl('base', evm));
+});
+
+test('a badge with no chain links to the site root rather than guessing one', () => {
+  // Guessing 'solana' would send a Base token's badge to a Solana profile page
+  // for the same address — a confidently wrong deep link.
+  const url = profileUrl('', SOLANA_MINT);
+  assert.doesNotMatch(url, /\/t\//);
+  assert.ok(url.endsWith('/'), `unexpected fallback URL: ${url}`);
 });
 
 test('the profile link is URL-encoded, so an address cannot inject a path', () => {
-  const url = profileUrl('abc/../../evil?x=1');
-  assert.doesNotMatch(url.split('/token/')[1], /[/?]/);
+  const url = profileUrl('solana', 'abc/../../evil?x=1');
+  assert.doesNotMatch(url.split('/t/solana/')[1], /[/?]/);
 });
 
 // ── Identity rules shared with the rest of the platform ─────────────────────
@@ -439,17 +467,28 @@ test('the widget renders its conservative state before the network answers', () 
 
 // ── Wiring that is easy to get silently wrong ───────────────────────────────
 
-test('the documented badge routes exist and none of them is a /t/ route', () => {
+test('the documented badge routes exist', () => {
   const toml = readFileSync(join(ROOT, 'netlify.toml'), 'utf8');
   assert.match(toml, /from = "\/badge\/:chain\/:contract"/);
   assert.match(toml, /from = "\/badge\/:projectId"/);
   // The widget asks for /badge-status; if this alias were dropped the widget
   // would fail silently on every embedding site.
   assert.match(toml, /from = "\/badge-status"/);
-  assert.doesNotMatch(toml, /from = "\/t\//);
 
   const widget = codeOnly(readFileSync(join(ROOT, 'public', 'badge.js'), 'utf8'));
   assert.match(widget, /'\/badge-status\?'/);
+});
+
+// Phase 4 replaced the old "there must be no /t/ route at all" assertion, which
+// existed to stop a SECOND canonical appearing. /t/ is now the ONLY canonical
+// and /token/ redirects to it, so the invariant is restated as what actually
+// matters: exactly one of the two may serve a page, and the other must redirect.
+test('exactly one token URL serves a page; the legacy one permanently redirects', () => {
+  const toml = readFileSync(join(ROOT, 'netlify.toml'), 'utf8');
+  assert.match(toml, /from = "\/t\/:chain\/:contract"/, 'the canonical profile route is missing');
+
+  const tokenPage = readFileSync(join(ROOT, 'netlify', 'functions', 'token-page.mjs'), 'utf8');
+  assert.match(tokenPage, /statusCode: 301/, '/token/<contract> must 301 to the canonical, not serve a competing page');
 });
 
 test('the two-segment badge route is declared before the one-segment route', () => {

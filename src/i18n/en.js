@@ -1724,6 +1724,23 @@ export default {
       title: '{{name}} got riskier',
       body: 'Trust Score is now {{score}}/100 ({{riskLevel}} risk), was {{previousScore}}/100 ({{previousRiskLevel}} risk).',
     },
+    // KHAN Trust verification changing on a token already on the watchlist.
+    // Three separate messages rather than one parameterised by state: a badge
+    // being granted, lapsing and being withdrawn are different events with
+    // different urgency, and one sentence with a swapped verb would read as
+    // machine output for all three.
+    verificationActive: {
+      title: '{{name}} is now verified',
+      body: 'The project proved ownership to KHAN Trust. Verification confirms who controls a token — it is not an endorsement or an audit.',
+    },
+    verificationExpired: {
+      title: '{{name}} verification expired',
+      body: 'This project was verified by KHAN Trust and its term has ended without renewal. Its badge now shows Expired.',
+    },
+    verificationRevoked: {
+      title: '{{name}} verification revoked',
+      body: 'KHAN Trust has withdrawn this project’s verification. It is no longer verified.',
+    },
     milestone: {
       title: 'Milestone reached',
       streak: 'You have checked in {{days}} days in a row. Consistent checking is how you catch a project turning early.',

@@ -32,6 +32,27 @@
 [functions."growth-analyze-cron"]
   schedule = "0 6 * * 1"
 
+# Phase 5 scheduled jobs. Both follow the same cron→background split as the two
+# above, and for the same reason: a scheduled function is capped at 30s and is
+# not HTTP-routable, so it fires a `-background` worker (15min) and returns.
+#
+# The schedules are also declared in each function's own `export const config`.
+# Netlify accepts either; both are present because this file is where an operator
+# looks to see what runs when, and the code is where a developer looks. They must
+# agree — if you change one, change the other.
+
+# Drains the durable outbox: receipts, transactional email, Telegram alerts,
+# Watchtower enrolment. Every 5 minutes, off the :00/:15/:30/:45 grid the
+# re-scan and alert pipeline already occupies.
+[functions."queue-worker-cron"]
+  schedule = "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
+
+# Expiry reminders (30/7/1 days), the expiry transition itself, renewal nudges,
+# and reconciliation of paid orders that never activated. Daily — everything it
+# decides is measured in days.
+[functions."verification-lifecycle-cron"]
+  schedule = "10 7 * * *"
+
 # Security headers (P1-3). Applied to every served path. These are all
 # zero-breakage for a same-origin SPA:
 #   - HSTS forces HTTPS for a year (Netlify already serves HTTPS-only).
@@ -87,6 +108,56 @@
     X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet"
     Cache-Control = "no-store"
 
+# ── Phase 4 indexing rules: everything that must NOT be indexed ──────────────
+#
+# robots.txt (public/robots.txt) asks a crawler not to FETCH these. This header
+# is what actually keeps them OUT OF THE INDEX, and the difference is the whole
+# reason both exist: a Disallow'd URL that is linked from anywhere can still be
+# listed — URL only, "no description available" — which for a private surface
+# advertises its existence while telling the operator nothing is wrong.
+#
+# A header is also the only mechanism that works for the machine surfaces here.
+# /badge-status and /og/* are not HTML and cannot carry a <meta name="robots">.
+
+# Per-customer purchase receipts. Contains an order id, amounts and a payment
+# reference; there is no version of this page that belongs in a search result.
+[[headers]]
+  for = "/receipt/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet"
+    Cache-Control = "no-store"
+
+# The sign-up entry point (referral links land here) and the email opt-out.
+# Both are functional endpoints, not content, and both would be thin duplicates
+# of "/" in an index.
+[[headers]]
+  for = "/signup"
+  [headers.values]
+    X-Robots-Tag = "noindex, follow"
+
+[[headers]]
+  for = "/unsubscribe"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive"
+    Cache-Control = "no-store"
+
+# The badge JSON transport. Public data, but a machine endpoint — indexing it
+# would put raw verification JSON into search results for a project's name.
+[[headers]]
+  for = "/badge-status"
+  [headers.values]
+    X-Robots-Tag = "noindex"
+
+# Every function invoked directly rather than through a clean path. This covers
+# the payment, ownership-verification, admin and account endpoints in one rule,
+# so a NEW endpoint is noindex by default rather than by somebody remembering to
+# add it here. That default is the point: the failure mode this prevents is a
+# future payment route being indexed because nobody thought about it.
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow, noarchive, nosnippet"
+
 # Immutable caching for build output (Phase 3 perf). Everything under /assets/
 # is content-hashed by Vite (e.g. react-vendor-Cw1fZvOf.js) - a changed file
 # always gets a new name - so it is safe to cache forever. Without this the
@@ -116,6 +187,43 @@
 [[redirects]]
   from = "/token/:contract"
   to = "/.netlify/functions/token-page?contract=:contract"
+  status = 200
+
+# ── Phase 4: the public token profile ────────────────────────────────────────
+#
+# /t/<chain>/<contract> is now THE canonical token page, and /token/<contract>
+# (above) 301s to it — see src/lib/publicProfile.js for why the chain segment is
+# not optional (the same 0x address is a different token on seven EVM chains,
+# and the old URL could not resolve any of them).
+#
+# Status 200 = transparent rewrite, so the clean URL is what users, crawlers and
+# social platforms see. Still additive and path-specific: there is deliberately
+# no catch-all "/*", so the hash-routed SPA at "/" is untouched.
+#
+# NO EDGE FUNCTION and no User-Agent negotiation on this path, unlike /token/*.
+# Everyone gets the same server-rendered HTML — a crawler, a human, and a human
+# with JavaScript disabled. Serving different bytes to different visitors on a
+# page that asserts someone's verification status is the wrong shape; see the
+# header of netlify/functions/token-profile.mjs.
+[[redirects]]
+  from = "/t/:chain/:contract"
+  to = "/.netlify/functions/token-profile"
+  status = 200
+
+# The social share card for a profile. Kept on its own path rather than a query
+# parameter so it can be cached, purged and (if it ever needs to be) served from
+# a different origin independently of the page.
+[[redirects]]
+  from = "/og/t/:chain/:contract"
+  to = "/.netlify/functions/profile-og"
+  status = 200
+
+# The purchase receipt. Server-rendered so it is readable, printable and
+# linkable from an email with no application shell to boot first — and noindex'd
+# below, because it is per-customer.
+[[redirects]]
+  from = "/receipt/:orderId"
+  to = "/.netlify/functions/receipt-page"
   status = 200
 
 [[redirects]]

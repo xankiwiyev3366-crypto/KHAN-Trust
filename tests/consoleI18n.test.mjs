@@ -54,6 +54,10 @@ test('az is actually translated, not copied English', () => {
     'login.passcode',            // "Parol" vs "Passcode" differ, but keep the set explicit
     'rec.roi', 'objectives.user_experience',
     'content.colToken', 'content.colTicker',
+    // Same reason as content.colToken above: "Status" and "Token" are the
+    // Azerbaijani words, not untranslated English. Listed explicitly rather
+    // than the check being loosened, so a genuinely-copied value still fails.
+    'verification.colStatus', 'verification.colToken', 'queue.colStatus',
   ]);
 
   const identical = paths(en)

@@ -13,6 +13,7 @@
 // that opens the live interactive report in the SPA (/?scan=<contract>, wired
 // additively in src/main.jsx); crawlers get fully-rendered HTML.
 import { getCorpusToken, jsonResponse } from './_tokenCorpusStore.mjs';
+import { profileUrlFor } from '../../src/lib/publicProfile.js';
 
 const SITE_URL = (process.env.URL || 'https://khantrust.net').replace(/\/$/, '');
 
@@ -158,17 +159,71 @@ ${updated ? `<p><strong>Last analyzed:</strong> ${updated}</p>` : ''}
 </html>`;
 }
 
+// PHASE 4: THIS SURFACE IS NOW A PERMANENT REDIRECT, NOT A PAGE.
+//
+// /t/<chain>/<contract> is the canonical token profile (src/lib/publicProfile.js
+// explains why the chain segment is not optional). This URL is not deleted —
+// src/lib/routes.js records the rule that "a URL that has been sent to someone
+// is a promise", and there are badges embedded on third-party sites and links
+// shared in chats pointing here. It becomes a 301, which is also the only
+// redirect shape that TRANSFERS this URL's accumulated ranking to the canonical
+// instead of leaving two pages competing.
+//
+// ── RESOLVING THE CHAIN, WHICH THIS URL NEVER CARRIED ───────────────────────
+//
+// The redirect needs a chain and the path has none. It is looked up in the
+// corpus, trying Solana's bare `c:<addr>` identity first because that is the
+// spelling every record written before multi-chain used, then each supported
+// chain's prefixed form.
+//
+// When the chain CANNOT be resolved — a token we have never scanned — there is
+// nothing to redirect to that would not be a guess, and guessing would send a
+// Base token's visitors to a Solana profile. So the old page is still rendered,
+// unchanged, with `noindex`: it stays useful to the human who followed the link
+// while never competing with a canonical for a token we do not know.
+const REDIRECT_CHAINS = ['ethereum', 'base', 'bsc', 'arbitrum', 'optimism', 'polygon', 'avalanche', 'sui', 'aptos'];
+
+export async function resolveChainForContract(contract) {
+  // Solana first and separately: its identity is the bare `c:<addr>`, and it is
+  // both the most common case and the only one whose key shape is ambiguous.
+  const solana = await getCorpusToken(normalizeIdentity(contract)).catch(() => null);
+  if (solana) return { chain: solana.chain || 'solana', token: solana };
+
+  for (const chain of REDIRECT_CHAINS) {
+    const record = await getCorpusToken(`c:${chain}:${String(contract).toLowerCase()}`).catch(() => null);
+    if (record) return { chain, token: record };
+  }
+  return { chain: '', token: null };
+}
+
 export async function handler(event) {
   try {
-    if (event.httpMethod !== 'GET') {
+    if (event.httpMethod !== 'GET' && event.httpMethod !== 'HEAD') {
       return jsonResponse(405, { message: 'Method not allowed' });
     }
     const contract = resolveContract(event);
     if (!contract) {
       return { statusCode: 400, headers: { 'Content-Type': 'text/plain' }, body: 'Missing token' };
     }
-    const identity = normalizeIdentity(contract);
-    const token = await getCorpusToken(identity);
+
+    const { chain, token } = await resolveChainForContract(contract);
+    if (chain) {
+      const target = profileUrlFor(SITE_URL, chain, contract);
+      return {
+        statusCode: 301,
+        headers: {
+          Location: target,
+          // Cached, but not forever. A 301 is permanent to a crawler and browsers
+          // cache it aggressively; a bounded max-age keeps a mistake correctable
+          // within a day rather than for the lifetime of every visitor's cache.
+          'Cache-Control': 'public, max-age=86400',
+        },
+        // A body on a 301 is only read by clients that do not follow redirects.
+        // A one-line pointer is more useful to those than an empty response.
+        body: `Moved permanently to ${target}`,
+      };
+    }
+
     const html = renderTokenHtml(token, { contract });
     return {
       statusCode: 200,
@@ -177,10 +232,14 @@ export async function handler(event) {
         // Short edge cache so crawlers/users get fast responses without the
         // corpus going stale (mirrors the site's near-real-time posture).
         'Cache-Control': 'public, max-age=120, s-maxage=300',
+        // Unresolvable chain: useful to a human, never a competing canonical.
+        'X-Robots-Tag': 'noindex,follow',
       },
       body: html,
     };
   } catch (error) {
-    return { statusCode: 500, headers: { 'Content-Type': 'text/plain' }, body: `token-page error: ${error.message}` };
+    // No internals in the response body. The detail goes to the function log.
+    console.error(`[token-page] failed: ${error.stack || error.message}`);
+    return { statusCode: 503, headers: { 'Content-Type': 'text/plain', 'Retry-After': '120' }, body: 'Temporarily unavailable' };
   }
 }

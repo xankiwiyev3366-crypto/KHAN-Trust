@@ -61,7 +61,35 @@ import {
   verificationTierUsd,
   premiumBonusExpiry,
 } from '../../src/lib/verificationTiers.js';
+import { recordEvent } from './_productEvents.mjs';
+import { enqueue } from './_eventQueue.mjs';
+import { JOB_TYPES, MAIL_STAGES } from './_queueHandlers.mjs';
+import { PRODUCT_EVENTS } from '../../src/lib/productEvents.js';
+import { PROFILE_VERIFICATION, profileUrlFor } from '../../src/lib/publicProfile.js';
+import { siteOrigin } from './_badgeState.mjs';
 import crypto from 'node:crypto';
+
+// PHASE 5 ADDITION, AND THE ONE RULE IT FOLLOWS.
+//
+// This handler now emits funnel events and queues receipts, email and operator
+// alerts. NONE of that may change whether an activation succeeds. Every call
+// below is fire-and-forget with its rejection swallowed, and every one of them
+// writes to a DURABLE queue rather than calling a provider — so "the email was
+// not sent" is impossible here: either the job is on the queue, or the enqueue
+// failed and was logged, and neither outcome touches the buyer's badge.
+//
+// The alternative — awaiting Resend and Telegram inline — would make a customer
+// who has just paid $149 wait on two third-party APIs to find out whether they
+// own a badge, and would fail their purchase when one of those APIs was down.
+function fireAndForget(promises, label) {
+  Promise.allSettled(promises).then((results) => {
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        console.warn(`[verify-activate] ${label} side effect failed (non-fatal): ${result.reason?.message || result.reason}`);
+      }
+    }
+  });
+}
 
 function treasury() {
   return process.env.VERIFY_TREASURY_WALLET || process.env.VITE_KHAN_PAYMENT_WALLET || '';
@@ -169,6 +197,25 @@ export async function handler(event) {
         });
       }
       await markSignatureUsed(signature, settlement.buyerWallet);
+      // The payment is confirmed on chain. Emitted here rather than after
+      // activation because they are genuinely different funnel stages — an order
+      // that pays and then fails ownership proof must count as a payment, or the
+      // gap between "paid" and "activated" (the exact number that says whether
+      // ownership proof is too hard) disappears from the funnel.
+      //
+      // NO SIGNATURE, no wallet, no amount-in-token on the event. See
+      // FORBIDDEN_METADATA_KEYS in src/lib/productEvents.js: analytics is the
+      // longest-lived, least-guarded store in the system and a transaction
+      // signature is a permanent public identifier for a person's wallet.
+      fireAndForget([
+        recordEvent({
+          name: PRODUCT_EVENTS.VERIFICATION_PAYMENT_CONFIRMED,
+          orderId: order.id,
+          chain: order.chain,
+          contract: order.contract,
+          metadata: { tier: order.tierId, usd: order.usd },
+        }),
+      ], 'payment-confirmed');
     }
 
     // ── 3. Exclusivity, only now that money has actually moved ──────────────
@@ -191,6 +238,24 @@ export async function handler(event) {
       };
       await putOrder(duplicate);
       console.warn(`[verify-activate] duplicate sale on ${order.contractKey} (enforcedBy=${claim.enforcedBy}, heldBy=${claim.heldBy}) — order ${order.id} is refundable, signature ${signature}`);
+      // A duplicate sale is money taken for something that cannot be delivered.
+      // The operator alert is queued rather than sent inline for the usual
+      // reason, but it is the single highest-priority notification this system
+      // produces: until a human refunds it, a real customer is out $149.
+      fireAndForget([
+        enqueue({
+          type: JOB_TYPES.ADMIN_ALERT,
+          dedupKey: `alert:duplicate:${order.id}`,
+          payload: { kind: 'duplicate_sale', orderId: order.id, ctx: {} },
+        }),
+        recordEvent({
+          name: PRODUCT_EVENTS.VERIFICATION_PAYMENT_DETECTED,
+          orderId: order.id,
+          chain: order.chain,
+          contract: order.contract,
+          metadata: { outcome: 'duplicate', tier: order.tierId },
+        }),
+      ], 'duplicate');
       return jsonResponse(409, {
         message: 'Another verification for this contract was completed first. Your payment is recorded and refundable.',
         reason: 'duplicate',
@@ -252,6 +317,39 @@ export async function handler(event) {
       statuses[projectId] = { status: 'pending', updatedAt: request.createdAt, adminNote: '' };
       await writeStatuses(statuses);
 
+      // The receipt is generated for a PAID order, not only an active one. The
+      // customer has parted with money and is entitled to proof of that now,
+      // not conditionally on a review they do not control the timing of.
+      fireAndForget([
+        enqueue({
+          type: JOB_TYPES.RECEIPT_ENSURE,
+          dedupKey: `receipt:${order.id}`,
+          payload: { orderId: order.id },
+        }),
+        enqueue({
+          type: JOB_TYPES.MAIL_SEND,
+          dedupKey: `mail:${order.id}:${MAIL_STAGES.PAYMENT_CONFIRMED}`,
+          payload: { orderId: order.id, stage: MAIL_STAGES.PAYMENT_CONFIRMED },
+        }),
+        enqueue({
+          type: JOB_TYPES.MAIL_SEND,
+          dedupKey: `mail:${order.id}:${MAIL_STAGES.OWNERSHIP_REQUIRED}`,
+          payload: { orderId: order.id, stage: MAIL_STAGES.OWNERSHIP_REQUIRED },
+        }),
+        enqueue({
+          type: JOB_TYPES.ADMIN_ALERT,
+          dedupKey: `alert:review:${order.id}`,
+          payload: { kind: 'ownership_review', orderId: order.id, ctx: {} },
+        }),
+        recordEvent({
+          name: PRODUCT_EVENTS.VERIFICATION_OWNERSHIP_STARTED,
+          orderId: order.id,
+          chain: order.chain,
+          contract: order.contract,
+          metadata: { method: ownershipMethod, tier: order.tierId },
+        }),
+      ], 'paid');
+
       return jsonResponse(200, {
         ok: true,
         status: ORDER_STATUS.PAID,
@@ -307,12 +405,78 @@ export async function handler(event) {
       }).catch(() => ({ granted: false, reason: 'error' }));
     }
 
+    // ── Everything that happens AFTER the badge is live ─────────────────────
+    //
+    // Receipt, email, operator alerts, Watchtower enrolment and the watcher
+    // notification. All queued, none awaited: the buyer's response is already
+    // determined and must not be delayed or endangered by any of it.
+    //
+    // The Premium bonus is deliberately NOT moved onto the queue. It is granted
+    // inline above, exactly as it was before Phase 5, because it is an
+    // ENTITLEMENT the buyer paid for — part of the product, not a notification
+    // about it — and the response reports whether it was granted. grantTimedBonus
+    // is already idempotent and monotonic (it never shortens an existing
+    // entitlement), so a retried activation cannot duplicate or downgrade it.
+    fireAndForget([
+      enqueue({
+        type: JOB_TYPES.RECEIPT_ENSURE,
+        dedupKey: `receipt:${active.id}`,
+        payload: { orderId: active.id },
+      }),
+      enqueue({
+        type: JOB_TYPES.MAIL_SEND,
+        dedupKey: `mail:${active.id}:${MAIL_STAGES.ACTIVATED}`,
+        payload: { orderId: active.id, stage: MAIL_STAGES.ACTIVATED },
+      }),
+      enqueue({
+        type: JOB_TYPES.ADMIN_ALERT,
+        dedupKey: `alert:activated:${active.id}`,
+        payload: { kind: 'activated', orderId: active.id, ctx: {} },
+      }),
+      enqueue({
+        type: JOB_TYPES.WATCH_ENROLL,
+        dedupKey: `enroll:${active.id}`,
+        payload: { orderId: active.id },
+      }),
+      enqueue({
+        type: JOB_TYPES.WATCH_STATUS,
+        dedupKey: `watch:${active.contractKey}:active`,
+        payload: {
+          chain: active.chain,
+          contract: active.contract,
+          state: PROFILE_VERIFICATION.ACTIVE,
+          at: active.activatedAt,
+        },
+      }),
+      recordEvent({
+        name: PRODUCT_EVENTS.VERIFICATION_OWNERSHIP_COMPLETED,
+        orderId: active.id,
+        chain: active.chain,
+        contract: active.contract,
+        metadata: { method: ownershipMethod },
+      }),
+      recordEvent({
+        name: PRODUCT_EVENTS.VERIFICATION_ACTIVATED,
+        orderId: active.id,
+        chain: active.chain,
+        contract: active.contract,
+        // `usd` and `tier` are what the revenue-by-tier report is built from.
+        // Read off the order rather than recomputed from the tier table later,
+        // so a future price change cannot retroactively rewrite historic revenue.
+        metadata: { tier: active.tierId, usd: active.usd, method: ownershipMethod },
+      }),
+    ], 'activated');
+
     return jsonResponse(200, {
       ok: true,
       status: ORDER_STATUS.ACTIVE,
       ownershipMethod,
       order: publicOrder(active),
       premiumBonus: bonus,
+      // Where the buyer can see what they just bought. Additive — existing
+      // clients ignore fields they do not know about.
+      receiptUrl: `${siteOrigin()}/receipt/${encodeURIComponent(active.id)}`,
+      profileUrl: profileUrlFor(siteOrigin(), active.chain, active.contract),
     });
   } catch (error) {
     return jsonResponse(500, { message: `verify-order-activate crashed: ${error.message}` });

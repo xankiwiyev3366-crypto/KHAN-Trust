@@ -1,4 +1,44 @@
+# KHAN Trust — crawler policy.
+#
+# The public token profiles at /t/<chain>/<contract> are the indexable surface
+# and are deliberately left open. Everything below is disallowed because it is
+# private, transactional, or a page that would be duplicate/thin in the index.
+#
+# NOTE ON WHAT Disallow ACTUALLY DOES. It stops a compliant crawler FETCHING a
+# path; it does not remove a URL already known from being listed. So every
+# private surface below ALSO carries an X-Robots-Tag: noindex header (see
+# netlify.toml) and, where it is a page we render, a robots meta tag. Disallow
+# alone would leave /console listed in search results with "no description
+# available" — advertising that it exists, which is precisely what it must not
+# do. The header is the control; this file is the polite request.
+
 User-agent: *
 Allow: /
+
+# The private Growth OS console and its bundle entry point.
+Disallow: /console
+Disallow: /admin.html
+
+# Transactional and account surfaces. Nothing here is useful in a search result
+# and all of it is either per-user or mid-purchase.
+Disallow: /receipt/
+Disallow: /signup
+Disallow: /unsubscribe
+
+# Machine endpoints. Not pages, and a crawler fetching them wastes crawl budget
+# that should be spent on token profiles.
+Disallow: /.netlify/
+Disallow: /badge-status
+
+# /og/ is deliberately NOT disallowed. Twitterbot, facebookexternalhit and
+# Slackbot all honour robots.txt when fetching og:image, so blocking that path
+# would silently strip the preview image from every shared token link — the exact
+# opposite of what the share-card system is for.
+Allow: /og/
+
+# The SPA's own deep-link query. /?scan=<contract> renders the same interactive
+# report as the canonical profile for that token, so leaving it crawlable would
+# put a JavaScript-only duplicate of every /t/ page into the index.
+Disallow: /*?scan=
 
 Sitemap: https://khantrust.net/sitemap.xml

@@ -32,7 +32,9 @@
 // — let an unscored token through a floor it was never measured against.
 import { getCorpusToken, jsonResponse } from './_tokenCorpusStore.mjs';
 import { findActiveOrderForContract, contractKey } from './_verificationOrders.mjs';
+import { recordEvent } from './_productEvents.mjs';
 import { tokenIdentity } from '../../src/lib/tokenIdentity.js';
+import { PRODUCT_EVENTS } from '../../src/lib/productEvents.js';
 import {
   VERIFICATION_TIERS,
   DEFAULT_VERIFY_MIN_SCORE,
@@ -122,6 +124,22 @@ export async function handler(event) {
         tiers: publicTiers(),
       });
     }
+
+    // The top of the verification funnel. Only an ELIGIBLE quote is recorded —
+    // `needs_scan` and `below_floor` are refusals, and counting them as quotes
+    // would put every high-risk token that was turned away into the denominator
+    // of the conversion rate, making the funnel look broken while it was working
+    // exactly as designed.
+    //
+    // Fire-and-forget: this endpoint is public and unauthenticated, and a
+    // telemetry write must never delay or fail a price quote.
+    recordEvent({
+      name: PRODUCT_EVENTS.VERIFICATION_QUOTE_CREATED,
+      chain,
+      contract,
+      source: event.headers?.referer || event.headers?.Referer || '',
+      metadata: { score, minScore: floor },
+    }).catch(() => {});
 
     return jsonResponse(200, {
       eligible: true,

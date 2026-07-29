@@ -17,6 +17,7 @@
 // says, it would say whatever that page wanted, and every badge on the internet
 // would be worthless.
 import { isVerificationActive } from '../../src/lib/verificationTiers.js';
+import { profileUrlFor } from '../../src/lib/publicProfile.js';
 
 // The five truthful states, and nothing else.
 //
@@ -146,19 +147,37 @@ export function resolveBadgeState(record, now = Date.now()) {
 
 // ── The canonical profile link ──────────────────────────────────────────────
 //
-// /token/<contract> — the surface that already exists, already has an edge
-// router, OG/JSON-LD meta and a sitemap, and already has links in the wild.
+// /t/<chain>/<contract> — see src/lib/publicProfile.js for the full reasoning.
 //
-// DELIBERATELY NOT /t/<chain>/<contract>. A second URL for the same token
-// splits ranking between two canonical pages and competes with itself, which is
-// precisely the SEO harm the badge programme is meant to avoid — every embed is
-// a backlink, and backlinks pointing at a duplicate are worth less than none.
+// THIS REVERSES WHAT PHASE 3 WROTE HERE, AND THE OLD ARGUMENT IS STILL RIGHT.
+//
+// It said: do not point badges at /t/<chain>/<contract>, because "a second URL
+// for the same token splits ranking between two canonical pages and competes
+// with itself" — and every embed is a backlink, so backlinks pointing at a
+// duplicate are worth less than none.
+//
+// That objection is to having TWO canonicals. It is answered by having ONE:
+// token-page.mjs now issues a permanent 301 from /token/<contract> to the URL
+// below, which is the redirect shape that TRANSFERS accumulated ranking rather
+// than competing with it. Existing embeds in the wild keep working and their
+// link equity follows them here.
+//
+// What forced the change is that /token/<contract> is not merely a different
+// spelling, it is wrong: the same 0x address exists on seven EVM chains, so one
+// URL claimed to be the trust page for up to seven different tokens — and the
+// corpus lookup behind it derived a Solana-shaped identity, so it could never
+// resolve an EVM token at all.
 export function siteOrigin() {
   return String(process.env.URL || 'https://khantrust.net').replace(/\/+$/, '');
 }
 
-export function profileUrl(contract) {
-  return `${siteOrigin()}/token/${encodeURIComponent(contract)}`;
+// CHAIN IS REQUIRED. It has no default — not even 'solana', which was the old
+// implicit one. A badge that guessed the chain would link a Base token's badge
+// to a Solana profile page for the same address, which is the precise failure
+// this URL shape exists to prevent. A caller without a chain gets the site root,
+// which is honest, rather than a confidently wrong deep link.
+export function profileUrl(chain, contract) {
+  return profileUrlFor(siteOrigin(), chain, contract) || `${siteOrigin()}/`;
 }
 
 // The status map is keyed by projectId, and paid verification writes

@@ -207,6 +207,15 @@ import {
   trackCryptoVerifyFailed,
   trackPixelPurchase,
 } from './analytics.js';
+// Product events: KHAN Trust's OWN funnel store, not GA/Meta. See
+// src/productEvents.js for why both exist and why this one cannot be replaced
+// by an ad platform.
+import {
+  trackScanStarted,
+  trackScanCompleted,
+  trackScanFailed,
+  trackUpgradeClicked,
+} from './productEvents.js';
 import { isCardPaymentEnabled, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
@@ -1421,6 +1430,7 @@ async function startPremiumUpgrade({ navigate, project, plan = 'premium', wallet
 
 function handleUnlockPremiumClick(project, wallet) {
   trackPremiumClick();
+  trackUpgradeClicked('premium', 'unlock_button');
   growth.premiumClick();
   return handleCheckout('premium', wallet);
 }
@@ -1843,6 +1853,7 @@ function App() {
     const report = beginScan();
     setSearchState({ status: 'loading', message: t('search.fetching') });
     trackTokenScanStarted(match.address);
+    trackScanStarted({ contract: match.address, chain: match.chainId });
     trackSearchEvent(match.address);
     growth.search(match.address);
     try {
@@ -1851,6 +1862,7 @@ function App() {
       setUserProjects((items) => upsertProject(items, liveProject));
       setSearchState({ status: 'success', message: t('search.successOpened', { name: liveProject.name || liveProject.ticker }) });
       trackTokenScanCompleted(match.address, 'success');
+      trackScanCompleted({ contract: match.address, chain: liveProject.chain, trustScore: liveProject.trustScore, riskLevel: liveProject.riskLevel });
       trackTokenScanEvent(liveProject);
       growth.scanCompleted(liveProject);
       report.complete('finalize');
@@ -1858,6 +1870,7 @@ function App() {
     } catch (error) {
       setSearchState({ status: 'error', message: error.message || t('search.errorNone') });
       trackTokenScanCompleted(match.address, 'error');
+      trackScanFailed({ contract: match.address, reason: 'lookup_failed' });
       navigate('explore');
     }
   };
@@ -1880,6 +1893,7 @@ function App() {
       const report = beginScan();
       setSearchState({ status: 'loading', message: t('search.fetching') });
       trackTokenScanStarted(term);
+      trackScanStarted({ contract: term });
       trackSearchEvent(term);
       growth.search(term);
       try {
@@ -1888,6 +1902,7 @@ function App() {
         setUserProjects((items) => upsertProject(items, liveProject));
         setSearchState({ status: 'success', message: t('search.successOpened', { name: liveProject.name || liveProject.ticker }) });
         trackTokenScanCompleted(term, 'success');
+        trackScanCompleted({ contract: term, chain: liveProject.chain, trustScore: liveProject.trustScore, riskLevel: liveProject.riskLevel });
         trackTokenScanEvent(liveProject);
         growth.scanCompleted(liveProject);
         report.complete('finalize');
@@ -1895,6 +1910,7 @@ function App() {
       } catch (error) {
         setSearchState({ status: 'error', message: error.message || t('search.errorNone') });
         trackTokenScanCompleted(term, 'error');
+        trackScanFailed({ contract: term, reason: 'lookup_failed' });
         navigate('explore');
       }
       return;
@@ -1953,12 +1969,14 @@ function App() {
 
     try {
       trackTokenScanStarted(term);
+      trackScanStarted({ contract: term });
       trackSearchEvent(term);
       growth.search(term);
       const liveLookup = await lookupTokenByAddress(term);
       const liveProject = normalizeProject(mergeStoredMetadata(liveLookup, findStoredProject(userProjects, liveLookup)));
       setUserProjects((items) => upsertProject(items, liveProject));
       trackTokenScanCompleted(term, 'success');
+      trackScanCompleted({ contract: term, chain: liveProject.chain, trustScore: liveProject.trustScore, riskLevel: liveProject.riskLevel });
       trackTokenScanEvent(liveProject);
       growth.scanCompleted(liveProject);
       navigate(`report/${liveProject.id}`);
@@ -1977,6 +1995,7 @@ function App() {
         return { status: 'success', message: t('checkToken.successCachedLive', { name: existingProject.name || existingProject.ticker }) };
       }
       trackTokenScanCompleted(term, 'live-unavailable');
+      trackScanFailed({ contract: term, reason: 'live_unavailable' });
       return { status: 'error', message: t('checkToken.liveUnavailable') };
     }
   };

@@ -65,6 +65,19 @@ export function tokenContractFromPath(pathname) {
 //   'spa'         — a human browser: serve the React SPA at the same URL, which
 //                   reads the contract from the pathname and loads the live
 //                   report (see the deep-link effect in src/main.jsx).
+//
+// PHASE 4 NOTE. /token/<contract> is no longer a destination — the token-page
+// function now 301s it to the canonical /t/<chain>/<contract>. The UA split
+// below is therefore vestigial for crawlers (they follow the 301 to the fully
+// server-rendered profile) but is KEPT for humans, because it is what stops a
+// person who clicks an old shared link from landing on a bare redirect: they
+// still get the interactive SPA at the URL they arrived on.
+//
+// The new /t/* surface deliberately has NO edge router and NO UA sniffing.
+// Everyone — crawler, human, human with JavaScript disabled — receives the same
+// server-rendered HTML. See the header of netlify/functions/token-profile.mjs
+// for why serving different bytes to different visitors is the wrong shape for a
+// page that asserts someone's verification status.
 export function resolveTokenRoute({ pathname, userAgent }) {
   const contract = tokenContractFromPath(pathname);
   if (!contract) return { mode: 'passthrough' };

@@ -121,6 +121,14 @@ export const RATE_POLICIES = {
   // being limited. Fails open like every policy here — the hard monthly ceiling
   // in _aiBudget fails CLOSED and is the actual backstop on spend.
   premium_analysis_user: { max: 30, windowMs: 10 * MINUTE },
+  // Client-side product event tracking (Phase 5). A public, unauthenticated
+  // beacon, so this is a runaway/abuse guard rather than a behavioural limit: a
+  // busy session emits a handful of events a minute and this sits far above
+  // that. Per IP, not per session — a session id is client-supplied and
+  // trivially rotated, so limiting on it would limit nothing. Fails open like
+  // every policy here; the endpoint's real protections are the client-emittable
+  // allowlist and metadata sanitisation, not the rate limit.
+  events_track_ip: { max: 240, windowMs: 5 * MINUTE },
 };
 
 // Convenience wrapper: enforce one named policy for one identifier.

@@ -25,7 +25,9 @@ import { getCorpusToken } from './_tokenCorpusStore.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { provenWallet } from './_walletSession.mjs';
 import { accountSubject } from './_entitlementsStore.mjs';
+import { recordEvent } from './_productEvents.mjs';
 import { tokenIdentity } from '../../src/lib/tokenIdentity.js';
+import { PRODUCT_EVENTS } from '../../src/lib/productEvents.js';
 import {
   getVerificationTier,
   DEFAULT_VERIFY_MIN_SCORE,
@@ -136,6 +138,18 @@ export async function handler(event) {
       projectId: String(payload.projectId || '').trim(),
     });
     await putOrder(order);
+
+    // Intent to buy. The stage between a quote and a payment, and the one whose
+    // drop-off rate says whether the payment step itself is the problem.
+    // Fire-and-forget — an order must never fail to be created because a
+    // telemetry write did.
+    recordEvent({
+      name: PRODUCT_EVENTS.VERIFICATION_ORDER_CREATED,
+      orderId: order.id,
+      chain: order.chain,
+      contract: order.contract,
+      metadata: { tier: order.tierId, usd: order.usd, score: record.trustScore },
+    }).catch(() => {});
 
     return jsonResponse(200, {
       ok: true,

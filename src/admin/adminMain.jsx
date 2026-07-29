@@ -11,8 +11,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  Activity, ArrowRight, BrainCircuit, Filter, Lock, Rocket,
-  Target, Users, Youtube, ListChecks, LogOut,
+  ArrowRight, BadgeCheck, BrainCircuit, Filter, Lock,
+  Target, Users, Youtube, ListChecks, Layers, LogOut,
 } from 'lucide-react';
 
 import '../styles.css';
@@ -28,6 +28,8 @@ import RetentionPage from './pages/RetentionPage.jsx';
 import AcquisitionPage from './pages/AcquisitionPage.jsx';
 import ContentEnginePage from './pages/ContentEnginePage.jsx';
 import InitiativesPage from './pages/InitiativesPage.jsx';
+import VerificationPage from './pages/VerificationPage.jsx';
+import QueuePage from './pages/QueuePage.jsx';
 
 // One nav entry per module. `id` doubles as the hash route (#/funnel) and as
 // the translation key (nav.funnel). Labels are resolved at render time, not
@@ -40,6 +42,10 @@ const NAV = [
   { id: 'acquisition', icon: Target, Component: AcquisitionPage },
   { id: 'content', icon: Youtube, Component: ContentEnginePage },
   { id: 'initiatives', icon: ListChecks, Component: InitiativesPage },
+  // Phase 5. The commercial and operational half of the console: what paid
+  // verification sold, and whether the machinery behind it is delivering.
+  { id: 'verification', icon: BadgeCheck, Component: VerificationPage },
+  { id: 'queue', icon: Layers, Component: QueuePage },
 ];
 
 function LoginScreen({ onAuthenticated }) {

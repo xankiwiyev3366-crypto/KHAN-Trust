@@ -8,13 +8,11 @@
 // honor admin-granted Premium users, who may have no wallet at all - the
 // server resolves identity from wallet OR account (see _premiumAccess.mjs).
 import { getCachedWalletToken, ensureWalletToken, walletAuthHeaders } from './walletSession.js';
+import { isDevFunctionUnavailable } from './devFallback.js';
 
 const FALLBACK_KEY = 'khan-trust-userdata-fallback-v1';
 const AUTH_TOKEN_KEY = 'khan-trust-auth-token-v1';
 
-function isFunctionUnavailable(error) {
-  return Boolean(error) && (error.status === undefined || error.status === 404);
-}
 
 function authHeaders() {
   try {
@@ -71,7 +69,7 @@ export async function fetchUserData(wallet) {
       headers: walletAuthHeaders(walletToken),
     });
   } catch (error) {
-    if (!isFunctionUnavailable(error)) throw error;
+    if (!isDevFunctionUnavailable(error)) throw error;
     const store = readFallbackStore();
     return store[wallet || 'self'] || { savedReports: [], watchlist: [] };
   }
@@ -94,7 +92,7 @@ async function performAction(wallet, body) {
     // Mirrors the entitlement-aware write the real function performs so the
     // flow is testable end-to-end locally - intentionally not gated by
     // entitlement here since there's no local entitlement store to check.
-    if (!isFunctionUnavailable(error)) throw error;
+    if (!isDevFunctionUnavailable(error)) throw error;
     const key = wallet || 'self';
     const store = readFallbackStore();
     const data = store[key] || { savedReports: [], watchlist: [] };

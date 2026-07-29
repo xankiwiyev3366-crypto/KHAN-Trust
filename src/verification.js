@@ -14,6 +14,8 @@
 // swap in a real database behind the Netlify functions later without touching
 // any UI code.
 
+import { isDevFunctionUnavailable } from './devFallback.js';
+
 export const VERIFICATION_STATUS = {
   UNVERIFIED: 'unverified',
   PENDING: 'pending',
@@ -57,16 +59,6 @@ function writeFallbackStore(store) {
   }
 }
 
-// Only treat the backend as "unavailable" (eligible for the dev-only
-// localStorage fallback) when the function genuinely could not be reached:
-// a network-level failure (no response.status at all, e.g. plain `vite dev`
-// with no Netlify Functions server) or a 404 because the route doesn't
-// exist. Any other status (400/401/500/502...) means the function DID run
-// and returned a real error - that must surface to the caller, not be
-// silently swallowed into the fallback store.
-function isFunctionUnavailable(error) {
-  return Boolean(error) && (error.status === undefined || error.status === 404);
-}
 
 async function callFunction(path, options) {
   const response = await fetch(`/.netlify/functions/${path}`, options);
@@ -130,7 +122,7 @@ export async function submitVerificationRequest(payload) {
       body: JSON.stringify(payload),
     });
   } catch (error) {
-    if (!isFunctionUnavailable(error)) throw error;
+    if (!isDevFunctionUnavailable(error)) throw error;
     const store = readFallbackStore();
     const request = {
       ...payload,
@@ -165,7 +157,7 @@ export async function adminLogin(passcode) {
     sessionStorage.setItem(ADMIN_TOKEN_KEY, data.token);
     return data.token;
   } catch (error) {
-    if (!isFunctionUnavailable(error)) throw error;
+    if (!isDevFunctionUnavailable(error)) throw error;
     if (passcode !== DEV_FALLBACK_ADMIN_PASSCODE) {
       throw new Error('Incorrect passcode.');
     }
@@ -190,7 +182,7 @@ export async function fetchPendingRequests(token) {
     });
     return data.requests || [];
   } catch (error) {
-    if (!isFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
+    if (!isDevFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
     const store = readFallbackStore();
     return store.requests.filter((request) => request.status === VERIFICATION_STATUS.PENDING);
   }
@@ -203,7 +195,7 @@ export async function fetchAllRequests(token) {
     });
     return data.requests || [];
   } catch (error) {
-    if (!isFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
+    if (!isDevFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
     return readFallbackStore().requests;
   }
 }
@@ -216,7 +208,7 @@ export async function reviewVerificationRequest(token, { requestId, decision, ad
       body: JSON.stringify({ requestId, decision, adminNote }),
     });
   } catch (error) {
-    if (!isFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
+    if (!isDevFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
     const store = readFallbackStore();
     const request = store.requests.find((item) => item.id === requestId);
     if (!request) throw new Error('Request not found.');

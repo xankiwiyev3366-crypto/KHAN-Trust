@@ -4,6 +4,8 @@
 // server) calls transparently fall back to a localStorage-backed mock with
 // the same shape, so the full flow is still testable end-to-end in dev.
 
+import { isDevFunctionUnavailable } from './devFallback.js';
+
 export const REPORT_CATEGORIES = [
   { id: 'incorrect_info', label: 'Incorrect Information' },
   { id: 'missing_info', label: 'Missing Information' },
@@ -39,9 +41,6 @@ function writeFallbackStore(store) {
   }
 }
 
-function isFunctionUnavailable(error) {
-  return Boolean(error) && (error.status === undefined || error.status === 404);
-}
 
 async function callFunction(path, options) {
   const response = await fetch(`/.netlify/functions/${path}`, options);
@@ -96,7 +95,7 @@ export async function submitReport(payload) {
       body: JSON.stringify(payload),
     });
   } catch (error) {
-    if (!isFunctionUnavailable(error)) throw error;
+    if (!isDevFunctionUnavailable(error)) throw error;
     const store = readFallbackStore();
     const now = new Date().toISOString();
     const report = {
@@ -136,7 +135,7 @@ export async function fetchReports(token, { status = 'all', category = 'all', pr
       headers: { Authorization: `Bearer ${token}` },
     });
   } catch (error) {
-    if (!isFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
+    if (!isDevFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
     const store = readFallbackStore();
     let reports = store.reports;
     if (status !== 'all') reports = reports.filter((report) => report.status === status);
@@ -170,7 +169,7 @@ export async function fetchReportDetail(token, id) {
     });
     return data.report;
   } catch (error) {
-    if (!isFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
+    if (!isDevFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
     const store = readFallbackStore();
     return store.reports.find((report) => report.id === id) || null;
   }
@@ -184,7 +183,7 @@ async function performAdminAction(token, body) {
       body: JSON.stringify(body),
     });
   } catch (error) {
-    if (!isFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
+    if (!isDevFunctionUnavailable(error) || !token.startsWith('dev-fallback-')) throw error;
     const store = readFallbackStore();
     const index = store.reports.findIndex((report) => report.id === body.reportId);
     if (index === -1) throw new Error('Report not found.');

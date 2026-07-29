@@ -210,6 +210,7 @@ import {
 import { isCardPaymentEnabled, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
+import { fetchVerificationQuote, createVerificationOrder, activateVerificationOrder } from './verifyOrders.js';
 import { planUsdAmount, PLAN_USD_AMOUNT } from './lib/pricing.js';
 import { resolveTokenAge, exactLaunchDate } from './lib/tokenAge.js';
 import { fetchEntitlement, fetchAccountEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
@@ -402,7 +403,14 @@ const navItems = [
   { id: 'launchpad', icon: Sparkles },
   { id: 'whitepaper', icon: BookOpen },
   { id: 'about', icon: Info },
-  { id: 'khan', icon: Star },
+  // The token-team entry point. Sits beside Pricing rather than in the sidebar:
+  // the sidebar is the signed-in trader's workspace, and verification is sold
+  // to a different person entirely.
+  { id: 'verify', icon: BadgeCheck },
+  // '$KHAN' was a nav entry here — a permanent link promoting a token from
+  // inside the product that rates tokens. The #/khan route still resolves (a
+  // URL that has been shared is a promise, see src/lib/routes.js), it is simply
+  // no longer advertised on every screen.
   { id: 'support', icon: LifeBuoy },
 ];
 
@@ -2134,6 +2142,7 @@ function App() {
         {page === 'add' && pageAuthReady && <AddProjectPage onAdd={addProject} navigate={navigate} />}
         {page === 'launchpad' && pageAuthReady && <LaunchpadPage onCreateProfile={saveProjectProfile} navigate={navigate} />}
         {page === 'pricing' && <PricingPage navigate={navigate} />}
+        {page === 'verify' && <VerifyLandingPage onTokenCheck={handleTokenCheck} navigate={navigate} />}
         {page === 'whitepaper' && <WhitepaperPage navigate={navigate} />}
         {page === 'compare' && <ComparePage projects={projects} navigate={navigate} />}
         {page === 'watchlist' && pageAuthReady && (
@@ -2622,14 +2631,10 @@ function Sidebar({ page, navigate, navTo, alertCount }) {
           );
         })}
       </nav>
-      <div className="sidebar-promo">
-        <Crown size={28} />
-        <strong>{t('sidebar.promoTitle')}</strong>
-        <p>{t('sidebar.promoText')}</p>
-        <button className="sidebar-promo-cta" onClick={() => navigate('khan')}>
-          {t('sidebar.promoCta')} <ArrowRight size={14} />
-        </button>
-      </div>
+      {/* The "Join the KHAN Ecosystem — follow the $KHAN token and community
+          roadmap" promo that lived here is gone. It advertised a token to
+          people who came to assess tokens, from inside the assessment product,
+          which is precisely the conflict the footer statement now disclaims. */}
     </aside>
   );
 }
@@ -2997,15 +3002,32 @@ function HomePage({ projects, query, setQuery, searchState, scanProgress, onSear
                 </div>
               ))}
             </div>
+            {/* TWO AUDIENCES, EQUAL WEIGHT.
+                The platform sells to traders (risk analysis) and to token teams
+                (verified profiles). They want opposite things from the same
+                data, so the first screen has to address both or one of them
+                bounces. Deliberately two peer cards rather than a primary and a
+                secondary button: making either the "real" CTA tells the other
+                audience it is in the wrong place. */}
+            <div className="hero-paths">
+              <div className="hero-path">
+                <span className="hero-path-label">{t('home.tradersLabel')}</span>
+                <p>{t('home.tradersText')}</p>
+                <button className="primary-button" onClick={() => navigate('explore')}>
+                  {t('home.tradersCta')} <ArrowRight size={18} />
+                </button>
+              </div>
+              <div className="hero-path">
+                <span className="hero-path-label">{t('home.teamsLabel')}</span>
+                <p>{t('home.teamsText')}</p>
+                <button className="primary-button" onClick={() => navigate('verify')}>
+                  {t('home.teamsCta')} <BadgeCheck size={18} />
+                </button>
+              </div>
+            </div>
             <div className="hero-actions">
-              <button className="primary-button" onClick={() => navigate('explore')}>
-                {t('home.exploreProjects')} <ArrowRight size={18} />
-              </button>
               <button className="secondary-button" onClick={() => navigate('add')}>
                 {t('home.addProject')} <Plus size={18} />
-              </button>
-              <button className="ghost-button" onClick={() => navigate('khan')}>
-                {t('home.viewKhan')} <Star size={18} />
               </button>
               <a className="secondary-button" href={OFFICIAL_KHAN_LINKS.telegram} target="_blank" rel="noreferrer" onClick={() => trackSocialClick('Telegram Community', OFFICIAL_KHAN_LINKS.telegram)}>
                 {t('home.joinTelegram')} <MessageCircle size={18} />
@@ -3052,7 +3074,6 @@ function HomePage({ projects, query, setQuery, searchState, scanProgress, onSear
       <SinceLastVisitPanel projects={projects} navigate={navigate} />
       <RetentionDashboard projects={projects} watchlist={watchlist} navigate={navigate} alertCount={alertCount} />
       <CheckAnyTokenSection onTokenCheck={onTokenCheck} navigate={navigate} />
-      <KhanEcosystemStrip navigate={navigate} />
       <section className="content-band">
         <SectionTitle icon={BarChart3} eyebrow={t('home.exploreEyebrow')} title={t('home.exploreTitle')} />
         <div className="project-grid">
@@ -3062,7 +3083,13 @@ function HomePage({ projects, query, setQuery, searchState, scanProgress, onSear
         </div>
         {!featured.length && <KhanAiEmptyState title={t('home.emptyNoSavedTitle')} text={t('home.emptyNoSavedText')} />}
       </section>
-      <KhanTokenRole navigate={navigate} />
+      {/* KhanEcosystemStrip and KhanTokenRole used to render here. Both were
+          $KHAN token promotion sitting on the landing page of a product whose
+          entire job is to tell people whether a token is worth trusting — the
+          exact conflict the footer now discloses. Both components still exist
+          and still render on #/khan and About, where someone has actively asked
+          about the ecosystem; they are simply no longer advertised to a visitor
+          who came to check a contract address. */}
       <FutureFoundationSection />
       <Disclaimer />
     </>
@@ -3109,6 +3136,275 @@ function CheckAnyTokenSection({ onTokenCheck, navigate }) {
           </div>
         </form>
       </div>
+    </section>
+  );
+}
+
+// The token-team entry point — the destination of the hero's "Verify your
+// project" path.
+//
+// WHAT THIS IS AND, MORE IMPORTANTLY, WHAT IT IS NOT
+//
+// It is NOT a second verification flow. Verification already exists end to end
+// (netlify/functions/verification-request + verification-admin-review +
+// verify-badge, driven by the "Request verification" action on a project's own
+// report). What did not exist was any way to FIND it: the only route in was to
+// already know the token, scan it, open its report, and notice a button. A
+// token team arriving at khantrust.net had nowhere to land.
+//
+// So this page does exactly one thing: take a contract address, run the same
+// free scan every visitor gets (onTokenCheck — the identical function the home
+// page's checker calls, no duplicate scan path), and land the team on their own
+// report, where the existing verification action already lives.
+//
+// PHASE 2 — this page now sells. The flow is
+//
+//   contract -> quote -> tier -> pay -> prove ownership -> badge
+//
+// and every one of those steps is decided by the server. This component holds
+// no rule of its own: it does not know the price (the quote returns it), the
+// score floor (ditto), whether a token is eligible, or whether a payment
+// counted. That is not timidity, it is the only arrangement in which the
+// button a customer clicks and the check that takes their money cannot
+// disagree.
+//
+// THE ORDER OF STEPS IS THE PRODUCT. Payment does not grant the badge —
+// ownership proof does (see verify-order-activate.mjs). A team that pays but
+// cannot prove control of the token lands in review with their money recorded,
+// not with a badge. Selling the badge and shipping it on receipt of funds is
+// precisely what would make it worthless.
+function VerifyLandingPage({ onTokenCheck, navigate }) {
+  const { t } = useTranslation();
+  const { address, connected, connecting, availableWallets, selectAndConnect, sendTransaction, connection } = useKhanWallet();
+
+  const [contractAddress, setContractAddress] = useState('');
+  const [scanState, setScanState] = useState({ status: 'idle', message: '' });
+  const [quote, setQuote] = useState(null);
+  const [quoteError, setQuoteError] = useState('');
+  const [busy, setBusy] = useState('');
+  const [purchase, setPurchase] = useState(null);
+  const [purchaseError, setPurchaseError] = useState('');
+
+  const contract = contractAddress.trim();
+
+  const askForQuote = async (event) => {
+    event.preventDefault();
+    if (!contract) return;
+    setBusy('quote');
+    setQuote(null);
+    setQuoteError('');
+    setPurchase(null);
+    setPurchaseError('');
+    try {
+      setQuote(await fetchVerificationQuote({ contract }));
+    } catch (error) {
+      setQuoteError(error.message || t('verify.quoteFailed'));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  // The `needs_scan` path. Runs the SAME free scan every visitor gets — the
+  // identical function the home page's checker calls, no second scan path —
+  // and then re-quotes, because the scan is what writes the corpus record the
+  // quote reads.
+  const runFreeScan = async () => {
+    setBusy('scan');
+    setScanState({ status: 'loading', message: t('checkToken.checking') });
+    const result = await onTokenCheck(contract);
+    setScanState(result);
+    setBusy('');
+    if (result.status !== 'error') {
+      try {
+        setQuote(await fetchVerificationQuote({ contract }));
+      } catch (error) {
+        setQuoteError(error.message || t('verify.quoteFailed'));
+      }
+    }
+  };
+
+  const buy = async (tier) => {
+    setPurchaseError('');
+    setBusy(tier.id);
+    try {
+      const created = await createVerificationOrder({ contract, tierId: tier.id });
+      setPurchase({ stage: 'paying', order: created.order, payment: created.payment });
+
+      // Reuses the Premium wallet-payment sender, pointed at the verification
+      // treasury and this tier's price. See the note on payWithConnectedWallet
+      // for why verification does not get its own copy of that function.
+      const paid = await payWithConnectedWallet({
+        connection,
+        publicKey: new PublicKey(address),
+        sendTransaction,
+        currency: 'USDC',
+        receiverWallet: created.payment.treasuryWallet,
+        usdAmount: created.payment.usd,
+      });
+      if (!paid.ok) {
+        setPurchase({ stage: 'failed', order: created.order });
+        setPurchaseError(paid.message || t('verify.paymentFailed'));
+        return;
+      }
+
+      setPurchase({ stage: 'activating', order: created.order });
+      const activated = await activateVerificationOrder({
+        orderId: created.order.id,
+        transactionHash: paid.signature,
+        wallet: address,
+      });
+      setPurchase({ stage: activated.status, order: activated.order, ownershipMethod: activated.ownershipMethod });
+    } catch (error) {
+      // `reason` is the server's machine-readable code; the translated string
+      // for it is preferred over the server's English prose so the buyer reads
+      // their own language. Falling back to the message means a reason we have
+      // no copy for still says something true.
+      const key = error.reason ? `verify.errors.${error.reason}` : '';
+      const translated = key ? t(key) : '';
+      setPurchaseError(translated && translated !== key ? translated : (error.message || t('verify.paymentFailed')));
+      setPurchase((current) => (current ? { ...current, stage: 'failed' } : null));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  return (
+    <section className="page-section verify-page">
+      <SectionTitle icon={BadgeCheck} eyebrow={t('verify.eyebrow')} title={t('verify.title')} />
+      <p className="section-subtitle">{t('verify.subtitle')}</p>
+
+      <div className="verify-grid">
+        <form className="token-check-card" onSubmit={askForQuote}>
+          <label className="form-field">
+            <span>{t('verify.fieldLabel')}</span>
+            <input
+              value={contractAddress}
+              onChange={(event) => setContractAddress(event.target.value)}
+              placeholder={t('checkToken.placeholder')}
+              autoComplete="off"
+            />
+          </label>
+          <button className="primary-button" type="submit" disabled={!contract || busy === 'quote'}>
+            <Search size={18} /> {busy === 'quote' ? t('checkToken.submitChecking') : t('verify.submit')}
+          </button>
+          {quoteError && <p className="lookup-message error">{quoteError}</p>}
+          <p className="verify-note">{t('verify.nextStepNote')}</p>
+        </form>
+
+        <div className="verify-benefits">
+          <h3>{t('verify.includesTitle')}</h3>
+          <div className="foundation-list">
+            {t('verify.includes').map((item) => (
+              <span key={item}><CheckCircle2 size={15} /> {item}</span>
+            ))}
+          </div>
+          <p className="verify-note">{t('verify.reachNote')}</p>
+          <button className="ghost-button" type="button" onClick={() => navigate('support')}>
+            {t('verify.questionsCta')} <LifeBuoy size={18} />
+          </button>
+        </div>
+      </div>
+
+      {quote && (
+        <div className="verify-quote">
+          {/* THE ELIGIBILITY VERDICT. Four distinct outcomes, kept distinct.
+              Collapsing "never scanned" into "score too low" would refuse a
+              legitimate customer for a test they were never asked to sit; the
+              server keeps them apart (see verify-quote.mjs) and so does this. */}
+          {quote.reason === 'needs_scan' && (
+            <div className="verify-verdict">
+              <p><Info size={16} /> {t('verify.needsScan')}</p>
+              {scanState.message && <p className={`lookup-message ${scanState.status === 'error' ? 'error' : ''}`}>{scanState.message}</p>}
+              <button className="primary-button" type="button" onClick={runFreeScan} disabled={busy === 'scan'}>
+                <Search size={18} /> {busy === 'scan' ? t('checkToken.submitChecking') : t('verify.runFreeScan')}
+              </button>
+            </div>
+          )}
+
+          {quote.reason === 'below_floor' && (
+            <div className="verify-verdict verify-verdict-blocked">
+              <p><AlertTriangle size={16} /> {t('verify.belowFloor', { score: quote.score, minScore: quote.minScore })}</p>
+              <p className="verify-note">{t('verify.belowFloorWhy')}</p>
+            </div>
+          )}
+
+          {quote.reason === 'already_verified' && (
+            <div className="verify-verdict">
+              <p><BadgeCheck size={16} /> {t('verify.alreadyVerified')}</p>
+            </div>
+          )}
+
+          {quote.eligible && (
+            <>
+              <div className="verify-verdict verify-verdict-ok">
+                <p><CheckCircle2 size={16} /> {t('verify.eligible', { score: quote.score, minScore: quote.minScore })}</p>
+                {/* The scan's age is shown because a quote resting on a scan
+                    from four months ago is a materially different offer than
+                    one resting on this morning's. */}
+                {quote.scoredAt && <p className="verify-note">{t('verify.scoredAt', { date: new Date(quote.scoredAt).toLocaleDateString() })}</p>}
+              </div>
+
+              <div className="verify-tiers">
+                {quote.tiers.map((tier) => (
+                  <article className="verify-tier" key={tier.id}>
+                    <h3>{t(`verify.tiers.${tier.id}.name`)}</h3>
+                    <strong className="verify-tier-price">${tier.usd}</strong>
+                    <span className="verify-tier-term">{t('verify.perYear')}</span>
+                    <div className="foundation-list">
+                      {tier.includes.map((capability) => (
+                        <span key={capability}><CheckCircle2 size={15} /> {t(`verify.capabilities.${capability}`)}</span>
+                      ))}
+                      <span><CheckCircle2 size={15} /> {t('verify.premiumBonus', { months: tier.premiumBonusMonths })}</span>
+                    </div>
+                    {connected ? (
+                      <button className="primary-button" type="button" onClick={() => buy(tier)} disabled={Boolean(busy)}>
+                        {busy === tier.id ? t('verify.working') : t('verify.buy')}
+                      </button>
+                    ) : (
+                      <div className="wallet-pay-connect">
+                        <p className="verify-note">{t('verify.connectFirst')}</p>
+                        {availableWallets.map((wallet) => (
+                          <button className="secondary-button" type="button" key={wallet.adapter.name} disabled={connecting} onClick={() => selectAndConnect(wallet.adapter.name)}>
+                            {wallet.adapter.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {purchase && (
+        <div className="verify-progress">
+          {purchase.stage === 'paying' && <p><Clock3 size={16} /> {t('verify.stagePaying')}</p>}
+          {purchase.stage === 'activating' && <p><Clock3 size={16} /> {t('verify.stageActivating')}</p>}
+          {purchase.stage === 'active' && (
+            <div className="verify-verdict verify-verdict-ok">
+              <p><BadgeCheck size={16} /> {t('verify.stageActive')}</p>
+              <p className="verify-note">{t('verify.activeUntil', { date: new Date(purchase.order.expiresAt).toLocaleDateString() })}</p>
+            </div>
+          )}
+          {purchase.stage === 'paid' && (
+            // Paid, badge withheld. Said plainly rather than dressed up as
+            // success: the customer's money has moved and their badge has not
+            // appeared, and they are entitled to know exactly why.
+            <div className="verify-verdict">
+              <p><Clock3 size={16} /> {t('verify.stagePendingReview')}</p>
+              <p className="verify-note">{t('verify.stagePendingReviewWhy')}</p>
+            </div>
+          )}
+          {purchaseError && <p className="lookup-message error">{purchaseError}</p>}
+        </div>
+      )}
+
+      {/* Verification is an assessment sold to the subject of the assessment.
+          Saying plainly what it is not belongs on the page that sells it, not
+          only in the footer. */}
+      <Disclaimer text={t('footer.conflictOfInterest')} />
     </section>
   );
 }
@@ -6062,13 +6358,12 @@ function FutureFoundationSection() {
             {t('ecosystem.verificationItems').map((item) => <span key={item}><CheckCircle2 size={15} /> {item}</span>)}
           </div>
         </div>
-        <div>
-          <span className="status-badge">{t('ecosystem.holderBadge')}</span>
-          <p>{t('ecosystem.holderText')}</p>
-          <div className="foundation-list">
-            {t('ecosystem.holderItems').map((item) => <span key={item}><CheckCircle2 size={15} /> {item}</span>)}
-          </div>
-        </div>
+        {/* The holder-benefit panel that sat here — "Premium Research
+            Features / PDF Risk Reports / Advanced Analytics / Holder Badges"
+            presented as forthcoming $KHAN holder utility — has been removed.
+            Every one of those is a KHAN Trust product feature, sold for money
+            and available to anyone; listing them as token-holder benefits
+            implied the token gates the product, which it never has. */}
       </div>
     </section>
   );
@@ -9682,6 +9977,14 @@ function AboutPage({ openMethodology, navigate }) {
       <button className="primary-button" onClick={openMethodology}>
         {t('about.viewMethodology')} <Info size={18} />
       </button>
+      {/* Stated here in full, not only in the footer: About is where someone
+          deciding whether to trust the scoring comes to read, and "who pays
+          you, and do you hold what you rate" is the first question that
+          deserves an answer. */}
+      <div className="about-panel about-coi">
+        <h3>{t('about.conflictTitle')}</h3>
+        <p>{t('footer.conflictOfInterest')}</p>
+      </div>
       <KhanEcosystemStrip navigate={navigate} />
       <FutureFoundationSection />
       <Disclaimer />
@@ -10600,6 +10903,11 @@ function Footer({ navigate }) {
           </nav>
         </div>
       </div>
+      {/* Conflict-of-interest statement, on every page rather than buried in
+          the legal pages. KHAN Trust now takes money from the token teams it
+          assesses, so the fact that it holds no position in what it scores is
+          not a footnote — it is the reason a score means anything. */}
+      <p className="footer-coi">{t('footer.conflictOfInterest')}</p>
       <div className="footer-bottom">
         <span>{t('footer.copyright', { year: 2026 })}</span>
       </div>

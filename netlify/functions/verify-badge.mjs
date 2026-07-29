@@ -8,6 +8,7 @@
 // that compound the SEO surface from Direction 2. Additive: a brand-new
 // /badge/* surface that touches nothing existing.
 import { readStatuses } from './_verificationStore.mjs';
+import { isVerificationActive } from '../../src/lib/verificationTiers.js';
 
 function escapeXml(value) {
   return String(value == null ? '' : value)
@@ -19,17 +20,43 @@ function escapeXml(value) {
 }
 
 // Pure, side-effect-free SVG renderer so it can be unit-tested without Blobs.
-// Shields-style two-segment badge. Verified projects get the green "Verified"
-// treatment; anything else gets a neutral gold "Rated" badge that still links
-// back to KHAN Trust (a useful backlink without ever falsely implying
-// verification).
+// Shields-style two-segment badge.
+//
+// THE BADGE MAY ONLY ASSERT WHAT THIS SERVICE CAN SUBSTANTIATE.
+//
+// The non-verified branch used to render a gold "Rated" badge. `/badge/:id`
+// takes an arbitrary string and never checked that anything existed behind it,
+// so `/badge/whatever-i-typed` returned a gold KHAN Trust badge reading
+// "Rated". Nothing had rated it. Nothing had ever heard of it. The badge is
+// designed to be embedded on someone else's website, which makes it the single
+// most portable claim this platform emits — and it was assertable by anyone,
+// about anything, for free.
+//
+// "Rated" also could not be substantiated even in the honest case: a rating
+// comes from a completed scan in the corpus, and this function reads the
+// VERIFICATION store, which knows only whether an ownership request was
+// approved. It never had the fact it was asserting.
+//
+// So there are two states, and the gold one is gone:
+//   verified  -> green "Verified ✓". Provable: an owner signed with the
+//                controlling wallet and an admin approved it.
+//   anything  -> neutral grey "Unverified". True of a rejected project, a
+//   else        pending one, and a project id that does not exist, without
+//                distinguishing between them — review state is not public, and
+//                a badge is the wrong place to leak it.
+//
+// Every badge KHAN Trust itself hands out is the verified one: VerifiedBadgeEmbed
+// in src/main.jsx renders the snippet only on a verified project's profile. So
+// this narrowing costs no legitimate embed anything.
 export function renderBadgeSvg(status) {
   const verified = status === 'verified';
   const label = 'KHAN Trust';
-  const value = verified ? 'Verified ✓' : 'Rated';
-  const valueColor = verified ? '#2f9e5f' : '#c9a227';
+  const value = verified ? 'Verified ✓' : 'Unverified';
+  // Grey, not gold. Gold is this product's "good" colour and it was doing
+  // persuasive work on behalf of a claim that did not exist.
+  const valueColor = verified ? '#2f9e5f' : '#6b6b6b';
   const labelWidth = 78;
-  const valueWidth = verified ? 74 : 52;
+  const valueWidth = verified ? 74 : 70;
   const total = labelWidth + valueWidth;
   const labelMid = labelWidth / 2;
   const valueMid = labelWidth + valueWidth / 2;
@@ -60,8 +87,16 @@ export async function handler(event) {
     if (projectId) {
       try {
         const statuses = await readStatuses();
-        status = statuses[projectId]?.status || 'unverified';
+        const record = statuses[projectId];
+        // EXPIRY MATTERS MOST HERE. This badge is an <img> on somebody else's
+        // website; nobody reloads it deliberately and nothing on this platform
+        // controls when it is fetched. A lapsed verification whose badge kept
+        // rendering green would keep asserting a verification that ended, on a
+        // page KHAN Trust does not own, indefinitely. The short Cache-Control
+        // below is the only other bound on that.
+        status = isVerificationActive(record) ? 'verified' : 'unverified';
       } catch {
+        // Fail closed. An unreadable store is not evidence of verification.
         status = 'unverified';
       }
     }

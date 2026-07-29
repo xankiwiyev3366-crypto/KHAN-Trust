@@ -134,6 +134,47 @@ export function countActivePaidPremium(entitlements = {}, now = Date.now()) {
   return seen.size;
 }
 
+// A TIME-LIMITED Premium grant that can never make someone worse off.
+//
+// Paid verification includes months of Premium (see src/lib/verificationTiers.js
+// premiumBonusMonths). The naive implementation — grantEntitlement(subject,
+// {plan:'premium', expiresAt}) — has a bug that would be nearly invisible and
+// deeply unfair: a buyer who ALREADY pays $9/month has an entitlement with no
+// expiry. Overwriting it with a 3-month bonus would silently convert their
+// open-ended subscription into one that dies in 90 days, while they carry on
+// being billed. They would lose Premium and have no idea why.
+//
+// So this only ever EXTENDS:
+//   - an existing entitlement with no expiresAt is already unlimited. Nothing
+//     is written; there is no expiry a bonus could improve on.
+//   - an existing expiry LATER than the bonus wins and is left alone.
+//   - otherwise the bonus is written, preserving the existing plan if it is
+//     already a premium-grade one so an Early Supporter is never demoted.
+//
+// Returns what happened, so the caller can log it and a dispute is legible.
+export async function grantTimedBonus(subject, { plan = 'premium', expiresAt, ...rest }) {
+  if (!subject) return { granted: false, reason: 'no_subject' };
+  if (!expiresAt) return { granted: false, reason: 'no_expiry' };
+
+  const existing = await getEntitlement(subject);
+  if (existing && isPremiumPlan(existing.plan)) {
+    if (!existing.expiresAt) return { granted: false, reason: 'already_unlimited' };
+    if (Date.parse(existing.expiresAt) >= Date.parse(expiresAt)) {
+      return { granted: false, reason: 'existing_expiry_is_later' };
+    }
+  }
+
+  await grantEntitlement(subject, {
+    ...rest,
+    // Never demote: an Early Supporter receiving a verification bonus keeps
+    // being an Early Supporter.
+    plan: existing && isPremiumPlan(existing.plan) ? existing.plan : plan,
+    expiresAt,
+    grantedAt: new Date().toISOString(),
+  });
+  return { granted: true, expiresAt };
+}
+
 // Stripe webhooks (e.g. subscription cancellation) identify the affected
 // customer/subscription, not the subject directly - entitlements are keyed by
 // subject, so look up the subject by scanning for the matching Stripe id that

@@ -67,22 +67,42 @@ export async function getSolUsdPrice() {
   return null;
 }
 
-export async function payWithConnectedWallet({ connection, publicKey, sendTransaction, plan, currency }) {
-  if (!isWalletPaymentConfigured()) {
+// `receiverWallet` and `usdAmount` are OPTIONAL overrides, added for paid
+// verification, which is sold at a different price and (recommended) to a
+// separate treasury address. Both default to the Premium behaviour, so every
+// existing call site is byte-for-byte unchanged.
+//
+// They exist so verification does not get its own copy of this function. The
+// non-obvious work below is the reason: the ATA existence check that turns
+// Phantom's "Unable to simulate the result of this request" into a real
+// message, the explicit recentBlockhash, the getFeeForMessage balance check
+// that accounts for the network fee on top of the transfer, and the 2% buffer
+// that clears the backend's tolerance. A second copy would start without those
+// and rediscover each one through a failed customer payment.
+export async function payWithConnectedWallet({ connection, publicKey, sendTransaction, plan, currency, receiverWallet, usdAmount }) {
+  const destination = receiverWallet || PAYMENT_WALLET;
+  if (!destination) {
     return { ok: false, status: 'not_configured', message: 'Wallet payments are not configured yet' };
   }
   if (!publicKey) {
     return { ok: false, status: 'no_wallet', message: 'Connect a wallet first' };
   }
 
-  const requiredUsd = planUsdAmount(plan);
+  // An explicit amount wins; otherwise the plan's price from the shared source
+  // of truth. A caller that passes a non-positive override is refused rather
+  // than silently falling back to a plan price it did not ask for.
+  const requiredUsd = usdAmount == null ? planUsdAmount(plan) : Number(usdAmount);
+  if (!Number.isFinite(requiredUsd) || requiredUsd <= 0) {
+    return { ok: false, status: 'failed', message: 'Invalid payment amount' };
+  }
+
   const transaction = new Transaction();
   transaction.feePayer = publicKey;
 
   try {
     let receiver;
     try {
-      receiver = new PublicKey(PAYMENT_WALLET);
+      receiver = new PublicKey(destination);
     } catch {
       return { ok: false, status: 'failed', message: 'Payment wallet is misconfigured' };
     }

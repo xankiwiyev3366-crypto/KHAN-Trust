@@ -8,11 +8,25 @@
 // These records are merged in at READ time by early-stage-list / early-stage-get
 // (never written to the submission store, so they can't be lost or edited away),
 // and are deduped so a later manual submission or auto-discovery of the same
-// project can never create a duplicate. Curated projects are first-party, shown
-// verified + featured, and use the 'esc-' id prefix.
+// project can never create a duplicate. Curated projects use the 'esc-' prefix.
+//
+// THE CONFLICT OF INTEREST, AND WHERE THE LINE IS
+//
+// This list lets KHAN Trust place its own project into a list KHAN Trust
+// curates. That is defensible for PLACEMENT — an operator choosing what appears
+// in their own directory is ordinary, and `featured` says exactly that out loud.
+// It is NOT defensible for a TRUST CLAIM. The record used to carry
+// `teamVerified: true`, which renders the same "Verified team" check that every
+// other project can only earn by connecting the owning wallet, signing a
+// verification message, and passing admin review (verification-request →
+// verification-admin-review). KHAN did none of that. It wrote the flag.
+//
+// A platform selling verification cannot grant itself the badge it sells. The
+// flag is now false, and it can only become true the way everyone else's does.
+// The rule for anything added here: state facts, claim no status.
 //
 // The client mirrors this list in src/earlyStage.js for the no-Functions dev
-// fallback, the same way the discovery mock seed is mirrored there.
+// fallback.
 
 const STABLE_TS = '2026-06-01T00:00:00.000Z';
 
@@ -24,7 +38,7 @@ export const CURATED_PROJECTS = [
     name: 'KHAN Trust',
     symbol: 'KHAN',
     logoUrl: '/favicon.svg',
-    description: 'AI-powered crypto trust scoring, community-first project profiles, and public risk signals - plus the $KHAN token powering future holder utility across the KHAN ecosystem.',
+    description: 'AI-powered crypto trust scoring, community-first project profiles, and public risk signals. Listed here by KHAN Trust itself, which also operates this directory.',
     // 'live_platform' is a curated-only status: the KHAN Trust platform is live
     // while the $KHAN token is still pre-launch. It is not part of the
     // submission stage vocabulary (VALID_STAGES) - curated records bypass that
@@ -41,12 +55,18 @@ export const CURATED_PROJECTS = [
     github: 'https://github.com/khantrust',
     contractAddress: '',
     communitySize: 1280,
-    teamVerified: true,
+    // FALSE, AND ONLY EARNABLE. See the conflict-of-interest note in the header:
+    // this was true, self-granted, and rendered the same "Verified team" badge
+    // other projects must prove ownership and pass admin review to display.
+    teamVerified: false,
     buildingProgress: 65,
     builtWithLaunchpad: false,
     launchpadUrl: '',
     featured: true,
-    overview: 'KHAN Trust turns raw on-chain and social data into explainable trust scores and public profiles for crypto projects. The $KHAN token underpins future holder utility across the ecosystem and is not live yet, so KHAN is building trust in the open ahead of its public token launch.',
+    // No holder-utility claim. The rest of the product stopped saying the token
+    // "underpins future holder utility" because it does not gate anything and
+    // never has; this record does not get to keep saying it.
+    overview: 'KHAN Trust turns raw on-chain and social data into explainable trust scores and public profiles for crypto projects. The $KHAN token is a separate community token, is not live yet, and grants no access to any part of the platform.',
     roadmap: [
       { title: 'Phase 1 - KHAN Community', detail: 'In progress' },
       { title: 'Phase 2 - KHAN Trust Portal', detail: 'Completed', done: true },
@@ -56,7 +76,9 @@ export const CURATED_PROJECTS = [
     progressTimeline: [],
     milestones: [],
     whyEarlyStage: 'The $KHAN token contract is not live yet ("coming soon"), so KHAN is listed here as a pre-launch project building trust in the open ahead of its public token launch.',
-    riskNotes: '',
+    // Disclosed on the record itself, not only in the site footer: whoever reads
+    // this card is reading the operator's entry in the operator's own directory.
+    riskNotes: 'KHAN Trust operates this directory and listed this entry itself. It was not submitted by a third party, was not auto-discovered, and has not passed the wallet-signature verification that other projects must complete.',
     source: '',
     sourceUrl: '',
     discoveredAt: '',

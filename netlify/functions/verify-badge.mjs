@@ -8,6 +8,7 @@
 // that compound the SEO surface from Direction 2. Additive: a brand-new
 // /badge/* surface that touches nothing existing.
 import { readStatuses } from './_verificationStore.mjs';
+import { isVerificationActive } from '../../src/lib/verificationTiers.js';
 
 function escapeXml(value) {
   return String(value == null ? '' : value)
@@ -86,8 +87,16 @@ export async function handler(event) {
     if (projectId) {
       try {
         const statuses = await readStatuses();
-        status = statuses[projectId]?.status || 'unverified';
+        const record = statuses[projectId];
+        // EXPIRY MATTERS MOST HERE. This badge is an <img> on somebody else's
+        // website; nobody reloads it deliberately and nothing on this platform
+        // controls when it is fetched. A lapsed verification whose badge kept
+        // rendering green would keep asserting a verification that ended, on a
+        // page KHAN Trust does not own, indefinitely. The short Cache-Control
+        // below is the only other bound on that.
+        status = isVerificationActive(record) ? 'verified' : 'unverified';
       } catch {
+        // Fail closed. An unreadable store is not evidence of verification.
         status = 'unverified';
       }
     }

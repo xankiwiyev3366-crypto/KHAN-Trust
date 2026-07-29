@@ -210,6 +210,7 @@ import {
 import { isCardPaymentEnabled, startStripeCheckout, stripeUnavailableMessage } from './stripeCheckout.js';
 import { isSolanaVerificationConfigured, solanaUnavailableMessage, verifySolanaPayment } from './solanaVerify.js';
 import { isWalletPaymentConfigured, payWithConnectedWallet } from './cryptoPayment.js';
+import { fetchVerificationQuote, createVerificationOrder, activateVerificationOrder } from './verifyOrders.js';
 import { planUsdAmount, PLAN_USD_AMOUNT } from './lib/pricing.js';
 import { resolveTokenAge, exactLaunchDate } from './lib/tokenAge.js';
 import { fetchEntitlement, fetchAccountEntitlement, hasPlanAccess, isEarlySupporter, describeEntitlement, premiumBadgeInfo } from './entitlements.js';
@@ -3156,21 +3157,115 @@ function CheckAnyTokenSection({ onTokenCheck, navigate }) {
 // page's checker calls, no duplicate scan path), and land the team on their own
 // report, where the existing verification action already lives.
 //
-// Phase 2 replaces the final hop with quote → tier → payment → ownership proof.
-// It extends this page rather than adding another, which is why the scan step
-// is wired to the shared checker from the start.
+// PHASE 2 — this page now sells. The flow is
+//
+//   contract -> quote -> tier -> pay -> prove ownership -> badge
+//
+// and every one of those steps is decided by the server. This component holds
+// no rule of its own: it does not know the price (the quote returns it), the
+// score floor (ditto), whether a token is eligible, or whether a payment
+// counted. That is not timidity, it is the only arrangement in which the
+// button a customer clicks and the check that takes their money cannot
+// disagree.
+//
+// THE ORDER OF STEPS IS THE PRODUCT. Payment does not grant the badge —
+// ownership proof does (see verify-order-activate.mjs). A team that pays but
+// cannot prove control of the token lands in review with their money recorded,
+// not with a badge. Selling the badge and shipping it on receipt of funds is
+// precisely what would make it worthless.
 function VerifyLandingPage({ onTokenCheck, navigate }) {
   const { t } = useTranslation();
-  const [contractAddress, setContractAddress] = useState('');
-  const [state, setState] = useState({ status: 'idle', message: '' });
+  const { address, connected, connecting, availableWallets, selectAndConnect, sendTransaction, connection } = useKhanWallet();
 
-  const submit = async (event) => {
+  const [contractAddress, setContractAddress] = useState('');
+  const [scanState, setScanState] = useState({ status: 'idle', message: '' });
+  const [quote, setQuote] = useState(null);
+  const [quoteError, setQuoteError] = useState('');
+  const [busy, setBusy] = useState('');
+  const [purchase, setPurchase] = useState(null);
+  const [purchaseError, setPurchaseError] = useState('');
+
+  const contract = contractAddress.trim();
+
+  const askForQuote = async (event) => {
     event.preventDefault();
-    setState({ status: 'loading', message: t('checkToken.checking') });
-    // Same scanner, same failure semantics: when live data is unavailable this
-    // returns an explicit error rather than a score. A verification pitch built
-    // on an invented preview would poison the product it is selling.
-    setState(await onTokenCheck(contractAddress));
+    if (!contract) return;
+    setBusy('quote');
+    setQuote(null);
+    setQuoteError('');
+    setPurchase(null);
+    setPurchaseError('');
+    try {
+      setQuote(await fetchVerificationQuote({ contract }));
+    } catch (error) {
+      setQuoteError(error.message || t('verify.quoteFailed'));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  // The `needs_scan` path. Runs the SAME free scan every visitor gets — the
+  // identical function the home page's checker calls, no second scan path —
+  // and then re-quotes, because the scan is what writes the corpus record the
+  // quote reads.
+  const runFreeScan = async () => {
+    setBusy('scan');
+    setScanState({ status: 'loading', message: t('checkToken.checking') });
+    const result = await onTokenCheck(contract);
+    setScanState(result);
+    setBusy('');
+    if (result.status !== 'error') {
+      try {
+        setQuote(await fetchVerificationQuote({ contract }));
+      } catch (error) {
+        setQuoteError(error.message || t('verify.quoteFailed'));
+      }
+    }
+  };
+
+  const buy = async (tier) => {
+    setPurchaseError('');
+    setBusy(tier.id);
+    try {
+      const created = await createVerificationOrder({ contract, tierId: tier.id });
+      setPurchase({ stage: 'paying', order: created.order, payment: created.payment });
+
+      // Reuses the Premium wallet-payment sender, pointed at the verification
+      // treasury and this tier's price. See the note on payWithConnectedWallet
+      // for why verification does not get its own copy of that function.
+      const paid = await payWithConnectedWallet({
+        connection,
+        publicKey: new PublicKey(address),
+        sendTransaction,
+        currency: 'USDC',
+        receiverWallet: created.payment.treasuryWallet,
+        usdAmount: created.payment.usd,
+      });
+      if (!paid.ok) {
+        setPurchase({ stage: 'failed', order: created.order });
+        setPurchaseError(paid.message || t('verify.paymentFailed'));
+        return;
+      }
+
+      setPurchase({ stage: 'activating', order: created.order });
+      const activated = await activateVerificationOrder({
+        orderId: created.order.id,
+        transactionHash: paid.signature,
+        wallet: address,
+      });
+      setPurchase({ stage: activated.status, order: activated.order, ownershipMethod: activated.ownershipMethod });
+    } catch (error) {
+      // `reason` is the server's machine-readable code; the translated string
+      // for it is preferred over the server's English prose so the buyer reads
+      // their own language. Falling back to the message means a reason we have
+      // no copy for still says something true.
+      const key = error.reason ? `verify.errors.${error.reason}` : '';
+      const translated = key ? t(key) : '';
+      setPurchaseError(translated && translated !== key ? translated : (error.message || t('verify.paymentFailed')));
+      setPurchase((current) => (current ? { ...current, stage: 'failed' } : null));
+    } finally {
+      setBusy('');
+    }
   };
 
   return (
@@ -3179,7 +3274,7 @@ function VerifyLandingPage({ onTokenCheck, navigate }) {
       <p className="section-subtitle">{t('verify.subtitle')}</p>
 
       <div className="verify-grid">
-        <form className="token-check-card" onSubmit={submit}>
+        <form className="token-check-card" onSubmit={askForQuote}>
           <label className="form-field">
             <span>{t('verify.fieldLabel')}</span>
             <input
@@ -3189,10 +3284,10 @@ function VerifyLandingPage({ onTokenCheck, navigate }) {
               autoComplete="off"
             />
           </label>
-          {state.message && <p className={`lookup-message ${state.status === 'error' ? 'error' : ''}`}>{state.message}</p>}
-          <button className="primary-button" type="submit" disabled={state.status === 'loading'}>
-            <Search size={18} /> {state.status === 'loading' ? t('checkToken.submitChecking') : t('verify.submit')}
+          <button className="primary-button" type="submit" disabled={!contract || busy === 'quote'}>
+            <Search size={18} /> {busy === 'quote' ? t('checkToken.submitChecking') : t('verify.submit')}
           </button>
+          {quoteError && <p className="lookup-message error">{quoteError}</p>}
           <p className="verify-note">{t('verify.nextStepNote')}</p>
         </form>
 
@@ -3209,6 +3304,102 @@ function VerifyLandingPage({ onTokenCheck, navigate }) {
           </button>
         </div>
       </div>
+
+      {quote && (
+        <div className="verify-quote">
+          {/* THE ELIGIBILITY VERDICT. Four distinct outcomes, kept distinct.
+              Collapsing "never scanned" into "score too low" would refuse a
+              legitimate customer for a test they were never asked to sit; the
+              server keeps them apart (see verify-quote.mjs) and so does this. */}
+          {quote.reason === 'needs_scan' && (
+            <div className="verify-verdict">
+              <p><Info size={16} /> {t('verify.needsScan')}</p>
+              {scanState.message && <p className={`lookup-message ${scanState.status === 'error' ? 'error' : ''}`}>{scanState.message}</p>}
+              <button className="primary-button" type="button" onClick={runFreeScan} disabled={busy === 'scan'}>
+                <Search size={18} /> {busy === 'scan' ? t('checkToken.submitChecking') : t('verify.runFreeScan')}
+              </button>
+            </div>
+          )}
+
+          {quote.reason === 'below_floor' && (
+            <div className="verify-verdict verify-verdict-blocked">
+              <p><AlertTriangle size={16} /> {t('verify.belowFloor', { score: quote.score, minScore: quote.minScore })}</p>
+              <p className="verify-note">{t('verify.belowFloorWhy')}</p>
+            </div>
+          )}
+
+          {quote.reason === 'already_verified' && (
+            <div className="verify-verdict">
+              <p><BadgeCheck size={16} /> {t('verify.alreadyVerified')}</p>
+            </div>
+          )}
+
+          {quote.eligible && (
+            <>
+              <div className="verify-verdict verify-verdict-ok">
+                <p><CheckCircle2 size={16} /> {t('verify.eligible', { score: quote.score, minScore: quote.minScore })}</p>
+                {/* The scan's age is shown because a quote resting on a scan
+                    from four months ago is a materially different offer than
+                    one resting on this morning's. */}
+                {quote.scoredAt && <p className="verify-note">{t('verify.scoredAt', { date: new Date(quote.scoredAt).toLocaleDateString() })}</p>}
+              </div>
+
+              <div className="verify-tiers">
+                {quote.tiers.map((tier) => (
+                  <article className="verify-tier" key={tier.id}>
+                    <h3>{t(`verify.tiers.${tier.id}.name`)}</h3>
+                    <strong className="verify-tier-price">${tier.usd}</strong>
+                    <span className="verify-tier-term">{t('verify.perYear')}</span>
+                    <div className="foundation-list">
+                      {tier.includes.map((capability) => (
+                        <span key={capability}><CheckCircle2 size={15} /> {t(`verify.capabilities.${capability}`)}</span>
+                      ))}
+                      <span><CheckCircle2 size={15} /> {t('verify.premiumBonus', { months: tier.premiumBonusMonths })}</span>
+                    </div>
+                    {connected ? (
+                      <button className="primary-button" type="button" onClick={() => buy(tier)} disabled={Boolean(busy)}>
+                        {busy === tier.id ? t('verify.working') : t('verify.buy')}
+                      </button>
+                    ) : (
+                      <div className="wallet-pay-connect">
+                        <p className="verify-note">{t('verify.connectFirst')}</p>
+                        {availableWallets.map((wallet) => (
+                          <button className="secondary-button" type="button" key={wallet.adapter.name} disabled={connecting} onClick={() => selectAndConnect(wallet.adapter.name)}>
+                            {wallet.adapter.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {purchase && (
+        <div className="verify-progress">
+          {purchase.stage === 'paying' && <p><Clock3 size={16} /> {t('verify.stagePaying')}</p>}
+          {purchase.stage === 'activating' && <p><Clock3 size={16} /> {t('verify.stageActivating')}</p>}
+          {purchase.stage === 'active' && (
+            <div className="verify-verdict verify-verdict-ok">
+              <p><BadgeCheck size={16} /> {t('verify.stageActive')}</p>
+              <p className="verify-note">{t('verify.activeUntil', { date: new Date(purchase.order.expiresAt).toLocaleDateString() })}</p>
+            </div>
+          )}
+          {purchase.stage === 'paid' && (
+            // Paid, badge withheld. Said plainly rather than dressed up as
+            // success: the customer's money has moved and their badge has not
+            // appeared, and they are entitled to know exactly why.
+            <div className="verify-verdict">
+              <p><Clock3 size={16} /> {t('verify.stagePendingReview')}</p>
+              <p className="verify-note">{t('verify.stagePendingReviewWhy')}</p>
+            </div>
+          )}
+          {purchaseError && <p className="lookup-message error">{purchaseError}</p>}
+        </div>
+      )}
 
       {/* Verification is an assessment sold to the subject of the assessment.
           Saying plainly what it is not belongs on the page that sells it, not

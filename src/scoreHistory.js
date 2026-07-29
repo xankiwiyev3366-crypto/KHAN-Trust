@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { snapshotMetrics, validHistory } from './riskHistory.js';
 import { getCachedWalletToken, walletAuthHeaders } from './walletSession.js';
 import { isDevFunctionUnavailable } from './devFallback.js';
+import { tokenIdentity } from './lib/tokenIdentity.js';
 
 const FALLBACK_KEY = 'khan-trust-score-history-fallback-v1';
 const LAST_RECORDED_KEY = 'khan-trust-score-history-lastrecorded-v1';
@@ -83,29 +84,14 @@ function todayKey() {
 // rescanned - reuses the same identity the app already treats as canonical
 // for a project (contract address when known, otherwise the project id;
 // see findStoredProject in main.jsx).
-// Native chain coins (BTC, ETH, SOL, BNB, ...) all share the same literal
-// placeholder contract string (see lookupNativeCoinGeckoAsset in main.jsx) -
-// without this exclusion they'd all collide onto one shared history key.
-// Their project.id (e.g. "native-bitcoin") is the real unique identity.
-const NO_CONTRACT_PLACEHOLDERS = new Set(['not provided', 'native asset (no contract)']);
-
+//
+// The RULE now lives in src/lib/tokenIdentity.js, because paid verification has
+// to resolve the same key server-side and this module imports React. Its header
+// explains why re-implementing it in a Function was not an option. This wrapper
+// stays so the ~6 existing call sites keep their familiar name and project-shaped
+// argument; it is the same string it has always produced.
 export function historyKeyFor(project = {}) {
-  const contract = String(project.contract || '').trim().toLowerCase();
-  if (contract && !NO_CONTRACT_PLACEHOLDERS.has(contract)) {
-    // Multi-chain safety: the SAME EVM/Move address can be deployed on many
-    // chains (0x… on Ethereum AND Base AND BSC …). Without the chain in the key
-    // their score history, watch snapshots and alerts would all collide onto one
-    // identity. Non-Solana chains therefore carry a `<chainId>:` prefix.
-    //
-    // Solana KEEPS the bare `c:<addr>` key it has always used: its base58 mints
-    // are globally unique so they never collide, and preserving the exact format
-    // keeps every pre-multichain Solana history/watch record intact (backward
-    // compatibility — requirement 8).
-    const chainId = project.chainId;
-    if (chainId && chainId !== 'solana') return `c:${chainId}:${contract}`;
-    return `c:${contract}`;
-  }
-  return project.id ? `id:${project.id}` : '';
+  return tokenIdentity(project);
 }
 
 const VALID_RISK_LEVELS = new Set(['Low', 'Medium', 'High']);

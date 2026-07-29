@@ -2136,8 +2136,8 @@ export default {
     title: 'Get your project verified',
     subtitle: 'A KHAN Trust verified profile is a public, checkable statement that the wallet behind this token proved it controls the project - not a logo you uploaded yourself.',
     fieldLabel: 'Your token contract address',
-    submit: 'Analyse my project',
-    nextStepNote: 'This runs the same free analysis every visitor sees. You will land on your project report, where you can start verification from the wallet that controls the token.',
+    submit: 'Check eligibility and price',
+    nextStepNote: 'We check your token against the same public Trust Score every visitor sees, then show what verification costs. Nothing is charged at this step.',
     includesTitle: 'What verification gives you',
     includes: [
       'A public trust profile at a permanent, indexable URL',
@@ -2147,6 +2147,54 @@ export default {
     ],
     reachNote: 'Verified badges appear wherever your token is analysed on KHAN Trust - in scan results, watchlists and reports.',
     questionsCta: 'Questions about verification',
+    // ── Paid verification (Phase 2) ──────────────────────────────────────
+    // Every string below describes something the server decides. None of them
+    // states a price or a score threshold as a literal: those interpolate from
+    // the quote, so translated copy can never contradict what is charged.
+    quoteFailed: 'Could not check this token right now. Please try again.',
+    needsScan: 'This token has not been scanned yet. Verification is priced against your public Trust Score, so it needs one real scan first.',
+    runFreeScan: 'Run the free scan',
+    eligible: 'Eligible for verification. Trust Score {{score}}, minimum {{minScore}}.',
+    scoredAt: 'Based on the scan from {{date}}.',
+    belowFloor: 'Trust Score {{score}} is below the minimum of {{minScore}} for verification.',
+    belowFloorWhy: 'We do not sell verification to tokens our own scanner rates as high-risk. A badge anyone can buy regardless of the data is not worth displaying.',
+    alreadyVerified: 'This contract already has an active verification.',
+    perYear: 'per year',
+    premiumBonus: '{{months}} months of KHAN Trust Premium included',
+    buy: 'Verify this project',
+    working: 'Working...',
+    connectFirst: 'Connect the wallet that controls this token:',
+    stagePaying: 'Approve the payment in your wallet...',
+    stageActivating: 'Payment confirmed. Checking ownership...',
+    stageActive: 'Verified. Your badge is live across KHAN Trust.',
+    activeUntil: 'Active until {{date}}.',
+    stagePendingReview: 'Payment received. Your badge is not live yet.',
+    stagePendingReviewWhy: 'Your wallet signature proved you control that wallet, but not that it controls this token. A reviewer checks the link before the badge goes live, usually within one business day.',
+    paymentFailed: 'The payment did not go through.',
+    tiers: {
+      verified: { name: 'Verified' },
+      verified_pro: { name: 'Verified Pro' },
+    },
+    capabilities: {
+      publicProfile: 'Public trust profile at a permanent URL',
+      verifiedBadge: 'Verified by KHAN Trust badge across the platform',
+      embeddableBadge: 'Embeddable badge for your own site',
+      ownershipProof: 'Wallet-signature proof of ownership, shown publicly',
+      priorityReview: 'Priority review',
+      watchtowerPremium: 'Premium Watchtower monitoring on this token',
+      pdfReport: 'Downloadable PDF risk report',
+    },
+    // Keyed by the server's machine-readable `reason`, never by its English
+    // prose, so a buyer reads the failure in their own language.
+    errors: {
+      needs_scan: 'This token needs a free scan before it can be verified.',
+      below_floor: 'This token does not currently meet the minimum Trust Score.',
+      already_verified: 'This contract already has an active verification.',
+      duplicate: 'Another verification for this contract completed first. Your payment is recorded and refundable — contact support.',
+      signature_already_used: 'That transaction has already been used.',
+      ownership_proof_required: 'Connect and sign with the wallet that controls this project.',
+      no_treasury: 'Verification payments are not configured yet.',
+    },
   },
   support: {
     eyebrow: 'Support',

@@ -10,7 +10,7 @@
 // they must not be lost — and "not lost" only means something if a human can see
 // what is stuck and act on it.
 import React, { useCallback, useEffect, useState } from 'react';
-import { ListChecks, AlertTriangle } from 'lucide-react';
+import { ListChecks, AlertTriangle, Database } from 'lucide-react';
 
 import { SectionTitle, EmptyState, StatCard, DataTable } from '../ui/primitives.jsx';
 import { useT } from '../i18n/ConsoleI18nProvider.jsx';
@@ -64,11 +64,51 @@ export default function QueuePage({ token }) {
   if (!data) return null;
 
   const counts = data.counts || {};
+  const db = data.database || {};
 
   return (
     <>
       <SectionTitle icon={ListChecks} eyebrow={t('common.eyebrow')} title={t('queue.title')} />
       <p className="console-page-intro">{t('queue.intro')}</p>
+
+      {/* WHICH DATABASE, AND DID THE MIGRATION LAND IN IT.
+          Netlify Managed Database never reveals its production connection
+          string, so migrations are applied by the deploy rather than by hand —
+          and if DATABASE_URL points at a different Postgres than the one the
+          deploy migrates, everything reports success while the app's database
+          stays empty. This row is the only place that failure is visible. */}
+      {db.configured === false && (
+        <div className="console-callout">
+          <strong><Database size={15} /> {t('queue.db.notConfigured')}</strong>
+          <p>{t('queue.db.notConfiguredBody')}</p>
+        </div>
+      )}
+      {db.configured && db.reachable === false && (
+        <div className="console-callout">
+          <strong><AlertTriangle size={15} /> {t('queue.db.unreachable')}</strong>
+          <p>{t('queue.db.unreachableBody')}</p>
+        </div>
+      )}
+      {db.reachable && (
+        <>
+          {!db.migrationsApplied && (
+            <div className="console-callout">
+              <strong><AlertTriangle size={15} /> {t('queue.db.notMigrated')}</strong>
+              <p>{t('queue.db.notMigratedBody', { missing: (db.missing || []).join(', ') })}</p>
+            </div>
+          )}
+          <DataTable
+            columns={[t('queue.db.colFact'), t('queue.db.colValue')]}
+            rows={[
+              [t('queue.db.host'), db.host || t('common.notMeasured')],
+              [t('queue.db.name'), db.database || t('common.notMeasured')],
+              [t('queue.db.migrated'), db.migrationsApplied ? t('queue.db.yes') : t('queue.db.no')],
+              [t('queue.db.lease'), db.leaseEnforcedByPostgres ? t('queue.db.leasePostgres') : t('queue.db.leaseBlobs')],
+            ]}
+            emptyText=""
+          />
+        </>
+      )}
 
       <div className="analytics-stat-grid">
         <StatCard label={t('queue.stats.pending')} value={counts.pending || 0} />

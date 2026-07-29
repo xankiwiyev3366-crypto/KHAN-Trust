@@ -288,11 +288,63 @@ passcode the only thing between an attacker and the treasury.
 
 ## Migrations
 
-`db/migrations/0003_events_queue_receipts.sql`. Idempotent; apply with:
+`db/migrations/0003_events_queue_receipts.sql`, mirrored to
+`netlify/database/migrations/`.
+
+### Why the same files live in two directories
+
+This project is on **Netlify Managed Database**, which never exposes a
+production connection string to a developer's machine. `DATABASE_URL` is a
+*secret* environment variable: `netlify env:get` returns only its last four
+characters (`****************uire`), there is no reveal in the UI, and
+`netlify dev:exec` injects that same mask. `netlify database connect` targets a
+local PGlite instance on an ephemeral port, not production.
+
+That is deliberate, not a gap. Netlify's documented model is that **the deploy
+applies migrations**, inside its own runtime where the real credential lives:
+
+> On deploy, Netlify applies migrations automatically as part of the deploy
+> lifecycle.
+
+Migrations are applied **immediately before a deploy is published**, and a
+failing migration **blocks the publish**. Deploy previews get the same treatment
+against a branch database.
+
+So `netlify/database/migrations/` is the path to production, and `db/migrations/`
+remains the source of truth for the manual runner. Both directories hold
+byte-identical files, enforced at build time by
+`scripts/verify-migrations.mjs` — two hand-maintained copies of the same schema
+is the most reliable way to end up with two different schemas, and this codebase
+already guards the same class of problem for route aliases, badge state and i18n.
+
+**To change a migration:** edit it in `db/migrations/`, then
 
 ```bash
-node scripts/db-migrate.mjs
+npm run sync:migrations
 ```
+
+The build fails if the two ever diverge.
+
+### Applying
+
+- **Production** — push. Netlify applies pending migrations before publishing.
+- **Locally** — `netlify dev` in one terminal, then `netlify database migrations apply`
+  (Netlify's own engine, local database only).
+- **Any database you hold a connection string for** — `node scripts/db-migrate.mjs`,
+  which keeps its own `schema_migrations` ledger, independent of Netlify's.
+
+### Did it actually land?
+
+A deploy can only migrate the database *Netlify* manages. If `DATABASE_URL`
+points somewhere else, the deploy reports success and the app's database stays
+empty — a silent no-op that looks exactly like a success.
+
+**Console → Jobs & delivery** answers this from inside the function runtime,
+using the same `DATABASE_URL` the app uses: it reports the host, the database
+name, whether the Phase 5 tables are present, and whether the queue lease is
+enforced by Postgres or has degraded to the Blobs check. Compare the host it
+shows against the one on the Netlify Database page. Credentials are never read
+or reported.
 
 Adds `product_events`, `queue_jobs`, `queue_leases`, `verification_receipts`, and
 `badge_token` / `refunded_at` columns on `verification_orders`. Uniqueness on

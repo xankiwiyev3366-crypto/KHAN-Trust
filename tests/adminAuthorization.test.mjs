@@ -191,3 +191,56 @@ test('a failed cron trigger still answers 200, so the platform does not retry-st
 test('the suite runs under the module-mock loader', () => {
   assert.equal(typeof mock.module, 'function');
 });
+
+// ── Netlify deploy-time migrations ──────────────────────────────────────────
+//
+// Netlify Managed Database never exposes a production connection string, so the
+// ONLY supported way to run DDL against production is to let the deploy apply
+// it from netlify/database/migrations/. That makes this directory load-bearing:
+// a migration missing from it is a migration that never reaches production.
+
+test('every source migration is mirrored for the deploy-time runner, byte for byte', () => {
+  const source = readdirSync(join(ROOT, 'db', 'migrations')).filter((n) => n.endsWith('.sql')).sort();
+  const mirror = readdirSync(join(ROOT, 'netlify', 'database', 'migrations')).filter((n) => n.endsWith('.sql')).sort();
+
+  assert.ok(source.length > 0, 'no source migrations found');
+  assert.deepEqual(mirror, source, 'the two migration directories hold different files');
+
+  for (const name of source) {
+    const a = readFileSync(join(ROOT, 'db', 'migrations', name), 'utf8').replace(/\r\n/g, '\n');
+    const b = readFileSync(join(ROOT, 'netlify', 'database', 'migrations', name), 'utf8').replace(/\r\n/g, '\n');
+    assert.equal(b, a, `${name} differs between db/migrations and netlify/database/migrations`);
+  }
+});
+
+test('migration filenames sort correctly for Netlify\u2019s lexicographic ordering', () => {
+  // Netlify applies migrations in lexicographic order. Unpadded numbers would
+  // put 10_x before 2_x and apply them out of dependency order — 0003 ALTERs a
+  // table 0002 creates, so ordering is not cosmetic.
+  const files = readdirSync(join(ROOT, 'db', 'migrations')).filter((n) => n.endsWith('.sql'));
+  for (const name of files) {
+    assert.match(name, /^\d{4}_[a-z0-9_-]+\.sql$/, `${name} is not a zero-padded <number>_<slug>.sql`);
+  }
+  assert.deepEqual([...files].sort(), [...files].sort((a, b) => Number(a.slice(0, 4)) - Number(b.slice(0, 4))),
+    'lexicographic order does not match numeric order');
+});
+
+test('the build fails on migration drift', () => {
+  // The guard is only worth having if it is actually wired into the build.
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  assert.match(pkg.scripts.build, /verify-migrations\.mjs/, 'verify-migrations is not part of the build');
+  assert.ok(pkg.scripts['sync:migrations'], 'no sync:migrations escape hatch');
+});
+
+test('the queue admin reports which database the APP is connected to', () => {
+  // Given that a deploy can migrate a different database than DATABASE_URL
+  // points at, "the deploy said it worked" is not evidence. This is.
+  const source = readFileSync(join(FUNCTIONS, 'queue-admin.mjs'), 'utf8');
+  assert.match(source, /migrationsApplied/);
+  assert.match(source, /leaseEnforcedByPostgres/);
+  // Host is comparable against the Netlify Database page; credentials are not
+  // reported at all.
+  assert.match(source, /hostname/);
+  assert.doesNotMatch(source, /\.password/, 'the health check must never read the password');
+  assert.doesNotMatch(source, /\.username/, 'the health check must never read the user');
+});

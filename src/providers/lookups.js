@@ -482,16 +482,78 @@ export function signatureTimestamp(entry) {
   return entry?.blockTime ? entry.blockTime * 1000 : null;
 }
 
+// IN-FLIGHT REQUEST COALESCING. Not a cache — read the distinction, it matters.
+//
+// THE MEASUREMENT THAT PROMPTED THIS. Profiling a real BONK scan against
+// production, the Solana RPC requests came out as:
+//
+//   getTokenSupply            619ms   started at +737ms
+//   getTokenLargestAccounts  4202ms   started at +737ms   <- critical path
+//   getAccountInfo           1274ms   started at +737ms
+//   getAccountInfo           1117ms   started at +738ms   <- the SAME request
+//   getSignaturesForAddress  1407ms   started at +738ms
+//   getProgramAccounts        498ms   started at +2011ms  <- waited for nothing
+//
+// Two defects, one cause. lookupSolanaTokenUncached fires
+// fetchMintAccountInfo(address) directly AND fetchSolanaHolderAnalytics(address),
+// which opens by awaiting fetchMintAccountInfo(address) itself. So the same
+// getAccountInfo was issued twice concurrently, and the 498ms
+// getProgramAccounts — a fast call — sat idle for 1.3 seconds waiting on a
+// duplicate of a request the app already had in flight.
+//
+// Coalescing fixes both at once and needs no change at either call site: the
+// second caller joins the first one's promise, so the duplicate disappears and
+// getProgramAccounts starts at +737ms with everything else.
+//
+// WHY THIS IS NOT A CACHE, AND MUST NOT BECOME ONE. The entry is deleted the
+// moment the request settles, so nothing is ever served from a previous scan.
+// Only genuinely CONCURRENT identical requests share a result — and two
+// identical requests issued in the same millisecond would have returned the
+// same data anyway, so this is invisible to correctness. A time-based cache
+// here would be a different thing entirely: it would let a scan report holder
+// counts or authority flags read minutes earlier as if they were current, which
+// is the "absence is not zero / stale is not fresh" line this codebase holds
+// everywhere else.
+//
+// Rejections are shared too, deliberately. A failed fetch is a failed
+// observation for every caller waiting on it; letting one of them silently
+// retry while the other reports failure would make the scan's inputs depend on
+// call order.
+const inFlightRpc = new Map();
+
 export async function solanaRpc(method, params) {
-  const response = await fetch(SOLANA_RPC_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params }),
+  // JSON.stringify over the params is a sound identity here because every call
+  // site passes plain JSON-serialisable arrays — the same value this function
+  // is about to put on the wire.
+  const key = `${method}:${JSON.stringify(params ?? null)}`;
+  const existing = inFlightRpc.get(key);
+  if (existing) return existing;
+
+  const request = (async () => {
+    const response = await fetch(SOLANA_RPC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params }),
+    });
+    if (!response.ok) throw new Error(`${method} failed.`);
+    const payload = await response.json();
+    if (payload.error) throw new Error(payload.error.message);
+    return payload.result;
+  })();
+
+  inFlightRpc.set(key, request);
+  // finally, not then: the entry must be released on rejection too, or one
+  // failed call would pin its error for the rest of the session and every later
+  // scan of that token would replay a stale failure.
+  //
+  // The catch is only here to stop this bookkeeping copy of the promise from
+  // being an unhandled rejection; the error still reaches the real caller
+  // through the promise returned below.
+  request.catch(() => {}).finally(() => {
+    if (inFlightRpc.get(key) === request) inFlightRpc.delete(key);
   });
-  if (!response.ok) throw new Error(`${method} failed.`);
-  const payload = await response.json();
-  if (payload.error) throw new Error(payload.error.message);
-  return payload.result;
+
+  return request;
 }
 
 export function buildRealDataRiskNotes({ liquidityUsd, holderCount, tokenAgeDays, mintAuthorityEnabled, freezeAuthorityEnabled, upgradeable }) {

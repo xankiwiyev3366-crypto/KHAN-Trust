@@ -20,14 +20,40 @@ function migrationFiles() {
     .sort();
 }
 
+// Postgres: "relation does not exist". The ONLY error that legitimately means
+// "nothing has been applied yet".
+const UNDEFINED_TABLE = '42P01';
+
 async function appliedVersions() {
   // schema_migrations may not exist yet on a fresh DB; the first migration
-  // creates it. Treat a missing table as "nothing applied".
+  // creates it. A MISSING TABLE means "nothing applied".
+  //
+  // NOTHING ELSE DOES, AND THE CATCH USED TO SAY OTHERWISE.
+  //
+  // This swallowed every error and returned an empty set, so an unreachable
+  // database — wrong credential, network failure, a masked value pasted from a
+  // secret env var — reported as "· pending" for every migration. That is not a
+  // degraded answer, it is a confident wrong one: an operator reads it as "this
+  // database is empty" when the truth is "we could not ask".
+  //
+  // Found exactly that way. `netlify env:get` masks secret variables to their
+  // last four characters, so running this against the injected value produced a
+  // connection string that cannot connect — and --status cheerfully listed all
+  // three migrations as pending against a production database that is not.
+  //
+  // Same rule the rest of this codebase enforces (the Watchtower coverage
+  // ledger, the scan quota, the score floor, the funnel conversion rate):
+  // absence is not a zero, and "we could not measure" is not "there is none".
+  // Anything that is not a missing table is re-thrown and surfaces as a failure.
   try {
     const { rows } = await query('SELECT version FROM schema_migrations ORDER BY version');
     return new Set(rows.map((r) => r.version));
-  } catch {
-    return new Set();
+  } catch (error) {
+    if (error?.code === UNDEFINED_TABLE) return new Set();
+    throw new Error(
+      `Could not read schema_migrations, so the applied/pending state is UNKNOWN — not empty. `
+      + `Refusing to guess. Underlying error: ${error.message}`,
+    );
   }
 }
 

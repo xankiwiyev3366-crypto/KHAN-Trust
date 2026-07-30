@@ -54,10 +54,10 @@ test('az is actually translated, not copied English', () => {
     'login.passcode',            // "Parol" vs "Passcode" differ, but keep the set explicit
     'rec.roi', 'objectives.user_experience',
     'content.colToken', 'content.colTicker',
-    // Same reason as content.colToken above: "Status" and "Token" are the
-    // Azerbaijani words, not untranslated English. Listed explicitly rather
-    // than the check being loosened, so a genuinely-copied value still fails.
-    'verification.colStatus', 'verification.colToken', 'queue.colStatus',
+    // The three verification.*/queue.* entries that used to be listed here went
+    // with those two modules when they moved into the main Admin Panel
+    // (#/admin-paid-verification, #/admin-jobs). Their translations now live in
+    // src/i18n/*.js and are covered by scripts/verify-i18n.mjs.
   ]);
 
   const identical = paths(en)

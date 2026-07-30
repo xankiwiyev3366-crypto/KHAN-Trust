@@ -11,8 +11,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  ArrowRight, BadgeCheck, BrainCircuit, Filter, Lock,
-  Target, Users, Youtube, ListChecks, Layers, LogOut,
+  ArrowRight, BrainCircuit, Filter, Lock,
+  Target, Users, Youtube, ListChecks, LogOut,
 } from 'lucide-react';
 
 import '../styles.css';
@@ -28,8 +28,6 @@ import RetentionPage from './pages/RetentionPage.jsx';
 import AcquisitionPage from './pages/AcquisitionPage.jsx';
 import ContentEnginePage from './pages/ContentEnginePage.jsx';
 import InitiativesPage from './pages/InitiativesPage.jsx';
-import VerificationPage from './pages/VerificationPage.jsx';
-import QueuePage from './pages/QueuePage.jsx';
 
 // One nav entry per module. `id` doubles as the hash route (#/funnel) and as
 // the translation key (nav.funnel). Labels are resolved at render time, not
@@ -42,10 +40,15 @@ const NAV = [
   { id: 'acquisition', icon: Target, Component: AcquisitionPage },
   { id: 'content', icon: Youtube, Component: ContentEnginePage },
   { id: 'initiatives', icon: ListChecks, Component: InitiativesPage },
-  // Phase 5. The commercial and operational half of the console: what paid
-  // verification sold, and whether the machinery behind it is delivering.
-  { id: 'verification', icon: BadgeCheck, Component: VerificationPage },
-  { id: 'queue', icon: Layers, Component: QueuePage },
+  // "Verification" and "Jobs & delivery" used to be here. They now live in the
+  // main Admin Panel as #/admin-paid-verification and #/admin-jobs — see the
+  // header of src/adminPages.jsx for why. They are NOT duplicated here: two
+  // screens that can both revoke a customer's badge is how an operator ends up
+  // acting on the stale one.
+  //
+  // An old bookmark to #/verification or #/queue is not broken by this. The
+  // lookup below falls back to NAV[0], so those hashes land on Overview rather
+  // than a blank page.
 ];
 
 function LoginScreen({ onAuthenticated }) {

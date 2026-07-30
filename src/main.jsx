@@ -320,6 +320,16 @@ import {
   fetchReferralAnalytics,
   fetchReferralDetail,
 } from './referral.js';
+// The Admin Panel's shared presentational pieces. They used to be declared in
+// this file; they moved so src/adminPages.jsx can use the SAME ones rather than
+// carry a second copy that drifts from the stylesheet. See the header there.
+import {
+  AnimatedNumber, SectionTitle, EmptyState, FormField, StatCard, RankTable,
+} from './ui/adminPrimitives.jsx';
+// Paid Verification and Jobs & Delivery. Both are full Admin Panel pages behind
+// the same shared admin passcode as every other admin-* route; they live in
+// their own module only because this file is already long enough.
+import { AdminPaidVerificationPage, AdminJobsPage } from './adminPages.jsx';
 import { qrToSvg } from './lib/qrcode.js';
 import {
   translateRiskLevel, daysSince, slugify, formatCurrency, formatTinyOrCurrency,
@@ -2222,6 +2232,12 @@ function App() {
         {page === 'admin-holders' && <AdminHolderAnalyticsPage />}
         {page === 'admin-premium' && <AdminPremiumPage />}
         {page === 'admin-referral' && <AdminReferralPage />}
+        {/* Moved out of the private operator console at /console — see the header of
+            src/adminPages.jsx for why. Both are plain admin-* routes, so a
+            direct link to #/admin-paid-verification or #/admin-jobs works the
+            same way every other admin page's link does. */}
+        {page === 'admin-paid-verification' && <AdminPaidVerificationPage />}
+        {page === 'admin-jobs' && <AdminJobsPage />}
         {page === 'watchtower' && pageAuthReady && <WatchtowerPage navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />}
         {page === 'referral' && pageAuthReady && <ReferralPage navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />}
         {page === 'profile' && pageAuthReady && <UserProfilePage navigate={navigate} onOpenAuth={() => setAuthModalMode('login')} />}
@@ -7775,15 +7791,6 @@ function AddProjectPage({ onAdd, navigate }) {
   );
 }
 
-function FormField({ label, value, onChange, type = 'text', required = false, placeholder = '' }) {
-  return (
-    <label className="form-field">
-      <span>{label}</span>
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} required={required} placeholder={placeholder} />
-    </label>
-  );
-}
-
 function EditProjectModal({ project, onSave, onClose }) {
   const [form, setForm] = useState({
     website: hasValue(project.website) ? project.website : '',
@@ -9032,6 +9039,12 @@ function AdminVerificationPage({ onReviewed }) {
       <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-analytics'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
         <BarChart3 size={18} /> {t('adminVerify.openAnalytics')}
       </button>
+      {/* The commercial half of the same subject: this screen reviews ownership
+          proofs one at a time, that one audits what was sold. Adjacent so the
+          relationship is obvious without explanation. */}
+      <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-paid-verification'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+        <BadgeCheck size={18} /> {t('adminPaidVerification.title')}
+      </button>
       <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-support'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
         <LifeBuoy size={18} /> {t('adminSupport.openSupport')}
       </button>
@@ -9118,60 +9131,6 @@ function DonutChart({ data, size = 140 }) {
           </span>
         ))}
       </div>
-    </div>
-  );
-}
-
-// `tooltip` explains precisely what the number counts. These metrics are easy
-// to misread — "logged in" vs "visited", "today" vs "last 24 hours", "unique
-// users" vs "sessions" — and an administrator acting on a misread number is
-// the failure this dashboard exists to prevent. The definition is rendered
-// as a real focusable element with an accessible name, not a bare `title`
-// attribute, so it is reachable by keyboard and screen readers too.
-function StatCard({ icon: Icon, label, value, numericValue, sublabel, tooltip }) {
-  return (
-    <div className="analytics-stat-card">
-      <Icon size={20} />
-      <strong>{numericValue !== undefined ? <AnimatedNumber value={numericValue} format={(n) => n.toLocaleString('en-US')} /> : value}</strong>
-      <span>
-        {label}
-        {tooltip && (
-          <button type="button" className="metric-info" title={tooltip} aria-label={tooltip}>
-            <Info size={12} aria-hidden="true" />
-          </button>
-        )}
-      </span>
-      {sublabel && <small>{sublabel}</small>}
-    </div>
-  );
-}
-
-function RankTable({ title, columns, rows, emptyText }) {
-  return (
-    <div className="analytics-table-card">
-      <h4>{title}</h4>
-      {!rows.length ? (
-        <EmptyState title={translate('adminAnalytics.noDataTitle')} text={emptyText || translate('adminAnalytics.noDataDefault')} />
-      ) : (
-        <table className="analytics-table">
-          <thead>
-            <tr>
-              {columns.map((column) => (
-                <th key={column}>{column}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <tr key={index}>
-                {row.map((cell, cellIndex) => (
-                  <td key={cellIndex}>{cell}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
     </div>
   );
 }
@@ -9313,6 +9272,16 @@ function AdminAnalyticsPage() {
         </button>
         <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-referral'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
           <Gift size={16} /> {t('adminReferral.title')}
+        </button>
+        {/* The two screens that moved here from the private operator console at
+            /console. This toolbar IS the Admin Panel's navigation - there is no
+            admin sidebar - so they have to appear in it to be reachable by
+            anything other than a typed URL. */}
+        <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-paid-verification'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+          <BadgeCheck size={16} /> {t('adminPaidVerification.title')}
+        </button>
+        <button className="secondary-button admin-cross-link" type="button" onClick={() => { window.location.hash = '/admin-jobs'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
+          <Layers3 size={16} /> {t('adminJobs.title')}
         </button>
         <button className="ghost-button" type="button" onClick={logout}>{t('common.signOut')}</button>
       </div>
@@ -10244,58 +10213,6 @@ function SearchMatches({ state, onSelect }) {
   );
 }
 
-// Counts up from 0 to `value` once the element scrolls into view, purely as
-// a presentational micro-interaction - the underlying number/logic this
-// wraps is unchanged, this only affects how it's drawn on screen.
-function AnimatedNumber({ value, duration = 900, format }) {
-  const ref = useRef(null);
-  const [display, setDisplay] = useState(0);
-  const numericValue = Number(value);
-  const isAnimatable = Number.isFinite(numericValue);
-
-  useEffect(() => {
-    if (!isAnimatable) return;
-    const node = ref.current;
-    if (!node || typeof IntersectionObserver === 'undefined') {
-      setDisplay(numericValue);
-      return;
-    }
-    // A count-up is motion like any other: under prefers-reduced-motion the
-    // number is simply the number. CSS cannot reach a rAF loop, so this has to
-    // be checked here.
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-      setDisplay(numericValue);
-      return;
-    }
-    let frame;
-    const animate = () => {
-      const start = performance.now();
-      const from = 0;
-      const step = (now) => {
-        const progress = Math.min((now - start) / duration, 1);
-        const eased = 1 - (1 - progress) ** 3;
-        setDisplay(Math.round(from + (numericValue - from) * eased));
-        if (progress < 1) frame = requestAnimationFrame(step);
-      };
-      frame = requestAnimationFrame(step);
-    };
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) {
-        animate();
-        observer.disconnect();
-      }
-    }, { threshold: 0.3 });
-    observer.observe(node);
-    return () => {
-      observer.disconnect();
-      if (frame) cancelAnimationFrame(frame);
-    };
-  }, [numericValue, duration, isAnimatable]);
-
-  if (!isAnimatable) return <span ref={ref}>{value}</span>;
-  return <span ref={ref}>{format ? format(display) : display}</span>;
-}
-
 function ScoreCircle({ score, size = 'normal' }) {
   const { t } = useTranslation();
   const style = { '--score': `${score * 3.6}deg` };
@@ -10877,28 +10794,6 @@ function formatHistoryDate(dateStr, language) {
 function RiskPill({ level }) {
   const { t } = useTranslation();
   return <span className={`risk-pill ${level.toLowerCase()}`}>{t('common.riskSuffix', { level: t(`common.${level.toLowerCase()}`) })}</span>;
-}
-
-function SectionTitle({ icon: Icon, eyebrow, title }) {
-  return (
-    <div className="section-title">
-      <span><Icon size={17} /> {eyebrow}</span>
-      <h2>{title}</h2>
-    </div>
-  );
-}
-
-// Plain empty state. Deliberately assistant-free: this is what the Admin Panel
-// and other internal surfaces use, and KHAN AI must never appear there. The
-// user-facing pages use KhanAiEmptyState below instead.
-function EmptyState({ title, text }) {
-  return (
-    <div className="empty-state">
-      <Eye size={28} />
-      <h3>{title}</h3>
-      <p>{text}</p>
-    </div>
-  );
 }
 
 // KHAN AI's resting posture, for user-facing pages only: the entity is present

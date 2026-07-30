@@ -19,12 +19,17 @@
 //
 // Run via `npm run verify:boundary` (and as part of `npm run build`).
 import { readFileSync, existsSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 const ROOT = process.cwd();
 const DIST = join(ROOT, 'dist');
 const USER_ENTRY = join(ROOT, 'src', 'main.jsx');
-const ADMIN_DIR = join(ROOT, 'src', 'admin');
+// The trailing separator is load-bearing. Without it this is a plain string
+// prefix test, and every sibling FILE whose name merely starts with "admin" -
+// src/adminPages.jsx, an src/adminHelpers.js - reads as living inside
+// src/admin/ and fails the build for an import that never crossed anything.
+// A guard that fires on correct code gets worked around rather than heeded.
+const ADMIN_DIR = join(ROOT, 'src', 'admin') + sep;
 
 // Strings that must only ever exist in console chunks. Chosen to be specific
 // enough that they cannot plausibly appear in user-facing code by coincidence.

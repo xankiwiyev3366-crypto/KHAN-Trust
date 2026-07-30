@@ -12478,3 +12478,53 @@ button.retention-stat:hover { border-color: var(--gold-soft); }
   width: auto;
   max-width: 100%;
 }
+
+/* ── Admin Panel: Paid Verification & Jobs and Delivery ─────────────────────
+   Two screens moved in from the Growth OS console. They reuse the Admin
+   Panel's existing vocabulary (analytics-stat-card, analytics-table,
+   filter-chip, row-actions) and add only what had no equivalent here: a
+   callout for a condition that needs a human, and the row the filter chips
+   sit in. */
+.admin-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 16px 0;
+  padding: 13px 15px;
+  border: 1px solid rgba(247, 190, 82, 0.28);
+  border-radius: 10px;
+  color: #ffe2a3;
+  background: rgba(247, 190, 82, 0.1);
+  line-height: 1.45;
+}
+
+.admin-callout svg {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+
+.admin-callout strong {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.admin-callout p {
+  margin: 0;
+  font-size: 13.5px;
+}
+
+/* A duplicate sale nobody refunded and a dead-lettered job are not warnings
+   about something that might go wrong - they are reports of work already lost,
+   so they get the danger treatment rather than the amber one. */
+.admin-callout.danger {
+  color: #ffd0cc;
+  border-color: rgba(255, 117, 110, 0.42);
+  background: rgba(255, 117, 110, 0.12);
+}
+
+.admin-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 16px;
+}

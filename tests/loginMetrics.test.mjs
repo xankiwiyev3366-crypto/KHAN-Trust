@@ -62,12 +62,17 @@ const { handler: verifyEmail } = await import('../netlify/functions/auth-verify-
 const { handler: analyticsSummary } = await import('../netlify/functions/analytics-summary.mjs');
 const { runLoginBackfill } = await import('../netlify/functions/_loginBackfill.mjs');
 const { appendEvent } = await import('../netlify/functions/_analyticsStore.mjs');
+const { invalidateAggregate } = await import('../netlify/functions/_aggregateCache.mjs');
 
 const {
   getUserLoginStats, recordSuccessfulAuth, AUTH_METHOD, issueToken, getUserByEmail, saveUser, hashPassword,
 } = authStore;
 
-function reset() { stores.clear(); }
+// analytics-summary caches its aggregates per function instance, which in a test
+// process means for the whole file. Clearing the stores without clearing that
+// would hand the next test the previous test's population and make a real
+// regression look like a passing suite.
+function reset() { stores.clear(); invalidateAggregate(); }
 const parse = (res) => JSON.parse(res.body);
 
 const post = (handler, body, headers = {}) =>

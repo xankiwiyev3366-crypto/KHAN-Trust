@@ -5611,6 +5611,45 @@ button:disabled {
   height: 92px;
 }
 
+/* A skeleton sized to the NUMBER inside a stat card, not to the card. The card
+   frame, icon and label are real from the first paint; only the figure that has
+   not arrived yet is a placeholder, so nothing on the Admin Panel reflows when
+   a slice lands. */
+.stat-skeleton {
+  display: inline-block;
+  width: 3.2em;
+  height: 0.72em;
+  vertical-align: middle;
+  border-radius: var(--radius-sm);
+}
+
+/* An em dash where a number could not be measured. Dimmed so it never reads as
+   a real value, and never a 0. */
+.stat-unavailable {
+  opacity: 0.45;
+}
+
+/* Per-card-group failure notice: one source being down explains itself where
+   its own cards would be, and offers to retry just that source. */
+.analytics-section-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 18px;
+  padding: 12px 14px;
+  border: 1px solid rgba(233, 90, 90, 0.35);
+  border-radius: var(--radius-md);
+  background: rgba(233, 90, 90, 0.08);
+  font-size: 0.88rem;
+}
+
+.analytics-section-error p {
+  margin: 0;
+  flex: 1 1 240px;
+  color: var(--danger);
+}
+
 .search-box input::placeholder {
   transition: opacity 0.2s ease;
 }

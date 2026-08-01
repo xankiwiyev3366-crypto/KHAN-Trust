@@ -22,25 +22,26 @@ export async function handler(event) {
   if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
   if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });
 
-  const [users, grants, total, events, allUserData, walletLinks] = await Promise.all([
+  // Paid Premium is read from the paid-entitlements store, which is the ONLY
+  // record of a real purchase — it is fully isolated from the manual/promo/
+  // gifted grants above (see _premiumStore vs _entitlementsStore). It stays
+  // fail-soft to {} — a blob hiccup on this store must degrade one analytics
+  // card, never take down the whole Premium dashboard — but it is read WITH the
+  // others rather than after them: it depends on nothing above it, and awaiting
+  // it separately added a whole round trip to the tail of every page load.
+  const [users, grants, total, events, allUserData, walletLinks, entitlements] = await Promise.all([
     listRegisteredUsers(2000),
     readGrants(),
     countRegisteredUsers(),
     readEvents(),
     readAllUserData(),
     readWalletLinks(),
+    readEntitlements().catch(() => ({})),
   ]);
 
   const now = Date.now();
   const today = new Date(now).toISOString().slice(0, 10);
   const eventsByUser = indexEventsByUser(events);
-
-  // Paid Premium is read from the paid-entitlements store, which is the ONLY
-  // record of a real purchase — it is fully isolated from the manual/promo/
-  // gifted grants above (see _premiumStore vs _entitlementsStore). Read
-  // separately and fail-soft to 0: a blob hiccup on this store must degrade one
-  // analytics card, never take down the whole Premium dashboard.
-  const entitlements = await readEntitlements().catch(() => ({}));
   const paidPremiumCount = countActivePaidPremium(entitlements, now);
 
   const rows = users.map((u) => {

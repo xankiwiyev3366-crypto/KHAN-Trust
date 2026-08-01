@@ -110,11 +110,27 @@ export function FormField({ label, value, onChange, type = 'text', required = fa
 // the failure this dashboard exists to prevent. The definition is rendered
 // as a real focusable element with an accessible name, not a bare `title`
 // attribute, so it is reachable by keyboard and screen readers too.
-export function StatCard({ icon: Icon, label, value, numericValue, sublabel, tooltip }) {
+//
+// `pending` and `failed` keep the loading and failure states INSIDE the card.
+// The dashboard's data arrives from three independent sources at three
+// different speeds, so a page-level spinner would hold every card hostage to
+// the slowest one, and a page-level error would blank forty working cards
+// because one source was down. A card that cannot show its number shows why,
+// where the number would have been, and its neighbours carry on.
+//
+// A failed card renders an em dash, never 0. An unmeasured value and a measured
+// zero are different facts, and this is a screen people make decisions on.
+export function StatCard({ icon: Icon, label, value, numericValue, sublabel, tooltip, pending = false, failed = false }) {
+  const body = pending
+    ? <span className="skeleton-block stat-skeleton" aria-hidden="true" />
+    : failed
+      ? <span className="stat-unavailable" title={translate('adminAnalytics.loadFailed')}>—</span>
+      : (numericValue !== undefined ? <AnimatedNumber value={numericValue} format={(n) => n.toLocaleString('en-US')} /> : value);
+
   return (
-    <div className="analytics-stat-card">
+    <div className="analytics-stat-card" aria-busy={pending || undefined}>
       <Icon size={20} />
-      <strong>{numericValue !== undefined ? <AnimatedNumber value={numericValue} format={(n) => n.toLocaleString('en-US')} /> : value}</strong>
+      <strong>{body}</strong>
       <span>
         {label}
         {tooltip && (

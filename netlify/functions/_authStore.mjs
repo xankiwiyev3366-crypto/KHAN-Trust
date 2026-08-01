@@ -122,6 +122,16 @@ export async function updateUser(id, updates) {
   return saveUser(updated);
 }
 
+// THE registered-user count. One LIST over the `user:email:` key space and
+// nothing else — the keys ARE the accounts, so counting them answers the
+// question without transferring a single user record.
+//
+// Every caller that only needs "how many accounts exist" must use this rather
+// than reading records and taking `.length`. The dashboard's Registered Users
+// card used to be produced by getUserLoginStats(), which fetches every record in
+// full (password hash included) to derive four unrelated behavioural metrics —
+// 207 HTTP round trips at 206 accounts, to print one integer that this single
+// call already had.
 export async function countRegisteredUsers() {
   try {
     const result = await store().list({ prefix: 'user:email:' });
@@ -129,6 +139,28 @@ export async function countRegisteredUsers() {
   } catch {
     return 0;
   }
+}
+
+// Reads N blobs with at most `limit` requests in flight.
+//
+// The previous unbounded Promise.all opened one connection per registered
+// account simultaneously. That is survivable at a few hundred accounts and is a
+// cliff at a few thousand: the runtime's socket pool queues them anyway, so the
+// only thing unbounded fan-out actually buys is a burst that the blob store may
+// rate-limit and that leaves nothing else in the request able to make progress.
+async function readBlobsPooled(keys, read, limit = 32) {
+  const out = new Array(keys.length);
+  let cursor = 0;
+  const worker = async () => {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= keys.length) return;
+      out[index] = await read(keys[index]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, keys.length) }, worker));
+  return out;
 }
 
 // ── Login state: DURABLE, on the user record ─────────────────────────────────
@@ -210,18 +242,29 @@ export async function recordSuccessfulAuth(userId, { method = AUTH_METHOD.PASSWO
 
 // Reads every user once and returns the authoritative account-level metrics.
 //
-// This is THE source for the admin dashboard's user cards. It is computed from
-// the user records themselves — not from telemetry, not from a counter, not
-// from a cache — so `registered === loggedIn + neverLoggedIn` holds by
-// construction: every account falls in exactly one of the two buckets, because
-// the buckets are defined by a single boolean on that account.
+// This is THE source for the admin dashboard's LOGIN-STATE cards. They are
+// computed from the user records themselves — not from telemetry, not from a
+// counter — so `registered === loggedIn + neverLoggedIn` holds by construction:
+// every account falls in exactly one of the two buckets, because the buckets
+// are defined by a single boolean on that account.
+//
+// `registeredUsers` is the LIST length, NOT `records.length`. The two are the
+// same number whenever every record reads back, and the distinction is the
+// point: the count is an answer this function already has after one round trip,
+// so it is reported from there rather than being made to depend on N record
+// fetches succeeding. When they do not all succeed, the halves stop summing and
+// the caller's consistency check fires — which is the correct outcome, because
+// a partial read means the buckets are genuinely under-counted. `readFailures`
+// says how many, so that failure is diagnosable rather than mysterious.
 //
 // `now` is injectable so tests can pin day boundaries.
 export async function getUserLoginStats({ now = Date.now() } = {}) {
-  const result = await store().list({ prefix: 'user:email:' });
+  const s = store();
+  const result = await s.list({ prefix: 'user:email:' });
   const blobs = result.blobs || [];
-  const users = await Promise.all(
-    blobs.map((b) => store().get(b.key, { type: 'json' }).catch(() => null))
+  const users = await readBlobsPooled(
+    blobs.map((b) => b.key),
+    (key) => s.get(key, { type: 'json' }).catch(() => null)
   );
   const records = users.filter(Boolean);
 
@@ -256,19 +299,24 @@ export async function getUserLoginStats({ now = Date.now() } = {}) {
   }
 
   return {
-    registeredUsers: records.length,
+    registeredUsers: blobs.length,
     loggedInUsers: loggedIn,
     neverLoggedInUsers: neverLoggedIn,
     activeToday: activeTodayIds.size,
     activeLast7Days: activeWeekIds.size,
+    readFailures: blobs.length - records.length,
   };
 }
 
 export async function listRegisteredUsers(limit = 100) {
   try {
-    const result = await store().list({ prefix: 'user:email:' });
+    const s = store();
+    const result = await s.list({ prefix: 'user:email:' });
     const blobs = (result.blobs || []).slice(0, limit);
-    const users = await Promise.all(blobs.map((b) => store().get(b.key, { type: 'json' }).catch(() => null)));
+    const users = await readBlobsPooled(
+      blobs.map((b) => b.key),
+      (key) => s.get(key, { type: 'json' }).catch(() => null)
+    );
     return users.filter(Boolean).map(({ passwordHash, ...u }) => u);
   } catch {
     return [];

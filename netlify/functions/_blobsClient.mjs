@@ -12,12 +12,24 @@ import { getStore } from '@netlify/blobs';
 const SITE_ID = process.env.SITE_ID || process.env.NETLIFY_SITE_ID;
 const BLOBS_TOKEN = process.env.NETLIFY_BLOBS_TOKEN;
 
+// One store handle per name, reused for the life of the (warm) function
+// instance. Every module here calls getNamedStore() inside a `store()` helper
+// on EVERY read, so a hot endpoint constructed hundreds of handles per request
+// — each one re-resolving config and standing up its own HTTP client rather
+// than reusing the keep-alive connection the previous one had already opened.
+// The inputs are process-level environment, so the handle can never go stale
+// within an instance.
+const handles = new Map();
+
 export function getNamedStore(name) {
+  const cached = handles.get(name);
+  if (cached) return cached;
   try {
-    if (SITE_ID && BLOBS_TOKEN) {
-      return getStore({ name, siteID: SITE_ID, token: BLOBS_TOKEN });
-    }
-    return getStore(name);
+    const store = (SITE_ID && BLOBS_TOKEN)
+      ? getStore({ name, siteID: SITE_ID, token: BLOBS_TOKEN })
+      : getStore(name);
+    handles.set(name, store);
+    return store;
   } catch (error) {
     throw new Error(`Netlify Blobs getStore("${name}") failed: ${error.message}`);
   }

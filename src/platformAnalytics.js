@@ -158,9 +158,26 @@ export function trackSearchEvent(query) {
   trackEvent('search', { query: query.trim() });
 }
 
-export async function fetchAnalyticsSummary(token) {
-  const response = await fetch('/.netlify/functions/analytics-summary', {
+// The dashboard's three independent data sources, in the order they finish:
+// verification (2 blob reads), events (1 large blob read), users (1 blob read
+// per registered account). Requested SEPARATELY and in parallel so the panel can
+// paint each card group as its own source lands, instead of every card waiting
+// on the slowest one — and so a source that is down or slow costs one group
+// rather than the whole screen.
+export const ANALYTICS_SECTIONS = ['verification', 'events', 'users'];
+
+// Fetches one slice, or (with no `section`) the complete payload the endpoint
+// has always returned. `refresh` bypasses the server's aggregate cache; the
+// 30-second background poll deliberately does NOT set it, so only an operator
+// pressing Refresh pays for a recomputation.
+export async function fetchAnalyticsSummary(token, { section = '', refresh = false, signal } = {}) {
+  const params = new URLSearchParams();
+  if (section) params.set('section', section);
+  if (refresh) params.set('refresh', '1');
+  const query = params.toString();
+  const response = await fetch(`/.netlify/functions/analytics-summary${query ? `?${query}` : ''}`, {
     headers: { Authorization: `Bearer ${token}` },
+    signal,
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));

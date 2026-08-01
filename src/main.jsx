@@ -300,6 +300,7 @@ import {
   trackCompareUsedEvent,
   trackSearchEvent,
   fetchAnalyticsSummary,
+  ANALYTICS_SECTIONS,
   downloadAsFile,
   summaryToCsv,
   setAnalyticsUserId,
@@ -9135,34 +9136,123 @@ function DonutChart({ data, size = 140 }) {
   );
 }
 
+// ── Admin Analytics ─────────────────────────────────────────────────────────
+//
+// THE PROBLEM THIS SHAPE SOLVES
+//
+// This screen used to be one request for one object. The endpoint behind it
+// reads three unrelated sources whose costs differ by two orders of magnitude —
+// the verification blobs (2 reads), the event log (1 large read), and the user
+// records (one read PER REGISTERED ACCOUNT, 207 round trips at 206 accounts) —
+// and it read them one after another. So:
+//
+//   - nothing painted until the slowest source answered, which is why the
+//     registered-user count "appeared with a delay": it was not slow, it was
+//     queued behind everything else and then everything waited for IT;
+//   - a single failing source rendered an error page instead of a dashboard,
+//     discarding forty cards that had perfectly good data;
+//   - a 30-second poll repeated all of it, forever.
+//
+// Now each source is its own request, all three are issued together, and each
+// card group renders from its own slice. The shell — title, toolbar, headings —
+// paints immediately and never waits for data at all.
+const EMPTY_SLICE = { status: 'loading', data: null, error: '' };
+
+// One card group's loading/failed state, rendered where that group lives.
+function AnalyticsSectionError({ message, onRetry }) {
+  const { t } = useTranslation();
+  return (
+    <div className="analytics-section-error" role="alert">
+      <p>{message || t('adminAnalytics.loadFailed')}</p>
+      <button className="secondary-button" type="button" onClick={onRetry}>{t('common.retry')}</button>
+    </div>
+  );
+}
+
+function AnalyticsSkeletonGrid({ count = 4 }) {
+  return (
+    <div className="skeleton-stat-grid" aria-hidden="true">
+      {Array.from({ length: count }).map((_, index) => (
+        <div className="skeleton-block" key={index} />
+      ))}
+    </div>
+  );
+}
+
 function AdminAnalyticsPage() {
   const { t } = useTranslation();
   const [token, setToken] = useState(() => getStoredAdminToken());
   const [passcode, setPasscode] = useState('');
   const [authState, setAuthState] = useState({ status: 'idle', message: '' });
-  const [summary, setSummary] = useState(null);
-  const [loadState, setLoadState] = useState({ status: 'idle', message: '' });
+  const [slices, setSlices] = useState(() => ({
+    verification: EMPTY_SLICE,
+    events: EMPTY_SLICE,
+    users: EMPTY_SLICE,
+  }));
   const [range, setRange] = useState(30);
 
-  const loadSummary = async (activeToken) => {
-    setLoadState({ status: 'loading', message: t('adminAnalytics.loadingAnalytics') });
+  // Guards against DUPLICATE in-flight requests for the same slice. The 30s
+  // poll can fire while the previous poll is still running (the user slice
+  // legitimately takes a second on a cold function), and a Refresh can land on
+  // top of both. Without this they stack: three identical 207-round-trip scans
+  // in flight at once, each one making the others slower.
+  const inFlight = useRef(new Set());
+  const controllers = useRef(new Map());
+  const alive = useRef(true);
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      // Leaving the page must not leave requests running; nothing is waiting
+      // for their answers any more.
+      controllers.current.forEach((controller) => controller.abort());
+      controllers.current.clear();
+    };
+  }, []);
+
+  // Deliberately depends on NOTHING: a loader that is rebuilt on every render
+  // makes the effect below re-run on every render, and re-running an effect
+  // that starts an interval and a fetch is exactly how a screen ends up firing
+  // the same request several times per second.
+  const loadSlice = useCallback(async (activeToken, name, { refresh = false } = {}) => {
+    if (!activeToken || inFlight.current.has(name)) return;
+    inFlight.current.add(name);
+    const controller = new AbortController();
+    controllers.current.set(name, controller);
+    // Keep whatever is already on screen while a refresh runs. Replacing good
+    // numbers with skeletons every 30 seconds makes a working dashboard flicker.
+    setSlices((prev) => ({ ...prev, [name]: { ...prev[name], status: prev[name].data ? 'ready' : 'loading', error: '' } }));
     try {
-      const data = await fetchAnalyticsSummary(activeToken);
-      setSummary(data);
-      setLoadState({ status: 'idle', message: '' });
+      const data = await fetchAnalyticsSummary(activeToken, { section: name, refresh, signal: controller.signal });
+      if (!alive.current) return;
+      setSlices((prev) => ({ ...prev, [name]: { status: 'ready', data, error: '' } }));
     } catch (error) {
-      setLoadState({ status: 'error', message: error.message || t('adminAnalytics.loadFailed') });
+      if (!alive.current || error.name === 'AbortError') return;
+      // The previous data (if any) is kept and the failure is reported beside
+      // it, rather than the group blanking out on a single failed poll.
+      setSlices((prev) => ({ ...prev, [name]: { status: 'error', data: prev[name].data, error: error.message } }));
+    } finally {
+      inFlight.current.delete(name);
+      if (controllers.current.get(name) === controller) controllers.current.delete(name);
     }
-  };
+  }, []);
+
+  const loadAll = useCallback((activeToken, options) => {
+    ANALYTICS_SECTIONS.forEach((name) => loadSlice(activeToken, name, options));
+  }, [loadSlice]);
 
   useEffect(() => {
     if (!token) return undefined;
-    loadSummary(token);
-    // Auto-refresh so the dashboard reflects new user activity in near real
-    // time without a manual reload (matches the 30s cadence used elsewhere).
-    const interval = setInterval(() => loadSummary(token), 30000);
+    loadAll(token);
+    // Auto-refresh so the dashboard reflects new activity without a manual
+    // reload (matches the 30s cadence used elsewhere). The poll does NOT bypass
+    // the server's aggregate cache — only the Refresh button does — so a tab
+    // left open costs one cheap cached response per source rather than a full
+    // recomputation twice a minute.
+    const interval = setInterval(() => loadAll(token), 30000);
     return () => clearInterval(interval);
-  }, [token]);
+  }, [token, loadAll]);
 
   const login = async (event) => {
     event.preventDefault();
@@ -9179,15 +9269,35 @@ function AdminAnalyticsPage() {
   const logout = () => {
     clearAdminToken();
     setToken('');
-    setSummary(null);
+    setSlices({ verification: EMPTY_SLICE, events: EMPTY_SLICE, users: EMPTY_SLICE });
+  };
+
+  // The export reassembles whatever HAS loaded into the single object this
+  // endpoint used to return, so the CSV/JSON files keep their existing shape.
+  // It exports what was measured and nothing else — a slice that failed is
+  // absent from the file rather than present as zeros.
+  const mergedSummary = () => {
+    const parts = ANALYTICS_SECTIONS.map((name) => slices[name].data).filter(Boolean);
+    if (!parts.length) return null;
+    const merged = { overview: {}, userAnalytics: {} };
+    parts.forEach((part) => {
+      Object.entries(part).forEach(([key, value]) => {
+        if (key === 'sections' || key === 'sectionsGeneratedAt') return;
+        if (key === 'overview' || key === 'userAnalytics') Object.assign(merged[key], value);
+        else merged[key] = value;
+      });
+    });
+    return merged;
   };
 
   const exportJson = () => {
+    const summary = mergedSummary();
     if (!summary) return;
     downloadAsFile(`khan-trust-analytics-${Date.now()}.json`, JSON.stringify(summary, null, 2), 'application/json');
   };
 
   const exportCsv = () => {
+    const summary = mergedSummary();
     if (!summary) return;
     downloadAsFile(`khan-trust-analytics-${Date.now()}.csv`, summaryToCsv(summary), 'text/csv');
   };
@@ -9207,36 +9317,28 @@ function AdminAnalyticsPage() {
     );
   }
 
-  if (loadState.status === 'loading' && !summary) {
-    return (
-      <section className="page-section">
-        <SectionTitle icon={BarChart3} eyebrow={t('adminVerify.eyebrow')} title={t('adminAnalytics.title')} />
-        <p className="lookup-message">{t('adminAnalytics.loadingAnalytics')}</p>
-        <div className="skeleton-stat-grid" aria-hidden="true">
-          {Array.from({ length: 8 }).map((_, index) => (
-            <div className="skeleton-block" key={index} />
-          ))}
-        </div>
-      </section>
-    );
-  }
+  // From here down NOTHING blocks the shell. Each slice reports its own state,
+  // and every card reads only from the slice that owns it.
+  const events = slices.events.data;
+  const verification = slices.verification.data;
+  const users = slices.users.data;
+  const pending = {
+    events: !events,
+    verification: !verification,
+    users: !users,
+  };
+  const failed = {
+    events: slices.events.status === 'error' && !events,
+    verification: slices.verification.status === 'error' && !verification,
+    users: slices.users.status === 'error' && !users,
+  };
 
-  if (!summary) {
-    return (
-      <section className="page-section">
-        <SectionTitle icon={BarChart3} eyebrow={t('adminVerify.eyebrow')} title={t('adminAnalytics.title')} />
-        <p className="lookup-message error">{loadState.message || t('adminAnalytics.loadFailed')}</p>
-        <button className="secondary-button" type="button" onClick={() => loadSummary(token)}>{t('common.retry')}</button>
-      </section>
-    );
-  }
-
-  const scanSeries = range === 7 ? summary.scanAnalytics.last7 : range === 90 ? summary.scanAnalytics.last90 : summary.scanAnalytics.last30;
+  const scanSeries = !events ? [] : range === 7 ? events.scanAnalytics.last7 : range === 90 ? events.scanAnalytics.last90 : events.scanAnalytics.last30;
   const trustColors = { '0-20': 'var(--danger)', '21-40': '#f08a4b', '41-60': 'var(--warning)', '61-80': '#9bd97a', '81-100': 'var(--success)' };
-  const distributionData = Object.entries(summary.trustScoreAnalytics.distribution).map(([label, value]) => ({ label, value, color: trustColors[label] }));
-  const deviceData = [
-    { label: t('adminAnalytics.deviceDesktop'), value: summary.visitorAnalytics.desktop, color: 'var(--gold)' },
-    { label: t('adminAnalytics.deviceMobile'), value: summary.visitorAnalytics.mobile, color: 'var(--gold-bright)' },
+  const distributionData = !events ? [] : Object.entries(events.trustScoreAnalytics.distribution).map(([label, value]) => ({ label, value, color: trustColors[label] }));
+  const deviceData = !events ? [] : [
+    { label: t('adminAnalytics.deviceDesktop'), value: events.visitorAnalytics.desktop, color: 'var(--gold)' },
+    { label: t('adminAnalytics.deviceMobile'), value: events.visitorAnalytics.mobile, color: 'var(--gold-bright)' },
   ];
   const trafficLabels = {
     direct: t('adminAnalytics.trafficDirect'),
@@ -9245,17 +9347,25 @@ function AdminAnalyticsPage() {
     telegram: 'Telegram',
     other: t('adminAnalytics.trafficOther'),
   };
-  const trafficData = Object.entries(summary.visitorAnalytics.trafficSources).map(([label, value]) => ({
+  const trafficData = !events ? [] : Object.entries(events.visitorAnalytics.trafficSources).map(([label, value]) => ({
     label: trafficLabels[label] || (label.charAt(0).toUpperCase() + label.slice(1)),
     value,
   }));
   const c = t('adminAnalytics.columns');
+  // The OLDEST slice on screen, not the newest. Slices are cached separately, so
+  // claiming the freshest one's timestamp for the whole page would overstate how
+  // current the figures are.
+  const stamps = ANALYTICS_SECTIONS.map((name) => slices[name].data?.generatedAt).filter(Boolean).sort();
 
   return (
     <section className="page-section analytics-dashboard">
       <SectionTitle icon={BarChart3} eyebrow={t('adminVerify.eyebrow')} title={t('adminAnalytics.title')} />
       <div className="analytics-toolbar">
-        <button className="secondary-button" type="button" onClick={() => loadSummary(token)}>{t('common.refresh')}</button>
+        {/* The ONLY caller that bypasses the server's aggregate cache. An
+            operator who has just approved a verification or granted Premium
+            presses this expecting to see it, so it must never be answered from
+            a remembered figure. */}
+        <button className="secondary-button" type="button" onClick={() => loadAll(token, { refresh: true })}>{t('common.refresh')}</button>
         <button className="secondary-button" type="button" onClick={exportCsv}><Download size={16} /> {t('adminAnalytics.exportCsv')}</button>
         <button className="secondary-button" type="button" onClick={exportJson}><Download size={16} /> {t('adminAnalytics.exportJson')}</button>
         <button className="secondary-button" type="button" onClick={() => { window.location.hash = '/admin-verify'; window.dispatchEvent(new HashChangeEvent('hashchange')); }}>
@@ -9285,22 +9395,39 @@ function AdminAnalyticsPage() {
         </button>
         <button className="ghost-button" type="button" onClick={logout}>{t('common.signOut')}</button>
       </div>
-      <p className="analytics-meta">{t('adminAnalytics.generated', { date: new Date(summary.generatedAt).toLocaleString(), count: summary.eventCount })}</p>
+      {stamps.length > 0 && (
+        <p className="analytics-meta">{t('adminAnalytics.generated', { date: new Date(stamps[0]).toLocaleString(), count: events?.eventCount ?? 0 })}</p>
+      )}
+
+      {(failed.events || failed.verification) && (
+        <AnalyticsSectionError
+          message={slices.events.error || slices.verification.error}
+          onRetry={() => {
+            if (failed.events) loadSlice(token, 'events', { refresh: true });
+            if (failed.verification) loadSlice(token, 'verification', { refresh: true });
+          }}
+        />
+      )}
 
       <div className="analytics-stat-grid">
-        <StatCard icon={Activity} label={t('adminAnalytics.totalScans')} numericValue={summary.overview.totalScans} />
-        <StatCard icon={Layers3} label={t('adminAnalytics.totalProjects')} numericValue={summary.overview.totalProjects} />
-        <StatCard icon={BadgeCheck} label={t('adminAnalytics.verifiedProjects')} numericValue={summary.overview.verifiedProjects} />
-        <StatCard icon={LineChart} label={t('adminAnalytics.averageTrustScore')} value={summary.trustScoreAnalytics.average ?? 'N/A'} sublabel={t('adminAnalytics.scoredProjects', { count: summary.trustScoreAnalytics.sampleSize })} />
-        <StatCard icon={Users} label={t('adminAnalytics.totalUsers')} numericValue={summary.overview.totalUsers} sublabel={t('adminAnalytics.uniqueVisitors')} />
-        <StatCard icon={Search} label={t('adminAnalytics.topSearches')} value={summary.popularSearches[0]?.query || 'N/A'} sublabel={summary.popularSearches[0] ? `${summary.popularSearches[0].count} ${t('adminAnalytics.columns').count}` : ''} />
-        <StatCard icon={Clock3} label={t('adminAnalytics.pendingVerification')} numericValue={summary.overview.pendingVerification} />
-        <StatCard icon={X} label={t('adminAnalytics.rejectedVerification')} numericValue={summary.overview.rejectedVerification} />
+        <StatCard icon={Activity} label={t('adminAnalytics.totalScans')} numericValue={events?.overview.totalScans} pending={pending.events && !failed.events} failed={failed.events} />
+        <StatCard icon={Layers3} label={t('adminAnalytics.totalProjects')} numericValue={events?.overview.totalProjects} pending={pending.events && !failed.events} failed={failed.events} />
+        <StatCard icon={BadgeCheck} label={t('adminAnalytics.verifiedProjects')} numericValue={verification?.overview.verifiedProjects} pending={pending.verification && !failed.verification} failed={failed.verification} />
+        <StatCard icon={LineChart} label={t('adminAnalytics.averageTrustScore')} value={events ? (events.trustScoreAnalytics.average ?? 'N/A') : ''} sublabel={events ? t('adminAnalytics.scoredProjects', { count: events.trustScoreAnalytics.sampleSize }) : ''} pending={pending.events && !failed.events} failed={failed.events} />
+        <StatCard icon={Users} label={t('adminAnalytics.totalUsers')} numericValue={events?.overview.totalUsers} sublabel={t('adminAnalytics.uniqueVisitors')} pending={pending.events && !failed.events} failed={failed.events} />
+        <StatCard icon={Search} label={t('adminAnalytics.topSearches')} value={events ? (events.popularSearches[0]?.query || 'N/A') : ''} sublabel={events?.popularSearches[0] ? `${events.popularSearches[0].count} ${t('adminAnalytics.columns').count}` : ''} pending={pending.events && !failed.events} failed={failed.events} />
+        <StatCard icon={Clock3} label={t('adminAnalytics.pendingVerification')} numericValue={verification?.overview.pendingVerification} pending={pending.verification && !failed.verification} failed={failed.verification} />
+        <StatCard icon={X} label={t('adminAnalytics.rejectedVerification')} numericValue={verification?.overview.rejectedVerification} pending={pending.verification && !failed.verification} failed={failed.verification} />
       </div>
 
-      {summary.userAnalytics && (
-        <>
+      {/* The user cards are the expensive slice — one blob read per registered
+          account. They render their own skeletons and their own failure, so the
+          forty cards above and below never wait on them again. */}
+      <>
           <h3 className="analytics-section-heading">{t('adminAnalytics.userAnalyticsHeading')}</h3>
+          {failed.users && (
+            <AnalyticsSectionError message={slices.users.error} onRetry={() => loadSlice(token, 'users', { refresh: true })} />
+          )}
           {/* Every card below binds to the AUTHORITATIVE backend field. None of
               them is derived in the browser — in particular "Never Logged In"
               is read from the API, not computed as registered − loggedIn here.
@@ -9313,14 +9440,18 @@ function AdminAnalyticsPage() {
             <StatCard
               icon={UserPlus}
               label={t('adminAnalytics.registeredUsers')}
-              numericValue={summary.userAnalytics.registeredUsers}
+              numericValue={users?.userAnalytics.registeredUsers}
               tooltip={t('adminAnalytics.tooltips.registeredUsers')}
+              pending={pending.users && !failed.users}
+              failed={failed.users}
             />
             <StatCard
               icon={User}
               label={t('adminAnalytics.newRegistrationsToday')}
-              numericValue={summary.userAnalytics.registeredToday}
+              numericValue={events?.userAnalytics.registeredToday}
               tooltip={t('adminAnalytics.tooltips.newRegistrationsToday')}
+              pending={pending.events && !failed.events}
+              failed={failed.events}
             />
             {/* Renamed from "Logged In Visitors": the old label collided with a
                 completely different metric further down this page (unique
@@ -9329,57 +9460,71 @@ function AdminAnalyticsPage() {
             <StatCard
               icon={Users}
               label={t('adminAnalytics.loggedInUsers')}
-              numericValue={summary.userAnalytics.loggedInUsers}
+              numericValue={users?.userAnalytics.loggedInUsers}
               sublabel={t('adminAnalytics.loggedInUsersSub')}
               tooltip={t('adminAnalytics.tooltips.loggedInUsers')}
+              pending={pending.users && !failed.users}
+              failed={failed.users}
             />
             <StatCard
               icon={Lock}
               label={t('adminAnalytics.neverLoggedInUsers')}
-              numericValue={summary.userAnalytics.neverLoggedInUsers}
+              numericValue={users?.userAnalytics.neverLoggedInUsers}
               sublabel={t('adminAnalytics.neverLoggedInUsersSub')}
               tooltip={t('adminAnalytics.tooltips.neverLoggedInUsers')}
+              pending={pending.users && !failed.users}
+              failed={failed.users}
             />
             <StatCard
               icon={Activity}
               label={t('adminAnalytics.activeToday')}
-              numericValue={summary.userAnalytics.activeToday}
+              numericValue={users?.userAnalytics.activeToday}
               tooltip={t('adminAnalytics.tooltips.activeToday')}
+              pending={pending.users && !failed.users}
+              failed={failed.users}
             />
             <StatCard
               icon={CalendarClock}
               label={t('adminAnalytics.activeLast7Days')}
-              numericValue={summary.userAnalytics.activeLast7Days}
+              numericValue={users?.userAnalytics.activeLast7Days}
               tooltip={t('adminAnalytics.tooltips.activeLast7Days')}
+              pending={pending.users && !failed.users}
+              failed={failed.users}
             />
             <StatCard
               icon={Users}
               label={t('adminAnalytics.returningUsers')}
-              numericValue={summary.userAnalytics.returningUsers}
+              numericValue={events?.userAnalytics.returningUsers}
               sublabel={t('adminAnalytics.returningUsersSub')}
               tooltip={t('adminAnalytics.tooltips.returningUsers')}
+              pending={pending.events && !failed.events}
+              failed={failed.events}
             />
             <StatCard
               icon={BarChart3}
               label={t('adminAnalytics.avgScansPerUser')}
-              numericValue={summary.userAnalytics.avgScansPerUser}
+              numericValue={events?.userAnalytics.avgScansPerUser}
               sublabel={t('adminAnalytics.avgScansPerUserSub')}
               tooltip={t('adminAnalytics.tooltips.avgScansPerUser')}
+              pending={pending.events && !failed.events}
+              failed={failed.events}
             />
           </div>
           {/* States the invariant on screen. An administrator should be able to
               check the arithmetic without opening devtools — and if these ever
               stop adding up, the person looking at the dashboard is the one who
-              needs to know first. */}
-          <p className="analytics-invariant-note">
-            {t('adminAnalytics.invariantNote', {
-              registered: summary.userAnalytics.registeredUsers,
-              loggedIn: summary.userAnalytics.loggedInUsers,
-              never: summary.userAnalytics.neverLoggedInUsers,
-            })}
-          </p>
+              needs to know first. Only shown once the numbers exist: an
+              invariant printed over three blanks proves nothing. */}
+          {users && (
+            <p className="analytics-invariant-note">
+              {t('adminAnalytics.invariantNote', {
+                registered: users.userAnalytics.registeredUsers,
+                loggedIn: users.userAnalytics.loggedInUsers,
+                never: users.userAnalytics.neverLoggedInUsers,
+              })}
+            </p>
+          )}
         </>
-      )}
 
       <div className="detail-section analytics-section">
         <SectionTitle icon={LineChart} eyebrow={t('adminAnalytics.scansEyebrow')} title={t('adminAnalytics.scanActivity')} />
@@ -9388,108 +9533,132 @@ function AdminAnalyticsPage() {
             <button key={days} className={range === days ? 'active' : ''} onClick={() => setRange(days)}>{t('adminAnalytics.lastDays', { days })}</button>
           ))}
         </div>
-        <Sparkline data={scanSeries} height={80} />
-        <div className="analytics-mini-stats">
-          <span>{t('adminAnalytics.thisWeek')} <strong>{summary.scanAnalytics.totalThisWeek}</strong></span>
-          <span>{t('adminAnalytics.thisMonth')} <strong>{summary.scanAnalytics.totalThisMonth}</strong></span>
-          <span>{t('adminAnalytics.growth7d')} <strong className={summary.scanAnalytics.growth7d >= 0 ? 'trend-up' : 'trend-down'}>{summary.scanAnalytics.growth7d}%</strong></span>
-          <span>{t('adminAnalytics.growth30d')} <strong className={summary.scanAnalytics.growth30d >= 0 ? 'trend-up' : 'trend-down'}>{summary.scanAnalytics.growth30d}%</strong></span>
-        </div>
+        {!events ? <AnalyticsSkeletonGrid count={2} /> : (
+          <>
+            <Sparkline data={scanSeries} height={80} />
+            <div className="analytics-mini-stats">
+              <span>{t('adminAnalytics.thisWeek')} <strong>{events.scanAnalytics.totalThisWeek}</strong></span>
+              <span>{t('adminAnalytics.thisMonth')} <strong>{events.scanAnalytics.totalThisMonth}</strong></span>
+              <span>{t('adminAnalytics.growth7d')} <strong className={events.scanAnalytics.growth7d >= 0 ? 'trend-up' : 'trend-down'}>{events.scanAnalytics.growth7d}%</strong></span>
+              <span>{t('adminAnalytics.growth30d')} <strong className={events.scanAnalytics.growth30d >= 0 ? 'trend-up' : 'trend-down'}>{events.scanAnalytics.growth30d}%</strong></span>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="detail-section analytics-section">
-        <RankTable
-          title={t('adminAnalytics.mostScannedTokens')}
-          columns={[c.name, c.ticker, c.contract, c.scans, c.avgTrustScore]}
-          rows={summary.mostScannedTokens.map((token) => [
-            token.name,
-            token.ticker,
-            <code key="contract">{token.contract}</code>,
-            token.scanCount,
-            token.avgTrustScore ?? 'N/A',
-          ])}
-        />
+        {!events ? <AnalyticsSkeletonGrid count={2} /> : (
+          <RankTable
+            title={t('adminAnalytics.mostScannedTokens')}
+            columns={[c.name, c.ticker, c.contract, c.scans, c.avgTrustScore]}
+            rows={events.mostScannedTokens.map((token) => [
+              token.name,
+              token.ticker,
+              <code key="contract">{token.contract}</code>,
+              token.scanCount,
+              token.avgTrustScore ?? 'N/A',
+            ])}
+          />
+        )}
       </div>
 
       <div className="detail-section analytics-section analytics-grid-2">
-        <RankTable
-          title={t('adminAnalytics.mostViewedProjects')}
-          columns={[c.name, c.ticker, c.views]}
-          rows={summary.projectAnalytics.mostViewed.map((item) => [item.name, item.ticker, item.count])}
-        />
-        <RankTable
-          title={t('adminAnalytics.mostTrustedProjects')}
-          columns={[c.name, c.ticker, c.trustScore]}
-          rows={summary.projectAnalytics.mostTrusted.map((item) => [item.name, item.ticker, item.trustScore])}
-        />
-        <RankTable
-          title={t('adminAnalytics.lowestTrustProjects')}
-          columns={[c.name, c.ticker, c.trustScore]}
-          rows={summary.projectAnalytics.lowestTrust.map((item) => [item.name, item.ticker, item.trustScore])}
-        />
-        <RankTable
-          title={t('adminAnalytics.topSearches')}
-          columns={[c.query, c.count]}
-          rows={summary.popularSearches.map((item) => [item.query, item.count])}
-        />
+        {!events ? <AnalyticsSkeletonGrid count={4} /> : (
+          <>
+            <RankTable
+              title={t('adminAnalytics.mostViewedProjects')}
+              columns={[c.name, c.ticker, c.views]}
+              rows={events.projectAnalytics.mostViewed.map((item) => [item.name, item.ticker, item.count])}
+            />
+            <RankTable
+              title={t('adminAnalytics.mostTrustedProjects')}
+              columns={[c.name, c.ticker, c.trustScore]}
+              rows={events.projectAnalytics.mostTrusted.map((item) => [item.name, item.ticker, item.trustScore])}
+            />
+            <RankTable
+              title={t('adminAnalytics.lowestTrustProjects')}
+              columns={[c.name, c.ticker, c.trustScore]}
+              rows={events.projectAnalytics.lowestTrust.map((item) => [item.name, item.ticker, item.trustScore])}
+            />
+            <RankTable
+              title={t('adminAnalytics.topSearches')}
+              columns={[c.query, c.count]}
+              rows={events.popularSearches.map((item) => [item.query, item.count])}
+            />
+          </>
+        )}
       </div>
 
       <div className="detail-section analytics-section analytics-grid-2">
         <div>
           <h4>{t('adminAnalytics.distributionTitle')}</h4>
-          <p className="analytics-meta">{t('adminAnalytics.averageTrustScore')} <strong>{summary.trustScoreAnalytics.average ?? 'N/A'}</strong> {t('adminAnalytics.scoredProjects', { count: summary.trustScoreAnalytics.sampleSize })}</p>
-          <DonutChart data={distributionData} />
+          {!events ? <AnalyticsSkeletonGrid count={1} /> : (
+            <>
+              <p className="analytics-meta">{t('adminAnalytics.averageTrustScore')} <strong>{events.trustScoreAnalytics.average ?? 'N/A'}</strong> {t('adminAnalytics.scoredProjects', { count: events.trustScoreAnalytics.sampleSize })}</p>
+              <DonutChart data={distributionData} />
+            </>
+          )}
         </div>
         <div>
           <h4>{t('adminAnalytics.trendTitle')}</h4>
-          <Sparkline data={summary.trustScoreAnalytics.trend.map((point) => ({ count: point.average }))} color="var(--success)" height={80} />
+          {!events ? <AnalyticsSkeletonGrid count={1} /> : (
+            <Sparkline data={events.trustScoreAnalytics.trend.map((point) => ({ count: point.average }))} color="var(--success)" height={80} />
+          )}
         </div>
       </div>
 
       <div className="detail-section analytics-section analytics-grid-2">
         <div>
           <h4>{t('adminAnalytics.visitorAnalytics')}</h4>
-          <div className="analytics-mini-stats">
-            <span>{t('adminAnalytics.totalVisitors')} <strong>{summary.visitorAnalytics.totalVisitors}</strong></span>
-            <span><strong>{summary.visitorAnalytics.uniqueVisitors}</strong> {t('adminAnalytics.uniqueVisitors')}</span>
-            <span>{t('adminAnalytics.newVisitors')} <strong>{summary.visitorAnalytics.newVisitors}</strong></span>
-            <span>{t('adminAnalytics.returningVisitors')} <strong>{summary.visitorAnalytics.returningVisitors}</strong></span>
-            {/* A DIFFERENT metric from "Logged In Users" above, despite the
-                old shared label. This one counts unique browser VISITORS
-                (keyed by visitorId from page views) whose latest page view was
-                made while signed in — so one person on two devices is two, and
-                a signed-in user who has not loaded a page recently is zero.
-                Renamed to say so. */}
-            <span>{t('adminAnalytics.signedInSessions')} <strong>{summary.visitorAnalytics.loggedInVisitors ?? 0}</strong></span>
-            <span>{t('adminAnalytics.guestVisitors')} <strong>{summary.visitorAnalytics.guestVisitors ?? 0}</strong></span>
-          </div>
-          <MiniBarChart data={deviceData} />
+          {!events ? <AnalyticsSkeletonGrid count={2} /> : (
+            <>
+              <div className="analytics-mini-stats">
+                <span>{t('adminAnalytics.totalVisitors')} <strong>{events.visitorAnalytics.totalVisitors}</strong></span>
+                <span><strong>{events.visitorAnalytics.uniqueVisitors}</strong> {t('adminAnalytics.uniqueVisitors')}</span>
+                <span>{t('adminAnalytics.newVisitors')} <strong>{events.visitorAnalytics.newVisitors}</strong></span>
+                <span>{t('adminAnalytics.returningVisitors')} <strong>{events.visitorAnalytics.returningVisitors}</strong></span>
+                {/* A DIFFERENT metric from "Logged In Users" above, despite the
+                    old shared label. This one counts unique browser VISITORS
+                    (keyed by visitorId from page views) whose latest page view was
+                    made while signed in — so one person on two devices is two, and
+                    a signed-in user who has not loaded a page recently is zero.
+                    Renamed to say so. */}
+                <span>{t('adminAnalytics.signedInSessions')} <strong>{events.visitorAnalytics.loggedInVisitors ?? 0}</strong></span>
+                <span>{t('adminAnalytics.guestVisitors')} <strong>{events.visitorAnalytics.guestVisitors ?? 0}</strong></span>
+              </div>
+              <MiniBarChart data={deviceData} />
+            </>
+          )}
         </div>
         <div>
           <h4>{t('adminAnalytics.trafficSources')}</h4>
-          <MiniBarChart data={trafficData} color="var(--gold-bright)" />
+          {!events ? <AnalyticsSkeletonGrid count={1} /> : <MiniBarChart data={trafficData} color="var(--gold-bright)" />}
         </div>
       </div>
 
       <div className="detail-section analytics-section analytics-grid-2">
         <div>
           <h4>{t('adminAnalytics.verificationActivity')}</h4>
-          <div className="analytics-mini-stats">
-            <span>{t('adminAnalytics.totalRequests')} <strong>{summary.verificationAnalytics.totalRequests}</strong></span>
-            <span>{t('adminAnalytics.pending')} <strong>{summary.verificationAnalytics.pending}</strong></span>
-            <span>{t('adminAnalytics.approved')} <strong>{summary.verificationAnalytics.approved}</strong></span>
-            <span>{t('adminAnalytics.rejected')} <strong>{summary.verificationAnalytics.rejected}</strong></span>
-            <span>{t('adminAnalytics.approvalRate')} <strong className="trend-up">{summary.verificationAnalytics.approvalRate}%</strong></span>
-            <span>{t('adminAnalytics.rejectionRate')} <strong className="trend-down">{summary.verificationAnalytics.rejectionRate}%</strong></span>
-          </div>
+          {!verification ? <AnalyticsSkeletonGrid count={1} /> : (
+            <div className="analytics-mini-stats">
+              <span>{t('adminAnalytics.totalRequests')} <strong>{verification.verificationAnalytics.totalRequests}</strong></span>
+              <span>{t('adminAnalytics.pending')} <strong>{verification.verificationAnalytics.pending}</strong></span>
+              <span>{t('adminAnalytics.approved')} <strong>{verification.verificationAnalytics.approved}</strong></span>
+              <span>{t('adminAnalytics.rejected')} <strong>{verification.verificationAnalytics.rejected}</strong></span>
+              <span>{t('adminAnalytics.approvalRate')} <strong className="trend-up">{verification.verificationAnalytics.approvalRate}%</strong></span>
+              <span>{t('adminAnalytics.rejectionRate')} <strong className="trend-down">{verification.verificationAnalytics.rejectionRate}%</strong></span>
+            </div>
+          )}
         </div>
         <div>
           <h4>{t('adminAnalytics.topActivity')}</h4>
-          <div className="analytics-mini-stats">
-            <span>{t('adminAnalytics.mostActiveDay')} <strong>{summary.topActivity.mostActiveDay.date || 'N/A'}</strong> ({summary.topActivity.mostActiveDay.count})</span>
-            <span>{t('adminAnalytics.mostActiveWeek')} <strong>{summary.topActivity.mostActiveWeek.weekStarting || 'N/A'}</strong> ({summary.topActivity.mostActiveWeek.count})</span>
-            <span>{t('adminAnalytics.mostActiveMonth')} <strong>{summary.topActivity.mostActiveMonth.month || 'N/A'}</strong> ({summary.topActivity.mostActiveMonth.count})</span>
-          </div>
+          {!events ? <AnalyticsSkeletonGrid count={1} /> : (
+            <div className="analytics-mini-stats">
+              <span>{t('adminAnalytics.mostActiveDay')} <strong>{events.topActivity.mostActiveDay.date || 'N/A'}</strong> ({events.topActivity.mostActiveDay.count})</span>
+              <span>{t('adminAnalytics.mostActiveWeek')} <strong>{events.topActivity.mostActiveWeek.weekStarting || 'N/A'}</strong> ({events.topActivity.mostActiveWeek.count})</span>
+              <span>{t('adminAnalytics.mostActiveMonth')} <strong>{events.topActivity.mostActiveMonth.month || 'N/A'}</strong> ({events.topActivity.mostActiveMonth.count})</span>
+            </div>
+          )}
         </div>
       </div>
     </section>

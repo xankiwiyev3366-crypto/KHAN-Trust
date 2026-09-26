@@ -332,6 +332,8 @@ import {
 // their own module only because this file is already long enough.
 import { AdminPaidVerificationPage, AdminJobsPage } from './adminPages.jsx';
 import { qrToSvg } from './lib/qrcode.js';
+import { formatBakuDateTime, formatBakuDate, formatBakuTime } from './lib/bakuTime.js';
+import { formatUsdAmount } from './lib/formatPrice.js';
 import {
   translateRiskLevel, daysSince, slugify, formatCurrency, formatTinyOrCurrency,
   formatNumber, formatAge, formatPercent, formatScore, displayValue, storedMetadataValue,
@@ -9680,13 +9682,17 @@ function MultiLineChart({ series, height = 140 }) {
   if (!allPoints.length) return <EmptyState title={t('adminHolders.noChartDataTitle')} text={t('adminHolders.noChartDataText')} />;
   const max = Math.max(1, ...allPoints.map((p) => p.y));
   const width = 100;
+  // Inset so a series sitting at the max (a flat line - common for a small
+  // holder base) is drawn inside the frame instead of on its clipped top edge.
+  const pad = 6;
+  const plotHeight = height - pad * 2;
   return (
     <div className="holder-chart-wrap">
       <svg className="holder-line-chart" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
         {series.map((s) => {
           if (!s.data.length) return null;
           const stepX = width / Math.max(1, s.data.length - 1);
-          const points = s.data.map((point, index) => `${(index * stepX).toFixed(2)},${(height - (point.y / max) * height).toFixed(2)}`).join(' ');
+          const points = s.data.map((point, index) => `${(index * stepX).toFixed(2)},${(pad + plotHeight - (point.y / max) * plotHeight).toFixed(2)}`).join(' ');
           return <polyline key={s.label} points={points} fill="none" stroke={s.color} strokeWidth="2" />;
         })}
       </svg>
@@ -9728,14 +9734,29 @@ function formatHolderNumber(value, fractionDigits = 2) {
 }
 
 function formatUsd(value) {
-  if (value === null || value === undefined || Number.isNaN(value)) return translate('common.notAvailable');
-  return `$${Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+  return formatUsdAmount(value) ?? translate('common.notAvailable');
 }
 
+// Asia/Baku, always - never the viewer's machine timezone.
 function formatDateTime(timestamp) {
   if (!timestamp) return { date: translate('common.notAvailable'), time: '' };
-  const d = new Date(timestamp);
-  return { date: d.toLocaleDateString(), time: d.toLocaleTimeString() };
+  return { date: formatBakuDate(timestamp), time: formatBakuTime(timestamp) };
+}
+
+function khanVenueLabel(t, market) {
+  if (!market?.venue) return t('adminHolders.venueUnknown');
+  if (market.venue === 'pumpfun_bonding_curve') return t('adminHolders.venueBondingCurve');
+  return t('adminHolders.venueMigrated', { venue: market.venue });
+}
+
+function bondingCurveLabel(t, curve) {
+  if (curve?.status === 'active') {
+    return curve.progressPercent === null || curve.progressPercent === undefined
+      ? t('adminHolders.bondingCurveActiveNoPercent')
+      : t('adminHolders.bondingCurveActive', { percent: curve.progressPercent.toFixed(2) });
+  }
+  if (curve?.status === 'complete') return t('adminHolders.bondingCurveComplete');
+  return t('adminHolders.bondingCurveUnknown');
 }
 
 // Unambiguous DD.MM.YYYY for admin date displays. The locale-default
@@ -9833,7 +9854,7 @@ function AdminHolderAnalyticsPage() {
       const result = await triggerManualSync(token);
       setSyncState({
         status: 'idle',
-        message: t('adminHolders.syncSummary', {
+        message: result.skipped === 'locked' ? t('adminHolders.syncSkippedLocked') : t('adminHolders.syncSummary', {
           count: result.processed,
           status: result.reachedHead ? t('adminHolders.syncUpToDate') : t('adminHolders.syncMoreHistory'),
         }),
@@ -9898,6 +9919,8 @@ function AdminHolderAnalyticsPage() {
   }
 
   const s = stats.stats;
+  const market = stats.market || null;
+  const sync = stats.sync || null;
   const growthSeries = [
     { label: t('adminHolders.holderGrowthSeries'), color: 'var(--gold)', data: stats.charts.growth.map((p) => ({ y: p.holderCount })) },
     { label: t('adminHolders.buyerGrowthSeries'), color: 'var(--success)', data: stats.charts.growth.map((p) => ({ y: p.buyerCount })) },
@@ -9924,8 +9947,17 @@ function AdminHolderAnalyticsPage() {
       </div>
       {syncState.message && <p className={`lookup-message ${syncState.status === 'error' ? 'error' : ''}`}>{syncState.message}</p>}
       <p className="analytics-meta">
-        {t('adminHolders.mintLabel')} <code>{OFFICIAL_KHAN_CONTRACT}</code> &middot; {t('adminHolders.khanUsdLabel')} {formatUsd(s.khanUsdPrice)} &middot; {t('adminHolders.solUsdLabel')} {formatUsd(stats.stats.solUsdPrice)} &middot; {t('adminHolders.totalSupplyLabel')} {formatHolderNumber(s.totalSupply, 0)}
+        {t('adminHolders.mintLabel')} <code>{OFFICIAL_KHAN_CONTRACT}</code> &middot; {t('adminHolders.khanUsdLabel')} {formatUsd(s.khanUsdPrice)} &middot; {t('adminHolders.solUsdLabel')} {formatUsd(s.solUsdPrice)} &middot; {t('adminHolders.totalSupplyLabel')} {formatHolderNumber(s.totalSupply, 0)}
       </p>
+      <p className="analytics-meta">
+        {t('adminHolders.venueLabel')} {khanVenueLabel(t, market)} &middot; {t('adminHolders.bondingCurveLabel')} {bondingCurveLabel(t, market?.bondingCurve)}
+      </p>
+      <p className="analytics-meta">
+        {t('adminHolders.lastSyncedLabel')} {sync?.lastCompletedAt ? formatBakuDateTime(sync.lastCompletedAt) : t('adminHolders.neverSynced')} &middot; {t('adminHolders.latestEventLabel')} {sync?.latestEventAt ? formatBakuDateTime(sync.latestEventAt) : t('common.notAvailable')} &middot; {t('adminHolders.timeZoneNote')}
+      </p>
+      {sync?.lastRun && sync.lastRun.ok === false && (
+        <p className="lookup-message error">{t('adminHolders.lastSyncFailed', { error: sync.lastRun.error || '' })}</p>
+      )}
 
       <div className="analytics-stat-grid">
         <StatCard icon={Users} label={t('adminHolders.statTotalHolders')} numericValue={s.totalHolders} />
@@ -9955,7 +9987,10 @@ function AdminHolderAnalyticsPage() {
                 <span className="holder-alert-type">{alertTypeLabel(t, alert.type)}</span>
                 {alert.wallet && <code>{shortenWallet(alert.wallet)}</code>}
                 {alert.amount !== null && alert.amount !== undefined && <span>{formatHolderNumber(alert.amount)}</span>}
-                <span className="holder-alert-time">{alert.createdAt ? new Date(alert.createdAt).toLocaleString() : ''}</span>
+                <span className="holder-alert-time">
+                  {formatBakuDateTime(alert.eventAt ?? alert.detectedAt ?? alert.createdAt)}
+                  {alert.timeBasis === 'detected' ? ` ${t('adminHolders.detectedTimeSuffix')}` : ''}
+                </span>
               </li>
             ))}
           </ul>
@@ -10023,8 +10058,8 @@ function AdminHolderAnalyticsPage() {
                   <td>{h.sellCount}</td>
                   <td>{formatHolderNumber(h.netPosition, 0)}</td>
                   <td>{h.isWhale ? <Crown size={14} /> : ''}</td>
-                  <td>{h.firstBuyAt ? new Date(h.firstBuyAt).toLocaleDateString() : t('common.notAvailable')}</td>
-                  <td>{h.lastActivityAt ? new Date(h.lastActivityAt).toLocaleDateString() : t('common.notAvailable')}</td>
+                  <td title={h.firstBuyAt ? formatBakuDateTime(h.firstBuyAt) : ''}>{h.firstBuyAt ? formatBakuDate(h.firstBuyAt) : t('common.notAvailable')}</td>
+                  <td title={h.lastActivityAt ? formatBakuDateTime(h.lastActivityAt) : ''}>{h.lastActivityAt ? formatBakuDate(h.lastActivityAt) : t('common.notAvailable')}</td>
                   <td>{h.isCurrentHolder ? t('common.yes') : t('common.no')}</td>
                 </tr>
               ))}

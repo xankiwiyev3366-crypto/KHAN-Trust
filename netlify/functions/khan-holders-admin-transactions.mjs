@@ -3,23 +3,9 @@
 import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
+import { withinRange } from './_khanHolderAnalytics.mjs';
 import { readTransactions, readHolders } from './_khanHolderStore.mjs';
 import { KHAN_MINT } from './_khanIndexer.mjs';
-
-const RANGE_WINDOWS_MS = {
-  today: 24 * 60 * 60 * 1000,
-  '24h': 24 * 60 * 60 * 1000,
-  '7d': 7 * 24 * 60 * 60 * 1000,
-  '30d': 30 * 24 * 60 * 60 * 1000,
-};
-
-function withinRange(timestamp, range) {
-  if (!range || range === 'all') return true;
-  if (!timestamp) return false;
-  const windowMs = RANGE_WINDOWS_MS[range];
-  if (!windowMs) return true;
-  return Date.now() - timestamp <= windowMs;
-}
 
 export async function handler(event) {
   connectBlobs(event);
@@ -75,6 +61,7 @@ export async function handler(event) {
 
     return jsonResponse(200, { total, page, pageSize, transactions: pageRows });
   } catch (error) {
+    console.error(`[khan-holders-admin-transactions] ${error.message}`);
     return jsonResponse(500, { message: `khan-holders-admin-transactions crashed: ${error.message}` });
   }
 }

@@ -16,6 +16,8 @@ const PAT = 'pat-should-not-be-sent-from-an-invocation';
 process.env.SITE_ID = 'd471a553-b579-4bee-850a-cab4a70dbff7';
 process.env.NETLIFY_BLOBS_TOKEN = PAT;
 delete process.env.NETLIFY_BLOBS_CONTEXT;
+// Behave as a deployed Lambda, so the PAT fallback is reported rather than silent.
+process.env.AWS_LAMBDA_FUNCTION_NAME = 'khan-holders-sync-background';
 
 const { connectBlobs } = await import('../netlify/functions/_blobsConnect.mjs');
 const { getNamedStore } = await import('../netlify/functions/_blobsClient.mjs');
@@ -36,12 +38,18 @@ function invocation(token) {
   };
 }
 
-test('without an invocation context (local scripts) the PAT is used', async () => {
+test('without an invocation context the PAT is used - and, when deployed, says so', async () => {
   sent.length = 0;
+  const warned = [];
+  const original = console.warn;
+  console.warn = (...args) => warned.push(args.join(' '));
   assert.equal(connectBlobs({ httpMethod: 'GET', headers: {} }), false);
   await getNamedStore('khan-holder-analytics').get('holders.json', { type: 'json' });
+  console.warn = original;
   // The PAT path asks the API for a signed URL first, so the PAT rides on that call.
   assert.ok(sent.some((r) => r.auth === `Bearer ${PAT}`));
+  assert.ok(warned.some((line) => /NETLIFY_BLOBS_TOKEN fallback in a deployed function/.test(line)));
+  assert.ok(!warned.join(' ').includes(PAT), 'the token itself is never logged');
 });
 
 test('an invocation reads with the credential Netlify attached, never the PAT', async () => {
@@ -85,4 +93,31 @@ test('a rejected credential is logged with store, op and status - and no token',
   assert.match(line, /store="khan-holder-analytics" op=get auth=invocation status=401/);
   assert.ok(!line.includes('secret-invocation-token'));
   assert.ok(!line.includes(PAT));
+});
+
+test('an expired fallback token is diagnosed as such, without leaking it', async () => {
+  delete process.env.NETLIFY_BLOBS_CONTEXT;
+  reply = () => new Response('unauthorized', { status: 401 });
+  const logged = [];
+  const original = console.error;
+  console.error = (...args) => logged.push(args.join(' '));
+  try {
+    await assert.rejects(getNamedStore('khan-holder-analytics').get('holders.json', { type: 'json' }), /401/);
+  } finally {
+    console.error = original;
+    reply = () => new Response(JSON.stringify({ ok: 1 }), { status: 200 });
+  }
+  const line = logged.join(' | ');
+  assert.match(line, /auth=pat status=401/);
+  assert.match(line, /NETLIFY_BLOBS_TOKEN was rejected \(expired or revoked\)/);
+  assert.ok(!line.includes(PAT));
+});
+
+test('writes go out with the invocation credential too, never the PAT', async () => {
+  connectBlobs(invocation('invocation-write-token'));
+  sent.length = 0;
+  await getNamedStore('khan-holder-analytics').setJSON('meta.json', { lastSignature: 'x' });
+  assert.ok(sent.length > 0);
+  assert.ok(sent.some((r) => r.auth === 'Bearer invocation-write-token'));
+  for (const request of sent) assert.notEqual(request.auth, `Bearer ${PAT}`);
 });

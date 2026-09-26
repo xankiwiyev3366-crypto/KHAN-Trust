@@ -9,19 +9,14 @@
 // fact used anywhere is the bonding-curve PDA address, and that is used
 // purely to exclude the pool/vault account from the holder list, never to
 // interpret what happened in a transaction.
-import { PublicKey } from '@solana/web3.js';
-import { readMeta, writeMeta, readHolders, writeHolders, appendTransactions, appendAlerts } from './_khanHolderStore.mjs';
+import { readMeta, writeMeta, readHolders, writeHolders, readTransactions, appendTransactions, appendAlerts, MAX_TRANSACTIONS } from './_khanHolderStore.mjs';
+import { solanaRpc, HAS_DEDICATED_RPC } from './_khanRpc.mjs';
+import { deriveBondingCurvePda, getKhanMarket, getCurrentSolUsdPrice } from './_khanMarket.mjs';
 
 export const KHAN_MINT = '6bSHkoMYqzyCZdWPQ45nUv73dvdfx4yEd4yEemefpump';
 
-const PUMP_FUN_PROGRAM_ID = '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const TOKEN_2022_PROGRAM_ID = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
-
-const HELIUS_API_KEY = process.env.HELIUS_API_KEY || '';
-const RPC_URL = HELIUS_API_KEY
-  ? `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`
-  : process.env.SOLANA_RPC_URL || process.env.VITE_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 
 // Whale = a single wallet holding at least this fraction of all currently-
 // held (circulating-among-holders) supply. Large buy/sell threshold is in
@@ -35,33 +30,9 @@ const SIGNATURES_PAGE_SIZE = 1000;
 const MAX_SIGNATURE_PAGES_PER_BATCH = 3;
 const MAX_TX_DETAIL_FETCHES_PER_BATCH = 200;
 
-async function solanaRpc(method, params) {
-  const response = await fetch(RPC_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: method, method, params }),
-  });
-  if (!response.ok) throw new Error(`${method} failed (${response.status}).`);
-  const payload = await response.json();
-  if (payload.error) throw new Error(`${method}: ${payload.error.message}`);
-  return payload.result;
-}
-
 async function fetchMintProgramId(mint) {
   const accountInfo = await solanaRpc('getAccountInfo', [mint, { encoding: 'jsonParsed' }]);
   return accountInfo?.value?.owner || TOKEN_PROGRAM_ID;
-}
-
-function deriveBondingCurvePda(mint) {
-  try {
-    const [pda] = PublicKey.findProgramAddressSync(
-      [Buffer.from('bonding-curve'), new PublicKey(mint).toBuffer()],
-      new PublicKey(PUMP_FUN_PROGRAM_ID),
-    );
-    return pda.toBase58();
-  } catch {
-    return null;
-  }
 }
 
 async function fetchDexscreenerPoolAddresses(mint) {
@@ -185,7 +156,7 @@ async function fetchParsedTransactionWithRetry(signature) {
 // RPC endpoint from rate-limiting the batch in the first place (prevention
 // is cheaper than retries). Skipped when a Helius key is configured, since
 // Helius's RPC tier comfortably handles back-to-back requests.
-const INTER_REQUEST_DELAY_MS = HELIUS_API_KEY ? 0 : 150;
+const INTER_REQUEST_DELAY_MS = HAS_DEDICATED_RPC ? 0 : 150;
 
 // Pure balance-delta classifier - the venue-agnostic core. Works identically
 // whether the swap routed through Pump.fun's bonding curve or a Raydium AMM,
@@ -267,61 +238,73 @@ export function classifyParsedTransaction(tx, poolAddressSet) {
   return events;
 }
 
+// Daily SOL/USD for the day a trade happened (UTC day, matching the cache keys
+// already stored). CoinGecko first, as before; Kraken's daily candles second,
+// because CoinGecko's keyless API throttles cloud IPs. A null is never cached,
+// so a day that could not be priced is retried next time instead of being
+// frozen as "unknown".
+async function fetchCoinGeckoDayPrice(dayStart) {
+  const response = await fetch(
+    `https://api.coingecko.com/api/v3/coins/solana/market_chart/range?vs_currency=usd&from=${dayStart}&to=${dayStart + 86400}`,
+  );
+  if (!response.ok) throw new Error(`coingecko HTTP ${response.status}`);
+  const data = await response.json();
+  const prices = Array.isArray(data?.prices) ? data.prices : [];
+  return prices.length ? Number(prices[Math.floor(prices.length / 2)][1]) || null : null;
+}
+
+async function fetchKrakenDayPrice(dayStart) {
+  const response = await fetch(`https://api.kraken.com/0/public/OHLC?pair=SOLUSD&interval=1440&since=${dayStart - 1}`);
+  if (!response.ok) throw new Error(`kraken HTTP ${response.status}`);
+  const data = await response.json();
+  const candles = Object.entries(data?.result || {}).find(([key]) => key !== 'last')?.[1] || [];
+  // [time, open, high, low, close, vwap, volume, count] - the candle opening at
+  // exactly this UTC midnight; its VWAP is the day's representative price.
+  const candle = candles.find((c) => Number(c[0]) === dayStart);
+  return candle ? Number(candle[5]) || Number(candle[4]) || null : null;
+}
+
 async function fetchHistoricalSolUsdPrice(blockTime, meta) {
   if (!blockTime) return { price: null, isEstimated: true };
   const dayKey = new Date(blockTime).toISOString().slice(0, 10);
   if (meta.solPriceCacheByDay[dayKey]) {
     return { price: meta.solPriceCacheByDay[dayKey], isEstimated: true };
   }
-  try {
-    const dayStart = Math.floor(new Date(`${dayKey}T00:00:00Z`).getTime() / 1000);
-    const dayEnd = dayStart + 86400;
-    const response = await fetch(
-      `https://api.coingecko.com/api/v3/coins/solana/market_chart/range?vs_currency=usd&from=${dayStart}&to=${dayEnd}`,
-    );
-    if (!response.ok) return { price: null, isEstimated: true };
-    const data = await response.json();
-    const prices = Array.isArray(data?.prices) ? data.prices : [];
-    if (!prices.length) return { price: null, isEstimated: true };
-    const price = prices[Math.floor(prices.length / 2)][1];
-    meta.solPriceCacheByDay[dayKey] = price;
-    return { price, isEstimated: true };
-  } catch {
-    return { price: null, isEstimated: true };
+  const dayStart = Math.floor(new Date(`${dayKey}T00:00:00Z`).getTime() / 1000);
+  for (const source of [fetchCoinGeckoDayPrice, fetchKrakenDayPrice]) {
+    try {
+      const price = await source(dayStart);
+      if (price) {
+        meta.solPriceCacheByDay[dayKey] = price;
+        return { price, isEstimated: true };
+      }
+    } catch (error) {
+      console.warn(`[khan-indexer] historical SOL/USD for ${dayKey}: ${error.message}`);
+    }
   }
+  return { price: null, isEstimated: true };
 }
 
-// Live KHAN/USD price for "current holdings value" - read from Dexscreener's
-// public pairs endpoint (same data source already used elsewhere in the app
-// for token pricing display). This is a read-only lookup for the holder
-// table; it does not touch or alter the existing Pricing module.
-export async function fetchKhanUsdPrice() {
+// Live KHAN market state (price, venue, bonding-curve status) - see
+// _khanMarket.mjs for how the venue is decided from on-chain state.
+export async function fetchKhanMarket(options) {
   try {
-    const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${KHAN_MINT}`);
-    if (!response.ok) return null;
-    const data = await response.json();
-    const pairs = Array.isArray(data?.pairs) ? data.pairs : [];
-    const withPrice = pairs.find((pair) => pair.priceUsd);
-    return withPrice ? Number(withPrice.priceUsd) : null;
-  } catch {
+    return await getKhanMarket(KHAN_MINT, options);
+  } catch (error) {
+    console.error(`[khan-indexer] KHAN market read failed: ${error.message}`);
     return null;
   }
 }
+
+export async function fetchKhanUsdPrice() {
+  return (await fetchKhanMarket())?.priceUsd ?? null;
+}
+
+export { getCurrentSolUsdPrice };
 
 export async function fetchTotalSupply() {
   const result = await solanaRpc('getTokenSupply', [KHAN_MINT]);
   return Number(result?.value?.uiAmount || 0);
-}
-
-export async function getCurrentSolUsdPrice() {
-  try {
-    const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
-    if (!response.ok) return null;
-    const data = await response.json();
-    return data?.solana?.usd || null;
-  } catch {
-    return null;
-  }
 }
 
 // The only "exact truth" reconciliation pass: scans every live token account
@@ -368,12 +351,23 @@ function newHolderRecord(wallet) {
     sellCount: 0,
     solSpent: 0,
     solReceived: 0,
+    // Distinct moments, never substituted for one another:
+    firstSeenAt: null, // first on-chain KHAN balance change of any kind
+    firstHolderAt: null, // first time its KHAN balance went from zero to positive
     firstBuyAt: null,
+    lastBuyAt: null,
+    lastSellAt: null,
     lastActivityAt: null,
     isCurrentHolder: false,
   };
 }
 
+const earliest = (a, b) => (a == null ? b : b == null ? a : Math.min(a, b));
+const latest = (a, b) => (a == null ? b : b == null ? a : Math.max(a, b));
+
+// Applies one classified balance change. Returns what changed so the caller can
+// time notifications to THIS event: whether the wallet had never been seen, and
+// whether it just became a holder (ledger balance crossed from <= 0 to > 0).
 function applyEventToHolder(holders, event) {
   const existing = holders[event.wallet] || newHolderRecord(event.wallet);
   const next = { ...existing };
@@ -383,143 +377,268 @@ function applyEventToHolder(holders, event) {
   // and recorded, but the timestamp fields are left alone rather than being
   // corrupted with a fabricated "0" date that would sort as the dawn of time.
   const hasTimestamp = typeof event.blockTime === 'number' && event.blockTime > 0;
+  const ts = hasTimestamp ? event.blockTime : null;
+  const balanceBefore = (existing.totalBought || 0) - (existing.totalSold || 0);
   if (event.direction === 'buy') {
     next.totalBought += event.khanAmount;
     next.buyCount += 1;
     next.solSpent += event.solAmount;
-    if (hasTimestamp && (!next.firstBuyAt || event.blockTime < next.firstBuyAt)) next.firstBuyAt = event.blockTime;
+    next.firstBuyAt = earliest(next.firstBuyAt, ts);
+    next.lastBuyAt = latest(next.lastBuyAt ?? null, ts);
   } else {
     next.totalSold += event.khanAmount;
     next.sellCount += 1;
-    next.solReceived += event.solAmount;
+    next.solReceived = (next.solReceived || 0) + event.solAmount;
+    next.lastSellAt = latest(next.lastSellAt ?? null, ts);
   }
-  if (hasTimestamp && (!next.lastActivityAt || event.blockTime > next.lastActivityAt)) {
-    next.lastActivityAt = event.blockTime;
-  }
+  next.firstSeenAt = earliest(next.firstSeenAt ?? null, ts);
+  next.lastActivityAt = latest(next.lastActivityAt, ts);
+  const balanceAfter = next.totalBought - next.totalSold;
+  const becameHolder = balanceBefore <= 1e-9 && balanceAfter > 1e-9;
+  if (becameHolder) next.firstHolderAt = earliest(next.firstHolderAt ?? null, ts);
   holders[event.wallet] = next;
-  return existing.buyCount === 0 && existing.sellCount === 0;
+  return { wasNew: existing.buyCount === 0 && existing.sellCount === 0, becameHolder };
 }
 
-function buildAlerts(events, holders, isNewWalletByAddress) {
+// Records written before firstSeenAt/firstHolderAt/lastBuyAt/lastSellAt existed
+// get them derived once from the transaction log, which is every balance change
+// the indexer has ever classified. Only when the log is provably complete (never
+// truncated at MAX_TRANSACTIONS): from a partial log these would be wrong.
+// Existing fields are never overwritten.
+export function backfillHolderTimestamps(holders, transactions) {
+  if (transactions.length >= MAX_TRANSACTIONS) return holders;
+  const needs = Object.values(holders).some((h) => h.firstSeenAt === undefined);
+  if (!needs) return holders;
+  const derived = {};
+  const ordered = transactions.filter((t) => t.blockTime).sort((a, b) => a.blockTime - b.blockTime);
+  for (const tx of ordered) applyEventToHolder(derived, tx);
+  const updated = { ...holders };
+  for (const [wallet, record] of Object.entries(updated)) {
+    if (record.firstSeenAt !== undefined) continue;
+    const d = derived[wallet] || newHolderRecord(wallet);
+    updated[wallet] = {
+      ...record,
+      firstSeenAt: d.firstSeenAt,
+      firstHolderAt: d.firstHolderAt,
+      lastBuyAt: d.lastBuyAt,
+      lastSellAt: d.lastSellAt,
+    };
+  }
+  return updated;
+}
+
+// Every alert carries two times: eventAt (the chain time of the transaction it
+// is about) and detectedAt (when the indexer noticed). createdAt keeps its old
+// meaning for readers - the event time - so existing consumers and sorting are
+// unchanged.
+function alertAt(event, detectedAt) {
+  return { createdAt: event.blockTime, eventAt: event.blockTime, detectedAt };
+}
+
+function buildAlerts(events, isNewWalletByAddress, detectedAt) {
   const alerts = [];
   for (const event of events) {
     const id = `${event.signature}-${event.wallet}`;
+    const at = alertAt(event, detectedAt);
     if (event.direction === 'buy') {
       if (isNewWalletByAddress.get(event.wallet)) {
-        alerts.push({ id: `${id}-new-holder`, type: 'new_holder', wallet: event.wallet, amount: event.khanAmount, signature: event.signature, createdAt: event.blockTime });
-        alerts.push({ id: `${id}-new-buyer`, type: 'new_buyer', wallet: event.wallet, amount: event.khanAmount, signature: event.signature, createdAt: event.blockTime });
+        alerts.push({ id: `${id}-new-holder`, type: 'new_holder', wallet: event.wallet, amount: event.khanAmount, signature: event.signature, ...at });
+        alerts.push({ id: `${id}-new-buyer`, type: 'new_buyer', wallet: event.wallet, amount: event.khanAmount, signature: event.signature, ...at });
       }
       if (event.solAmount >= WHALE_TRADE_SOL_THRESHOLD) {
-        alerts.push({ id: `${id}-whale-buy`, type: 'whale_buy', wallet: event.wallet, amount: event.solAmount, signature: event.signature, createdAt: event.blockTime });
+        alerts.push({ id: `${id}-whale-buy`, type: 'whale_buy', wallet: event.wallet, amount: event.solAmount, signature: event.signature, ...at });
       } else if (event.solAmount >= LARGE_TRADE_SOL_THRESHOLD) {
-        alerts.push({ id: `${id}-large-buy`, type: 'large_buy', wallet: event.wallet, amount: event.solAmount, signature: event.signature, createdAt: event.blockTime });
+        alerts.push({ id: `${id}-large-buy`, type: 'large_buy', wallet: event.wallet, amount: event.solAmount, signature: event.signature, ...at });
       }
     } else {
       if (event.solAmount >= WHALE_TRADE_SOL_THRESHOLD) {
-        alerts.push({ id: `${id}-whale-sell`, type: 'whale_sell', wallet: event.wallet, amount: event.solAmount, signature: event.signature, createdAt: event.blockTime });
+        alerts.push({ id: `${id}-whale-sell`, type: 'whale_sell', wallet: event.wallet, amount: event.solAmount, signature: event.signature, ...at });
       } else if (event.solAmount >= LARGE_TRADE_SOL_THRESHOLD) {
-        alerts.push({ id: `${id}-large-sell`, type: 'large_sell', wallet: event.wallet, amount: event.solAmount, signature: event.signature, createdAt: event.blockTime });
+        alerts.push({ id: `${id}-large-sell`, type: 'large_sell', wallet: event.wallet, amount: event.solAmount, signature: event.signature, ...at });
       }
     }
   }
   return alerts;
 }
 
+// Holder-count and top-holder notifications describe a state change, and the
+// state changed at a transaction - so they are stamped with that transaction's
+// chain time, not with the moment a sync happened to run (which is how
+// "Sahib Sayı Artdı" came to show a 04:40 sync time instead of the 23:49 buy
+// that caused it). Only a change no classified transaction explains (seen by the
+// live-balance reconciliation alone) falls back to its detection time, and says
+// so with timeBasis: 'detected'.
+function stateChangeAlert(type, amount, wallet, causingEvent, detectedAt) {
+  const prefix = type === 'holder_count_increased' ? 'holder-count' : 'top-holder';
+  if (causingEvent?.blockTime) {
+    return {
+      id: `${prefix}-${causingEvent.signature}`,
+      type, wallet, amount, signature: causingEvent.signature,
+      ...alertAt(causingEvent, detectedAt), timeBasis: 'event',
+    };
+  }
+  return {
+    id: `${prefix}-${detectedAt}`,
+    type, wallet, amount, signature: null,
+    createdAt: detectedAt, eventAt: null, detectedAt, timeBasis: 'detected',
+  };
+}
+
+// Two overlapping runs (the scheduled worker and an admin's "Refresh now")
+// would both start from the same cursor. The transaction log is deduplicated by
+// signature regardless, but the holder totals are incremental, so the second run
+// is turned away while the first holds the lease. Blobs has no compare-and-set,
+// so this narrows the window rather than closing it; the signature dedup is the
+// guarantee that no transaction is ever counted twice.
+const LEASE_MS = 14 * 60 * 1000;
+
 // Bounded unit of work: pulls the next batch of signatures since the cursor,
 // classifies them, updates the holder ledger + transaction log, advances the
 // cursor, and emits alerts. Returns whether the cursor has caught up to the
 // chain head so callers can decide whether to loop (manual backfill) or stop
 // (scheduled tick).
-export async function runSyncBatch() {
+export async function runSyncBatch({ trigger = 'unknown', runId = null } = {}) {
+  const startedAt = Date.now();
   let meta = await readMeta();
-  meta = await refreshPoolAddresses(meta);
-  const poolAddressSet = new Set(meta.poolAddresses);
-
-  const { signatures, reachedHead: collectedReachedHead } = await collectNewSignatures(meta.lastSignature);
-
-  let holders = await readHolders();
-  const isNewWalletByAddress = new Map();
-  const newTransactionRows = [];
-  let allEvents = [];
-  // Tracks whether every signature in this batch was either fully processed
-  // or confirmed on-chain-failed (no balance change possible). If even one
-  // signature could not be fetched after every retry, the batch stops dead
-  // at that point - the cursor is left exactly on the last fully-processed
-  // signature so the unresolved one is retried (never skipped) on the next
-  // run, and reachedHead is forced false so callers keep retrying instead of
-  // wrongly concluding the indexer is caught up.
-  let haltedOnUnresolvedSignature = false;
-  let processedCount = 0;
-
-  for (const sigEntry of signatures) {
-    if (sigEntry.err) {
-      // A transaction that failed on-chain moved no tokens/SOL - safe to
-      // skip and advance the cursor past it with certainty, not a guess.
-      meta.lastSignature = sigEntry.signature;
-      processedCount += 1;
-      continue;
-    }
-    let tx;
-    try {
-      tx = await fetchParsedTransactionWithRetry(sigEntry.signature);
-    } catch (error) {
-      haltedOnUnresolvedSignature = true;
-      break;
-    }
-    const events = classifyParsedTransaction(tx, poolAddressSet);
-    for (const event of events) {
-      const wasNew = applyEventToHolder(holders, event);
-      if (wasNew) isNewWalletByAddress.set(event.wallet, true);
-      const { price, isEstimated } = await fetchHistoricalSolUsdPrice(event.blockTime, meta);
-      newTransactionRows.push({
-        ...event,
-        usdEstimate: price ? event.solAmount * price : null,
-        usdIsEstimated: isEstimated,
-      });
-    }
-    allEvents = allEvents.concat(events);
-    meta.lastSignature = sigEntry.signature;
-    processedCount += 1;
-    if (INTER_REQUEST_DELAY_MS) await sleep(INTER_REQUEST_DELAY_MS);
+  const leaseHolder = runId || `${trigger}-${startedAt}`;
+  if (meta.syncLease && meta.syncLease.until > startedAt && meta.syncLease.holder !== leaseHolder) {
+    console.warn(`[khan-indexer] ${trigger} run skipped: ${meta.syncLease.holder} holds the sync lease until ${new Date(meta.syncLease.until).toISOString()}`);
+    return { processed: 0, reachedHead: false, holderCount: meta.lastHolderCount ?? null, skipped: 'locked' };
   }
-
-  const reachedHead = collectedReachedHead && !haltedOnUnresolvedSignature;
-
-  // Periodically reconcile against authoritative live balances rather than
-  // trusting the incremental ledger forever - bounded to avoid doing a full
-  // program-account scan on every single batch.
-  const now = Date.now();
-  if (now - meta.lastFullBalanceSyncAt > 10 * 60 * 1000) {
-    try {
-      holders = await reconcileCurrentBalances(holders, poolAddressSet);
-      meta.lastFullBalanceSyncAt = now;
-    } catch {
-      // Leave incremental balances as-is if a full reconciliation pass fails;
-      // the next scheduled tick will retry.
-    }
-  }
-
-  const alerts = buildAlerts(allEvents, holders, isNewWalletByAddress);
-
-  const currentHolderRecords = Object.values(holders).filter((h) => h.isCurrentHolder);
-  const currentHolderCount = currentHolderRecords.length;
-  const topHolder = currentHolderRecords.reduce((top, h) => (!top || h.currentBalance > top.currentBalance ? h : top), null);
-  if (meta.lastTopHolderWallet && topHolder && topHolder.wallet !== meta.lastTopHolderWallet) {
-    alerts.push({ id: `top-holder-${Date.now()}`, type: 'top_holder_changed', wallet: topHolder.wallet, amount: topHolder.currentBalance, signature: null, createdAt: Date.now() });
-  }
-  if (meta.lastHolderCount !== undefined && meta.lastHolderCount !== null && currentHolderCount > meta.lastHolderCount) {
-    alerts.push({ id: `holder-count-${Date.now()}`, type: 'holder_count_increased', wallet: null, amount: currentHolderCount, signature: null, createdAt: Date.now() });
-  }
-  meta.lastTopHolderWallet = topHolder?.wallet || meta.lastTopHolderWallet || null;
-  meta.lastHolderCount = currentHolderCount;
-
-  await writeHolders(holders);
-  await appendTransactions(newTransactionRows);
-  await appendAlerts(alerts);
-  meta.cursorReachedHead = reachedHead;
+  meta.syncLease = { holder: leaseHolder, until: startedAt + LEASE_MS };
   await writeMeta(meta);
 
-  return { processed: processedCount, reachedHead, holderCount: currentHolderCount };
+  try {
+    meta = await refreshPoolAddresses(meta);
+    const poolAddressSet = new Set(meta.poolAddresses);
+
+    const { signatures, reachedHead: collectedReachedHead } = await collectNewSignatures(meta.lastSignature);
+
+    const existingTransactions = await readTransactions();
+    const knownSignatures = new Set(existingTransactions.map((t) => t.signature).filter(Boolean));
+    let holders = backfillHolderTimestamps(await readHolders(), existingTransactions);
+    const isNewWalletByAddress = new Map();
+    const newTransactionRows = [];
+    let allEvents = [];
+    let lastBecameHolderEvent = null;
+    let duplicatesSkipped = 0;
+    // Tracks whether every signature in this batch was either fully processed
+    // or confirmed on-chain-failed (no balance change possible). If even one
+    // signature could not be fetched after every retry, the batch stops dead
+    // at that point - the cursor is left exactly on the last fully-processed
+    // signature so the unresolved one is retried (never skipped) on the next
+    // run, and reachedHead is forced false so callers keep retrying instead of
+    // wrongly concluding the indexer is caught up.
+    let haltedOnUnresolvedSignature = false;
+    let processedCount = 0;
+
+    for (const sigEntry of signatures) {
+      if (sigEntry.err) {
+        // A transaction that failed on-chain moved no tokens/SOL - safe to
+        // skip and advance the cursor past it with certainty, not a guess.
+        meta.lastSignature = sigEntry.signature;
+        processedCount += 1;
+        continue;
+      }
+      if (knownSignatures.has(sigEntry.signature)) {
+        // Already in the ledger (a lost cursor write, or an overlapping run):
+        // applying it again would double-count the wallet's totals.
+        duplicatesSkipped += 1;
+        meta.lastSignature = sigEntry.signature;
+        processedCount += 1;
+        continue;
+      }
+      let tx;
+      try {
+        tx = await fetchParsedTransactionWithRetry(sigEntry.signature);
+      } catch (error) {
+        console.error(`[khan-indexer] halting batch at ${sigEntry.signature}: ${error.message}`);
+        haltedOnUnresolvedSignature = true;
+        break;
+      }
+      const events = classifyParsedTransaction(tx, poolAddressSet);
+      for (const event of events) {
+        const { wasNew, becameHolder } = applyEventToHolder(holders, event);
+        if (wasNew) isNewWalletByAddress.set(event.wallet, true);
+        if (becameHolder) lastBecameHolderEvent = event;
+        const { price, isEstimated } = await fetchHistoricalSolUsdPrice(event.blockTime, meta);
+        newTransactionRows.push({
+          ...event,
+          usdEstimate: price ? event.solAmount * price : null,
+          usdIsEstimated: isEstimated,
+        });
+      }
+      knownSignatures.add(sigEntry.signature);
+      allEvents = allEvents.concat(events);
+      meta.lastSignature = sigEntry.signature;
+      processedCount += 1;
+      if (INTER_REQUEST_DELAY_MS) await sleep(INTER_REQUEST_DELAY_MS);
+    }
+
+    const reachedHead = collectedReachedHead && !haltedOnUnresolvedSignature;
+
+    // Reconcile against authoritative live balances rather than trusting the
+    // incremental ledger forever - after any batch that moved balances, and
+    // otherwise at most every 10 minutes.
+    const now = Date.now();
+    if (now - meta.lastFullBalanceSyncAt > 10 * 60 * 1000 || allEvents.length) {
+      try {
+        holders = await reconcileCurrentBalances(holders, poolAddressSet);
+        meta.lastFullBalanceSyncAt = now;
+      } catch (error) {
+        // Leave incremental balances as-is if a full reconciliation pass fails;
+        // the next scheduled tick will retry.
+        console.error(`[khan-indexer] live balance reconciliation failed: ${error.message}`);
+      }
+    }
+
+    const alerts = buildAlerts(allEvents, isNewWalletByAddress, now);
+
+    const currentHolderRecords = Object.values(holders).filter((h) => h.isCurrentHolder);
+    const currentHolderCount = currentHolderRecords.length;
+    const topHolder = currentHolderRecords.reduce((top, h) => (!top || h.currentBalance > top.currentBalance ? h : top), null);
+    const lastEvent = allEvents.filter((e) => e.blockTime).at(-1) || null;
+    if (meta.lastTopHolderWallet && topHolder && topHolder.wallet !== meta.lastTopHolderWallet) {
+      const cause = allEvents.filter((e) => e.wallet === topHolder.wallet && e.blockTime).at(-1) || lastEvent;
+      alerts.push(stateChangeAlert('top_holder_changed', topHolder.currentBalance, topHolder.wallet, cause, now));
+    }
+    if (meta.lastHolderCount !== undefined && meta.lastHolderCount !== null && currentHolderCount > meta.lastHolderCount) {
+      alerts.push(stateChangeAlert('holder_count_increased', currentHolderCount, null, lastBecameHolderEvent, now));
+    }
+    meta.lastTopHolderWallet = topHolder?.wallet || meta.lastTopHolderWallet || null;
+    meta.lastHolderCount = currentHolderCount;
+
+    await writeHolders(holders);
+    await appendTransactions(newTransactionRows);
+    await appendAlerts(alerts);
+    meta.cursorReachedHead = reachedHead;
+    const latestEventAt = newTransactionRows.reduce((max, row) => Math.max(max, row.blockTime || 0), 0);
+    if (latestEventAt) meta.latestEventAt = Math.max(meta.latestEventAt || 0, latestEventAt);
+    meta.lastRun = {
+      at: now, trigger, ok: true, processed: processedCount, newTransactions: newTransactionRows.length,
+      duplicatesSkipped, reachedHead, durationMs: Date.now() - startedAt,
+    };
+    meta.syncLease = null;
+    await writeMeta(meta);
+
+    if (duplicatesSkipped) console.warn(`[khan-indexer] skipped ${duplicatesSkipped} already-recorded signature(s)`);
+    return { processed: processedCount, newTransactions: newTransactionRows.length, duplicatesSkipped, reachedHead, holderCount: currentHolderCount };
+  } catch (error) {
+    console.error(`[khan-indexer] ${trigger} sync batch failed: ${error.message}`);
+    // Record the failure and release the lease, on a FRESH read so nothing
+    // this failed batch half-computed is persisted. Best effort: if Blobs
+    // itself is what failed, this write fails too, and the log line above is
+    // the record.
+    try {
+      const fresh = await readMeta();
+      fresh.lastRun = { at: Date.now(), trigger, ok: false, error: error.message, durationMs: Date.now() - startedAt };
+      if (fresh.syncLease?.holder === leaseHolder) fresh.syncLease = null;
+      await writeMeta(fresh);
+    } catch {
+      // already logged
+    }
+    throw error;
+  }
 }
 
 export { WHALE_SUPPLY_FRACTION };

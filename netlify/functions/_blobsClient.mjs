@@ -29,6 +29,9 @@ function invocationContext() {
 // would 401 on this one.
 const handles = new Map();
 
+const IS_DEPLOYED = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME) || (Boolean(process.env.CONTEXT) && process.env.CONTEXT !== 'dev');
+let warnedPatFallback = false;
+
 // Every failed blob operation logs which store, which operation, which
 // credential path and the HTTP status - enough to tell "token rejected" from
 // "store missing" from "network" in the function log. Never the token itself.
@@ -61,6 +64,14 @@ export function getNamedStore(name) {
   const key = `${name}\u0000${authMode}\u0000${context || ''}`;
   const cached = handles.get(key);
   if (cached) return cached;
+  if (authMode === 'pat' && IS_DEPLOYED && !warnedPatFallback) {
+    // Never silent: in production this path means a handler reached Blobs
+    // without connectBlobs(event), or an invocation arrived without
+    // `event.blobs` - and the PAT behind it is the credential that already
+    // expired once and took every blob read down with it.
+    warnedPatFallback = true;
+    console.warn(`[blobs] store="${name}" is using the NETLIFY_BLOBS_TOKEN fallback in a deployed function (${process.env.AWS_LAMBDA_FUNCTION_NAME || 'unknown'}); the per-request Blobs context was not present.`);
+  }
   try {
     const store = authMode === 'pat'
       ? getStore({ name, siteID: SITE_ID, token: BLOBS_TOKEN })

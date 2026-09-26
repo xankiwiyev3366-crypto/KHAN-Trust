@@ -4,23 +4,9 @@
 import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
+import { withinRange } from './_khanHolderAnalytics.mjs';
 import { readHolders } from './_khanHolderStore.mjs';
-import { fetchTotalSupply, getCurrentSolUsdPrice, fetchKhanUsdPrice, WHALE_SUPPLY_FRACTION } from './_khanIndexer.mjs';
-
-const RANGE_WINDOWS_MS = {
-  today: 24 * 60 * 60 * 1000,
-  '24h': 24 * 60 * 60 * 1000,
-  '7d': 7 * 24 * 60 * 60 * 1000,
-  '30d': 30 * 24 * 60 * 60 * 1000,
-};
-
-function withinRange(timestamp, range) {
-  if (!range || range === 'all') return true;
-  if (!timestamp) return false;
-  const windowMs = RANGE_WINDOWS_MS[range];
-  if (!windowMs) return true;
-  return Date.now() - timestamp <= windowMs;
-}
+import { fetchTotalSupply, fetchKhanMarket, WHALE_SUPPLY_FRACTION } from './_khanIndexer.mjs';
 
 export async function handler(event) {
   connectBlobs(event);
@@ -39,11 +25,12 @@ export async function handler(event) {
     const pageSize = Math.min(200, Math.max(1, Number(params.pageSize) || 50));
 
     const holdersMap = await readHolders();
-    const [totalSupply, solUsdPrice, khanUsdPrice] = await Promise.all([
+    const [totalSupply, market] = await Promise.all([
       fetchTotalSupply().catch(() => 0),
-      getCurrentSolUsdPrice(),
-      fetchKhanUsdPrice(),
+      fetchKhanMarket(),
     ]);
+    const solUsdPrice = market?.solUsd ?? null;
+    const khanUsdPrice = market?.priceUsd ?? null;
 
     let rows = Object.values(holdersMap);
     if (search) {
@@ -78,7 +65,11 @@ export async function handler(event) {
         totalSold: row.totalSold,
         buyCount: row.buyCount,
         sellCount: row.sellCount,
+        firstSeenAt: row.firstSeenAt ?? null,
+        firstHolderAt: row.firstHolderAt ?? null,
         firstBuyAt: row.firstBuyAt,
+        lastBuyAt: row.lastBuyAt ?? null,
+        lastSellAt: row.lastSellAt ?? null,
         lastActivityAt: row.lastActivityAt,
         isCurrentHolder: row.isCurrentHolder,
         solSpent: row.solSpent,
@@ -93,6 +84,7 @@ export async function handler(event) {
 
     return jsonResponse(200, { total, page, pageSize, totalSupply, solUsdPrice, holders: pageRows });
   } catch (error) {
+    console.error(`[khan-holders-admin-list] ${error.message}`);
     return jsonResponse(500, { message: `khan-holders-admin-list crashed: ${error.message}` });
   }
 }

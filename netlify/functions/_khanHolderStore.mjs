@@ -15,7 +15,7 @@ const META_KEY = 'meta.json';
 // Capped like _analyticsStore.mjs's event log - keeps every read/write within
 // a single Lambda invocation. Revisit (day-bucketed keys) if KHAN's tx volume
 // grows past this comfortably-large ceiling.
-const MAX_TRANSACTIONS = 50000;
+export const MAX_TRANSACTIONS = 50000;
 const MAX_ALERTS = 2000;
 
 function store() {
@@ -36,10 +36,26 @@ export async function readTransactions() {
   return Array.isArray(data) ? data : [];
 }
 
+// One row per (signature, wallet, direction): a transaction touching several
+// wallets is several rows, but the same balance change is never stored twice,
+// whichever run - scheduled, manual, or a retry after a lost cursor - got there
+// first.
+export function transactionKey(row) {
+  return `${row.signature}|${row.wallet}|${row.direction}`;
+}
+
 export async function appendTransactions(newRows) {
   if (!newRows.length) return readTransactions();
   const existing = await readTransactions();
-  const merged = existing.concat(newRows);
+  const seen = new Set(existing.map(transactionKey));
+  const fresh = newRows.filter((row) => {
+    const key = transactionKey(row);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (!fresh.length) return existing;
+  const merged = existing.concat(fresh);
   const capped = merged.length > MAX_TRANSACTIONS ? merged.slice(merged.length - MAX_TRANSACTIONS) : merged;
   await store().setJSON(TRANSACTIONS_KEY, capped);
   return capped;
@@ -53,7 +69,10 @@ export async function readAlerts() {
 export async function appendAlerts(newAlerts) {
   if (!newAlerts.length) return readAlerts();
   const existing = await readAlerts();
-  const merged = existing.concat(newAlerts);
+  const ids = new Set(existing.map((alert) => alert.id));
+  const fresh = newAlerts.filter((alert) => !ids.has(alert.id) && ids.add(alert.id));
+  if (!fresh.length) return existing;
+  const merged = existing.concat(fresh);
   const capped = merged.length > MAX_ALERTS ? merged.slice(merged.length - MAX_ALERTS) : merged;
   await store().setJSON(ALERTS_KEY, capped);
   return capped;

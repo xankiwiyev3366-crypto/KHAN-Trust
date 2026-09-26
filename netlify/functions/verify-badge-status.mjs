@@ -23,6 +23,7 @@
 // badge token. A widget needs to know what to draw and where to link. Anything
 // beyond that would be published to every visitor of every embedding site, and
 // the only reason to include it would be that it was convenient.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { readStatuses } from './_verificationStore.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
 import { recordEvent } from './_productEvents.mjs';
@@ -67,6 +68,7 @@ function respond(statusCode, body) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod === 'OPTIONS') {
       return { statusCode: 204, headers: CORS_HEADERS, body: '' };

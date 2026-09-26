@@ -20,6 +20,7 @@
 // A wallet may still be supplied. It is recorded as OPTIONAL METADATA — never
 // as the grant key, never required, and never validated as a precondition of
 // taking money.
+import { connectBlobs } from './_blobsConnect.mjs';
 import Stripe from 'stripe';
 import { jsonResponse } from './_blobsClient.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
@@ -41,6 +42,7 @@ function getMode(plan) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') {
     return jsonResponse(405, { message: 'Method not allowed' });
   }

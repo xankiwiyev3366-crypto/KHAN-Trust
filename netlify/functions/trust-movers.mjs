@@ -19,6 +19,7 @@
 //   section  rising | falling | newHighConfidence | newlyHighRisk
 //            (optional — return only that one section)
 //   limit    1..50 per section              (default 20)
+import { connectBlobs } from './_blobsConnect.mjs';
 import { getTrustMovers, SUPPORTED_CHAINS } from './_trustMoversStore.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
 import { isValidPeriod, DEFAULT_PERIOD, SECTIONS } from '../../src/lib/trustMovers.js';
@@ -28,6 +29,7 @@ const MAX_LIMIT = 50;
 const AUDIENCES = new Set(['all', 'verified', 'premium']);
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

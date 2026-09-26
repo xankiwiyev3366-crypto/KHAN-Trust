@@ -1,4 +1,5 @@
 // Initiative CRUD for the Growth Loop. Admin-only. No AI, no spend.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { buildWarehouse } from './_growthWarehouse.mjs';
 import {
@@ -7,6 +8,7 @@ import {
 } from './_growthInitiatives.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });
 

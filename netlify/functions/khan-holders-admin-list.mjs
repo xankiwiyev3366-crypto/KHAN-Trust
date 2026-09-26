@@ -1,6 +1,7 @@
 // Holder table for the admin panel. Rank/%/whale-status/USD value are
 // derived here at read time from the stored ledger + a live SOL/USD price -
 // never stored, so they can never drift from the underlying facts.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
 import { readHolders } from './_khanHolderStore.mjs';
@@ -22,6 +23,7 @@ function withinRange(timestamp, range) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

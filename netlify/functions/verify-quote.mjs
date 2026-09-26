@@ -30,6 +30,7 @@
 // `needs_scan`, distinct from `below_floor`. Collapsing them would either refuse
 // a legitimate customer for a scan they were never asked to run, or — far worse
 // — let an unscored token through a floor it was never measured against.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { getCorpusToken, jsonResponse } from './_tokenCorpusStore.mjs';
 import { findActiveOrderForContract, contractKey } from './_verificationOrders.mjs';
 import { recordEvent } from './_productEvents.mjs';
@@ -64,6 +65,7 @@ function publicTiers() {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

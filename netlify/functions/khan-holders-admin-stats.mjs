@@ -1,6 +1,7 @@
 // Admin dashboard numbers + chart series - everything derived at read time
 // from holders.json/transactions.json, the single source of truth, mirroring
 // the analytics-summary.mjs pattern used elsewhere in this admin panel.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
 import { readHolders, readTransactions } from './_khanHolderStore.mjs';
@@ -73,6 +74,7 @@ function buildGrowthSeries(transactions, days = 30) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

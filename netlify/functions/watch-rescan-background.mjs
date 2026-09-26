@@ -19,6 +19,7 @@
 //
 // A scheduled function is also not invocable over HTTP, so the two roles cannot
 // share one function.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { listSubscriptions } from './_alertsStore.mjs';
 import { putWatchSnapshot, getWatchSnapshots } from './_watchSnapshotStore.mjs';
@@ -56,6 +57,7 @@ async function recordMonitoredHistory(result, date) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   // Same posture as growth-analyze-background: this does real network work and
   // writes durable state, so an unauthenticated caller must not be able to
   // trigger it (or to hammer two public APIs on our behalf).

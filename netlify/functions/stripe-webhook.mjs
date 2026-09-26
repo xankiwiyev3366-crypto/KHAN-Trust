@@ -10,6 +10,7 @@
 // session. That is what lets the cutover happen with no dual-write and no
 // backfill — old sessions in flight at deploy time still resolve correctly,
 // because their client_reference_id already says what they are.
+import { connectBlobs } from './_blobsConnect.mjs';
 import Stripe from 'stripe';
 import { grantEntitlement, revokeEntitlement, findSubjectByStripeSubscription, jsonResponse } from './_entitlementsStore.mjs';
 import { recordCheckoutCompleted } from './_growthRecord.mjs';
@@ -71,6 +72,7 @@ async function handleSubscriptionDeleted(subscription) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') {
     return jsonResponse(405, { message: 'Method not allowed' });
   }

@@ -2,11 +2,13 @@
 // Issues a one-time message for the wallet to sign, proving ownership before
 // premium user-data is released (see _walletSession.mjs / P0-1). Rate-limited
 // per IP so it can't be used to spray challenges.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { createChallenge, isValidWallet } from './_walletSession.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
 
   const limit = await enforce('reset_ip', getClientIp(event)); // reuse a modest IP policy

@@ -7,6 +7,7 @@
 //
 // It is purely additive and never mutates anything. The original
 // premium-admin-list endpoint is left untouched for backward compatibility.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { listRegisteredUsers, countRegisteredUsers, jsonResponse } from './_authStore.mjs';
 import { readGrants, isGrantActive, effectivePlan } from './_premiumStore.mjs';
@@ -19,6 +20,7 @@ import {
 } from './_userActivity.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
   if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });
 

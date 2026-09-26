@@ -2,6 +2,7 @@
 // look up their own ticket history without an account, matched by email or
 // connected wallet. Public, but only returns user-facing fields - never
 // internal admin notes.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { readTickets, jsonResponse } from './_supportStore.mjs';
 
 function toPublicTicket(ticket) {
@@ -23,6 +24,7 @@ function toPublicTicket(ticket) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

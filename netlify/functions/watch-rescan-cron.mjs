@@ -29,11 +29,13 @@
 // _rescanEngine only ever emits a snapshot from a COMPLETE fetch. The worst
 // case is that one token's alert arrives one tick later, which is exactly the
 // trade the per-run cap is tuned to avoid in the first place.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { issueToken } from './_adminAuth.mjs';
 
 export const config = { schedule: '0,30 * * * *' };
 
-export async function handler() {
+export async function handler(event) {
+  connectBlobs(event);
   const siteUrl = process.env.URL || process.env.DEPLOY_PRIME_URL;
   if (!siteUrl) {
     console.error('[watch-rescan-cron] no site URL in env; cannot reach the background function.');

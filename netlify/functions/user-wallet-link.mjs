@@ -5,6 +5,7 @@
 // telemetry: it authenticates the caller with their normal auth JWT, writes
 // only the isolated wallet-links store, and returns ok either way. It never
 // touches payments, entitlements, or premium access.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken, jsonResponse } from './_authStore.mjs';
 import { recordWalletLink } from './_walletLinkStore.mjs';
 
@@ -13,6 +14,7 @@ import { recordWalletLink } from './_walletLinkStore.mjs';
 const BASE58_WALLET = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
 

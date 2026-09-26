@@ -1,3 +1,4 @@
+import { connectBlobs } from './_blobsConnect.mjs';
 import crypto from 'node:crypto';
 import { getUserByEmail, saveUser, issueToken, createVerifyToken, hashPassword, recordSuccessfulAuth, AUTH_METHOD, jsonResponse } from './_authStore.mjs';
 import { sendVerificationEmail } from './_email.mjs';
@@ -7,6 +8,7 @@ import { recordRegistration } from './_growthRecord.mjs';
 import { attachReferral } from './_referralStore.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
 
   // Throttle mass account creation from a single source.

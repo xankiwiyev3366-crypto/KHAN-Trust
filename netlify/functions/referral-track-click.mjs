@@ -6,10 +6,12 @@
 // amplification, and always returns 200 (even for an unknown code) so it can
 // never leak which codes exist or interfere with the sign-up page the link
 // points at. Fails open on any error.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { recordClick, jsonResponse } from './_referralStore.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
 
   let body = {};

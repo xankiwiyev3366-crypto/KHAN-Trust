@@ -1,3 +1,4 @@
+import { connectBlobs } from './_blobsConnect.mjs';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
 import { readRequests, writeRequests, readStatuses, writeStatuses, jsonResponse } from './_verificationStore.mjs';
@@ -29,6 +30,7 @@ function verifyOwnershipSignature(payload) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

@@ -8,6 +8,7 @@
 // arbitrary or oversized data. Provenance is stored as source:'client_scan'
 // so a later hardening (authoritative server-side re-scoring - a deliberately
 // deferred slice) can distinguish submitted snapshots from verified ones.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { upsertCorpusToken, jsonResponse } from './_tokenCorpusStore.mjs';
 
 const MAX_STR = 120;
@@ -69,6 +70,7 @@ function cleanScoreInputs(raw) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

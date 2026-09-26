@@ -1,7 +1,9 @@
+import { connectBlobs } from './_blobsConnect.mjs';
 import { checkPasscode, issueToken } from './_adminAuth.mjs';
 import { jsonResponse } from './_verificationStore.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

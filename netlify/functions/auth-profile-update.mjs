@@ -1,3 +1,4 @@
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, getUserById, updateUser, bearerToken, jsonResponse } from './_authStore.mjs';
 
 // Avatars are stored inline as data: URLs on the user record (see
@@ -10,6 +11,7 @@ const MAX_AVATAR_DATA_URL_LENGTH = 400_000; // ~300KB of actual image data
 const AVATAR_DATA_URL_PATTERN = /^data:image\/(png|jpe?g|webp|gif);base64,/i;
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'PUT') return jsonResponse(405, { message: 'Method not allowed' });
 
   const payload = verifyJwt(bearerToken(event));

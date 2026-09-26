@@ -25,6 +25,7 @@
 // teaches the client to retry, and a retrying analytics beacon is a
 // self-inflicted traffic problem; it also leaks which names are valid, which is
 // a free map of the funnel for anyone probing it.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { recordEvent } from './_productEvents.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
@@ -33,6 +34,7 @@ import { isProductEvent, isClientEmittable } from '../../src/lib/productEvents.j
 const NO_CONTENT = { statusCode: 204, headers: { 'Cache-Control': 'no-store' }, body: '' };
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return { statusCode: 405, headers: { 'Content-Type': 'text/plain' }, body: 'Method not allowed' };

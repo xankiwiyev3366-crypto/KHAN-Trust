@@ -2,6 +2,7 @@
 // runSyncBatch unit of work used by the scheduled function until the cursor
 // catches up to the chain head or a wall-clock time budget is hit - this is
 // also what drives the very first historical backfill.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
 import { runSyncBatch } from './_khanIndexer.mjs';
@@ -9,6 +10,7 @@ import { runSyncBatch } from './_khanIndexer.mjs';
 const TIME_BUDGET_MS = 20000;
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

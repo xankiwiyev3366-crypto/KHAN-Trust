@@ -1,11 +1,13 @@
 // Live alerts feed for the admin panel - polled periodically. Alerts are
 // generated server-side during each sync batch (see _khanIndexer.mjs
 // buildAlerts) from real classified transactions, never synthesized here.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
 import { readAlerts } from './_khanHolderStore.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

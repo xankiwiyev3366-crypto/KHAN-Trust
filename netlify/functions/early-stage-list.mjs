@@ -2,6 +2,7 @@
 // visible early-stage projects. Optional filters: stage, chain, category,
 // search. Featured projects are sorted first, then by newest. Admin-only
 // contact fields are stripped before returning.
+import { connectBlobs } from './_blobsConnect.mjs';
 import {
   readEarlyStageProjects,
   isPubliclyVisible,
@@ -55,6 +56,7 @@ function toPublic(project) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

@@ -2,12 +2,14 @@
 // the background every 10 minutes (Netlify Scheduled Functions) so the
 // holder/transaction ledger stays current without any admin action. Safe to
 // run indefinitely after Pump.fun->Raydium graduation - see _khanIndexer.mjs.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { runSyncBatch } from './_khanIndexer.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
 
 export const config = { schedule: '*/10 * * * *' };
 
-export async function handler() {
+export async function handler(event) {
+  connectBlobs(event);
   try {
     const result = await runSyncBatch();
     return jsonResponse(200, result);

@@ -23,6 +23,7 @@
 // Each action checks the state it is about to create and returns success
 // unchanged if it is already there. A double-clicked "mark refunded" writes one
 // refund, records one audit row and queues one email.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { getOrder, putOrder, releaseContract, ORDER_STATUS } from './_verificationOrders.mjs';
 import { readStatuses, writeStatuses } from './_verificationStore.mjs';
@@ -66,6 +67,7 @@ async function audit(action, order, reason) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
     if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });

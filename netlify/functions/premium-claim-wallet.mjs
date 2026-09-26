@@ -38,6 +38,7 @@
 //     it forever, so the data is reachable from the account with no bulk copy —
 //     a pointer cannot half-fail the way a data migration can.
 //   - Re-claiming is idempotent: same input, same result, no duplicate state.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import {
   getEntitlement,
@@ -51,6 +52,7 @@ import { provenWallet } from './_walletSession.mjs';
 import { recordWalletLink } from './_walletLinkStore.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') {
     return jsonResponse(405, { message: 'Method not allowed' });
   }

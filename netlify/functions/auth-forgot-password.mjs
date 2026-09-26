@@ -1,3 +1,4 @@
+import { connectBlobs } from './_blobsConnect.mjs';
 import { getUserByEmail, createResetToken, jsonResponse } from './_authStore.mjs';
 import { sendEmail, isEmailConfigured } from './_email.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
@@ -5,6 +6,7 @@ import { enforce, getClientIp } from './_rateLimit.mjs';
 const APP_URL = process.env.URL || 'https://khantrust.net';
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
 
   let body;

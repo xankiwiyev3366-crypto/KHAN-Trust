@@ -17,11 +17,13 @@
 // (:00/:30). Those are a pipeline whose ordering matters to each other; this
 // worker is independent, but three functions listing blobs in the same second
 // is avoidable contention for no benefit.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { issueToken } from './_adminAuth.mjs';
 
 export const config = { schedule: '2,7,12,17,22,27,32,37,42,47,52,57 * * * *' };
 
-export async function handler() {
+export async function handler(event) {
+  connectBlobs(event);
   const siteUrl = process.env.URL || process.env.DEPLOY_PRIME_URL;
   if (!siteUrl) {
     console.error('[queue-worker-cron] no site URL in env; cannot reach the background worker.');

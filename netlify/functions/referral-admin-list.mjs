@@ -2,6 +2,7 @@
 // Admin-only. Every promoter (KOL / referrer) with their code, invite link, and
 // full funnel counts, joined with the promoter's account name/email. Read-only;
 // never mutates anything. Powers the Referral Analytics admin page.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { listRegisteredUsers, jsonResponse } from './_authStore.mjs';
 import { listAllPromoters, buildReferralLink } from './_referralStore.mjs';
@@ -18,6 +19,7 @@ function originFrom(event) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
   if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });
 

@@ -20,6 +20,7 @@
 // real. It takes the same short-lived HMAC admin token the other internal
 // workers use (_adminAuth.mjs), minted server-side by the cron with no passcode
 // on the wire.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import {
   listJobs,
@@ -46,6 +47,7 @@ const MAX_JOBS_PER_RUN = 60;
 const RUN_BUDGET_MS = 12 * 60 * 1000;
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') {
     return jsonResponse(405, { message: 'Method not allowed' });
   }

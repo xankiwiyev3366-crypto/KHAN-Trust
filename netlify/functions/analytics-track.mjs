@@ -1,3 +1,4 @@
+import { connectBlobs } from './_blobsConnect.mjs';
 import { appendEvent, jsonResponse } from './_analyticsStore.mjs';
 
 // Public ingestion endpoint for client-originated events. Verification
@@ -13,6 +14,7 @@ function clampString(value) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

@@ -13,12 +13,14 @@
 // purpose: every free scan contributes a snapshot, and the corpus is only
 // valuable because everyone fills it. We gate reading the series, not
 // building it.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { getHistory, jsonResponse } from './_scoreHistoryStore.mjs';
 import { requireFeature } from './_featureGate.mjs';
 
 const MAX_KEY_LENGTH = 150;
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'GET') {
     return jsonResponse(405, { message: 'Method not allowed' });
   }

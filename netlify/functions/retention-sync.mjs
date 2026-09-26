@@ -28,6 +28,7 @@
 // reach. This endpoint therefore cannot be used to read another user's
 // notifications, streak, or last-viewed token, because it takes no identifier it
 // could be confused by.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
 import {
@@ -61,6 +62,7 @@ function milestoneNotification(userId, id, now) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
 

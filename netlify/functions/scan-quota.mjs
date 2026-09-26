@@ -26,6 +26,7 @@
 //
 // FAIL OPEN: a limiter or blob outage returns "allowed". The core action of a
 // trust product must not go dark because a counter is unreachable.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { resolveVerifiedPremiumAccess } from './_premiumAccess.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
@@ -50,6 +51,7 @@ function premiumView(now) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
 

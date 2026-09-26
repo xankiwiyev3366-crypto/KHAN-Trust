@@ -1,3 +1,4 @@
+import { connectBlobs } from './_blobsConnect.mjs';
 import { getUserByEmail, verifyPassword, issueToken, recordSuccessfulAuth, AUTH_METHOD, jsonResponse } from './_authStore.mjs';
 import { appendEvent } from './_analyticsStore.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
@@ -16,6 +17,7 @@ function tooManyRequests(retryAfterMs) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
 
   let body;

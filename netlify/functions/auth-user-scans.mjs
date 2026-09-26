@@ -1,7 +1,9 @@
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken, jsonResponse } from './_authStore.mjs';
 import { readEvents } from './_analyticsStore.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
 
   const payload = verifyJwt(bearerToken(event));

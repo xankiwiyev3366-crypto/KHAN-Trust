@@ -33,6 +33,7 @@
 // are correct the instant the clock passes — with no dependency on this sweep
 // having run. A system where the badge only expires if a cron fires is a system
 // where a missed cron leaves a lapsed verification showing green.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readOrders, putOrder, releaseContract, ORDER_STATUS } from './_verificationOrders.mjs';
 import { enqueue } from './_eventQueue.mjs';
@@ -70,6 +71,7 @@ const STALE_PAID_DAYS = 3;
 const RENEWAL_NUDGE_DAYS = 7;
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
   if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });
 

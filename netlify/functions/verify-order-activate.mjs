@@ -38,6 +38,7 @@
 // The badge does not go live on payment. It goes live on proof. Selling the
 // badge and shipping it on receipt of funds is exactly the failure mode that
 // makes a paid verification worthless.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { provenWallet } from './_walletSession.mjs';
 import {
@@ -128,6 +129,7 @@ function newBadgeToken() {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

@@ -11,10 +11,12 @@
 // server-side and already has KHAN_ADMIN_PASSCODE, the same secret
 // verification-admin-auth signs with. No passcode is transmitted — only the
 // short-lived HMAC token.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { issueToken } from './_adminAuth.mjs';
 import { jsonResponse } from './_growthEvents.mjs';
 
-export async function handler() {
+export async function handler(event) {
+  connectBlobs(event);
   // process.env.URL is injected by Netlify and is the site's primary URL.
   const siteUrl = process.env.URL || process.env.DEPLOY_PRIME_URL;
   if (!siteUrl) {

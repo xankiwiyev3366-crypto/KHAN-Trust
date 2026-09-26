@@ -21,6 +21,7 @@
 // to this endpoint would otherwise create a payable order for a token the
 // scanner rates as high-risk. A gate that only runs when the client chooses to
 // call it is not a gate.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { getCorpusToken } from './_tokenCorpusStore.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { provenWallet } from './_walletSession.mjs';
@@ -57,6 +58,7 @@ function minScore() {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

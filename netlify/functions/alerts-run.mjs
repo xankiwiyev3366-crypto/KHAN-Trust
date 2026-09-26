@@ -29,6 +29,7 @@
 // "no baseline" — we re-baseline silently and alert from the next run. That is
 // the same rule that already protects a new subscriber from being spammed the
 // moment they subscribe, applied to migrations and methodology changes.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { listSubscriptions, saveSubscription } from './_alertsStore.mjs';
 import { getWatchSnapshot } from './_watchSnapshotStore.mjs';
 import { RESCAN_ENGINE_VERSION } from './_rescanEngine.mjs';
@@ -165,7 +166,8 @@ function toNotification(change) {
   };
 }
 
-export async function handler() {
+export async function handler(event) {
+  connectBlobs(event);
   try {
     // Email is OPTIONAL to this loop, not a precondition for it.
     //

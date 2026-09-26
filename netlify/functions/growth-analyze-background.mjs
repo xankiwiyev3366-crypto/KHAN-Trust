@@ -23,6 +23,7 @@
 //      too. That is not a hole: the token is still checked below and no work
 //      (and no spend) happens without it. It also means this endpoint is not an
 //      oracle — a probe cannot distinguish a valid token from an invalid one.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { runAnalysis } from './_growthRunAnalysis.mjs';
 import { isAiConfigured } from './_aiClient.mjs';
@@ -31,6 +32,7 @@ import { isAiConfigured } from './_aiClient.mjs';
 const SUPPORTED_LANGUAGES = new Set(['en', 'az']);
 
 export async function handler(event) {
+  connectBlobs(event);
   if (!verifyToken(bearerToken(event))) {
     console.warn('[growth-analyze-background] unauthorised invocation ignored; no work done.');
     return { statusCode: 401 };

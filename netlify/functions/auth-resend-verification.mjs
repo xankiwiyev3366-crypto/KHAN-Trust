@@ -5,12 +5,14 @@
 // Rate-limited server-side via lastVerificationEmailSentAt on the user record
 // so the "duplicate request" guard holds even across tabs/devices or a client
 // that ignores its own cooldown timer.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, getUserById, updateUser, createVerifyToken, bearerToken, jsonResponse } from './_authStore.mjs';
 import { sendVerificationEmail } from './_email.mjs';
 
 const RESEND_COOLDOWN_MS = 60 * 1000;
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
 
   const payload = verifyJwt(bearerToken(event));

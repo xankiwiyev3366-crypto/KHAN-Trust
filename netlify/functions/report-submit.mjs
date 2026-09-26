@@ -3,6 +3,7 @@
 // validates, sanitizes, rate-limits, stores, and (if configured) emails a
 // confirmation to the reporter and a notification to the KHAN Trust admin.
 // Mirrors support-submit.mjs so the two systems behave consistently.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { readReports, writeReports, checkAndRecordRateLimit, jsonResponse } from './_reportStore.mjs';
 import { isEmailConfigured, getAdminNotifyEmail, sendEmail } from './_email.mjs';
 
@@ -91,6 +92,7 @@ function generateReportId() {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { reason: 'method_not_allowed', message: 'Method not allowed' });

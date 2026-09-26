@@ -1,10 +1,12 @@
 // GET /.netlify/functions/report-admin-list - admin-only inbox listing for
 // project reports, with search/filter support. Reuses the same shared admin
 // passcode/token as the verification and support admin dashboards.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readReports, jsonResponse } from './_reportStore.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

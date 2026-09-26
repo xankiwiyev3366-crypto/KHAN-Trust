@@ -1,10 +1,12 @@
 // GET /.netlify/functions/support-admin-ticket?id=KT-... - admin-only single
 // ticket detail, including full attachment data (the list endpoint strips
 // attachment payloads to keep the inbox response small).
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readTickets, jsonResponse } from './_supportStore.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

@@ -3,6 +3,7 @@
 // Projects" section. Public endpoint (no auth): validates, sanitizes, rate
 // limits, and stores as `status: 'pending'` awaiting admin approval. Mirrors
 // report-submit.mjs so the two systems behave consistently.
+import { connectBlobs } from './_blobsConnect.mjs';
 import {
   readEarlyStageProjects,
   writeEarlyStageProjects,
@@ -129,6 +130,7 @@ export function buildEarlyStageProject(payload, meta = {}) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { reason: 'method_not_allowed', message: 'Method not allowed' });

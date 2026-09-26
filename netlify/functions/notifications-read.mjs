@@ -10,12 +10,14 @@
 //
 // markRead() skips the write when nothing was actually unread, which matters
 // because opening the bell is the most frequent action in this feature.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { markRead, listNotifications, unreadCount, jsonResponse } from './_notificationStore.mjs';
 
 const MAX_IDS = 200;
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
 

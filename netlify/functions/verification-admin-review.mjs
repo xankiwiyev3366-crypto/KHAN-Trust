@@ -1,3 +1,4 @@
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readRequests, writeRequests, readStatuses, writeStatuses, jsonResponse } from './_verificationStore.mjs';
 import { appendEvent } from './_analyticsStore.mjs';
@@ -40,6 +41,7 @@ import { PROFILE_VERIFICATION } from '../../src/lib/publicProfile.js';
 const VALID_DECISIONS = new Set(['verified', 'rejected', 'revoked']);
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

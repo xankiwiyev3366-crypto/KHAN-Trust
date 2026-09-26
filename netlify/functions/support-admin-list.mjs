@@ -2,6 +2,7 @@
 // summary stats (new/open/resolved counts, average first-response time).
 // Reuses the same shared admin passcode/token as the verification review and
 // analytics dashboards (see _adminAuth.mjs).
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readTickets, jsonResponse } from './_supportStore.mjs';
 
@@ -15,6 +16,7 @@ function averageResponseMinutes(tickets) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

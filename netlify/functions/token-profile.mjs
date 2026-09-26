@@ -45,6 +45,7 @@
 // 503 rather than 500 for a store outage, because 503 is the status that makes a
 // crawler come back later instead of dropping the URL, and a blob-store hiccup
 // must not cost the page its ranking.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { buildProfileView } from './_profileData.mjs';
 import { siteOrigin } from './_badgeState.mjs';
 import { recordEvent, PRODUCT_EVENTS } from './_productEvents.mjs';
@@ -462,6 +463,7 @@ function htmlResponse(statusCode, body, { cache, robots } = {}) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET' && event.httpMethod !== 'HEAD') {
       return { statusCode: 405, headers: { 'Content-Type': 'text/plain' }, body: 'Method not allowed' };

@@ -1,5 +1,6 @@
 // Real transaction table for the admin panel - every row is a stored
 // balance-delta event from _khanIndexer.mjs, never synthesized.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
 import { readTransactions, readHolders } from './_khanHolderStore.mjs';
@@ -21,6 +22,7 @@ function withinRange(timestamp, range) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

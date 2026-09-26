@@ -11,11 +11,13 @@
 // Defaults to dryRun:true. A migration that mutates every user record in
 // production should require an explicit, deliberate "no, really" rather than
 // running because someone curled the URL to see what it did.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
 import { runLoginBackfill, backfillStatus } from './_loginBackfill.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (!verifyToken(bearerToken(event))) {
       return jsonResponse(401, { message: 'Unauthorized' });

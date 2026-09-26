@@ -4,6 +4,7 @@
 // an admin-granted manual grant (see _premiumAccess.mjs) - resolved here
 // directly rather than trusting the client's own claim of its plan. The same
 // resolver decides which storage key the data lives under.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { resolveVerifiedPremiumAccess } from './_premiumAccess.mjs';
 import { getUserData, setUserData, jsonResponse } from './_userDataStore.mjs';
 
@@ -15,6 +16,7 @@ function sanitizeText(value, maxLength) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

@@ -13,6 +13,7 @@
 // get there would have duplicated every non-obvious rule in it (the SPL mint
 // allow-list above all). This file keeps what is Premium-specific: replay
 // protection through the shared used-signatures ledger, and who gets granted.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { grantEntitlement, grantAccountEntitlement, accountSubject, isSignatureUsed, markSignatureUsed } from './_entitlementsStore.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { markMilestone } from './_referralStore.mjs';
@@ -142,6 +143,7 @@ async function verifySolanaPayment({ transactionHash, plan, accountUserId = null
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ status: 'failed', message: 'Method not allowed' }) };
   }

@@ -2,6 +2,7 @@
 // ticket (reply, status/priority change, assignment, internal notes,
 // archive, delete) goes through this one endpoint with an `action` field,
 // to keep the function count manageable as more actions are added later.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readTickets, writeTickets, jsonResponse } from './_supportStore.mjs';
 
@@ -16,6 +17,7 @@ function sanitizeText(value, maxLength) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

@@ -2,10 +2,12 @@
 // Returns the caller's own alert-subscribed tokens (identities only need to
 // match what the client holds, so the report/profile can show the correct
 // bell state). Auth-gated to the caller's account. Additive.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { getSubscription, jsonResponse } from './_alertsStore.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
     const payload = verifyJwt(bearerToken(event));

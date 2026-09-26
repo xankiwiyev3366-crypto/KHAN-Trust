@@ -27,6 +27,7 @@
 //
 // So the worst a caller can do by lying is read prose about their own invented
 // numbers, which is not an attack on anybody.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { getAccountEntitlement, isPremiumPlan } from './_entitlementsStore.mjs';
 import { getGrant, isGrantActive } from './_premiumStore.mjs';
@@ -41,6 +42,7 @@ import { jsonResponse } from './_blobsClient.mjs';
 // this guard becomes dead code that looks live.
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
 

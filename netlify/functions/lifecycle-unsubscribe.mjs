@@ -29,6 +29,7 @@
 // touches the risk alerts a user explicitly asked for by watching a token:
 // those are the thing they came for, and silently cancelling them here would be
 // a worse betrayal than any marketing email.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { getUserById, updateUser } from './_authStore.mjs';
 import { verifyLifecycleToken, resubscribeTokenFor, isUnsubscribeConfigured } from './_lifecycleToken.mjs';
 import { recordLifecycleUnsubscribed, recordLifecycleResubscribed } from './_growthRecord.mjs';
@@ -68,6 +69,7 @@ function resubscribeForm(user) {
 const ACK = { statusCode: 200, headers: { 'Cache-Control': 'no-store' }, body: '' };
 
 export async function handler(event) {
+  connectBlobs(event);
   const method = event.httpMethod;
   if (method !== 'GET' && method !== 'POST') {
     return { statusCode: 405, body: 'Method not allowed' };

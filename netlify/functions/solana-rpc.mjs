@@ -34,6 +34,7 @@
 // Those paths submit transactions and rely on websocket confirmation, neither
 // of which survives a 10-second stateless function, and routing them here would
 // risk breaking payments to fix a read-path leak.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { checkRateLimit, getClientIp } from './_rateLimit.mjs';
 
 // Server-side only. Falls back to the public endpoint so a deployment that has
@@ -81,6 +82,7 @@ export function validateRpcRequest(body) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') return json(405, { message: 'Method not allowed' });
 
   let body;

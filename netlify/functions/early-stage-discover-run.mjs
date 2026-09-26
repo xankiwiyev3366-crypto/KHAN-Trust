@@ -8,6 +8,7 @@
 //   - Scheduled (Netlify cron below): refresh the cache.
 //   - POST + admin bearer: force a refresh now (admin "Refresh discovery").
 //   - GET: return current discovery status/meta (no network work).
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readEarlyStageProjects, isPubliclyVisible, jsonResponse } from './_earlyStageStore.mjs';
 import {
@@ -44,6 +45,7 @@ async function refresh() {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     const method = event?.httpMethod;
 

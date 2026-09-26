@@ -22,6 +22,7 @@
 // wrongly. `derivedStatus` is resolved through isVerificationActive(), the same
 // predicate the badge uses, so an order the badge treats as expired can never
 // appear "Active" on this screen.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readOrders, ORDER_STATUS } from './_verificationOrders.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
@@ -69,6 +70,7 @@ export function summarise(orders, now = Date.now()) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
     if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });

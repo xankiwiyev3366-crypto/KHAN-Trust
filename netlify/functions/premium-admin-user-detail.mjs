@@ -4,6 +4,7 @@
 // project views, searches, watchlist, premium history, and wallet status.
 // Loaded on demand so the main table stays light. Analysis only - it never
 // mutates anything and never classifies the account.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { getUserById, jsonResponse } from './_authStore.mjs';
 import { readGrants, isGrantActive, effectivePlan, readAudit } from './_premiumStore.mjs';
@@ -21,6 +22,7 @@ function sortDescByTime(list) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
   if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });
 

@@ -15,6 +15,7 @@
 // what an operator needs to judge whether a requeue is safe; it never contains a
 // secret, because the things that would be secret (signatures, wallets, tokens)
 // are referenced by order id and looked up by the handler rather than carried.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import {
   listJobs,
@@ -125,6 +126,7 @@ function publicJob(job, now) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });
 

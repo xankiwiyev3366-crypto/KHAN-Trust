@@ -3,11 +3,13 @@
 // field, mirroring report-admin-action.mjs. Supported actions:
 //   approve | reject | archive | feature | unfeature | hide | unhide |
 //   edit | set_notes | delete
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readEarlyStageProjects, writeEarlyStageProjects, sanitizeText, jsonResponse } from './_earlyStageStore.mjs';
 import { buildEarlyStageProject } from './early-stage-submit.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

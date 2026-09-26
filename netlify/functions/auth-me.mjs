@@ -10,9 +10,11 @@
 // so before this recorded anything, they were invisible to "Active Today" and,
 // if their login event had aged out of the capped event log, indistinguishable
 // from an account that had never logged in at all.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, getUserById, bearerToken, recordSuccessfulAuth, AUTH_METHOD, jsonResponse } from './_authStore.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
 
   const payload = verifyJwt(bearerToken(event));

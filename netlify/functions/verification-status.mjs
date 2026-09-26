@@ -1,3 +1,4 @@
+import { connectBlobs } from './_blobsConnect.mjs';
 import { readStatuses, jsonResponse } from './_verificationStore.mjs';
 import { isVerificationActive } from '../../src/lib/verificationTiers.js';
 
@@ -40,6 +41,7 @@ export function applyExpiry(statuses, now = Date.now()) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

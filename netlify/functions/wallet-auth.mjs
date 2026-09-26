@@ -2,11 +2,13 @@
 // Verifies the wallet's signature over its outstanding challenge and, on
 // success, returns a short-lived wallet-session token that proves ownership to
 // user-data-get/save (see _walletSession.mjs / P0-1).
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyAndIssue, isValidWallet } from './_walletSession.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
 
   const limit = await enforce('login_ip', getClientIp(event)); // brute-force guard on verification

@@ -23,6 +23,7 @@
 // as 0% would show a red "0% conversion" on a quiet week and prompt somebody to
 // fix a funnel that is not broken. `conversionRate: null` is the honest value
 // and the console renders it as "—".
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readEventWindow, computeFunnel } from './_productEvents.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
@@ -31,6 +32,7 @@ const MAX_DAYS = 180;
 const DEFAULT_DAYS = 30;
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
     if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });

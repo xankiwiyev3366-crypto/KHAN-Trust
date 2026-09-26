@@ -18,6 +18,7 @@
 // trigger this over HTTP. A scheduled-only worker cannot be fired twice by an
 // accidental request, which for an unattended mail sender is worth more than
 // the convenience of a manual trigger.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { listRegisteredUsers } from './_authStore.mjs';
 import { getRetention } from './_retentionStore.mjs';
 import { getSubscription } from './_alertsStore.mjs';
@@ -71,7 +72,8 @@ async function countRecentRiskAlerts(userId, now) {
   }
 }
 
-export async function handler() {
+export async function handler(event) {
+  connectBlobs(event);
   // Fail QUIET, not loud: with no mail provider configured this is a no-op, the
   // same contract every other email path in this codebase follows.
   if (!isEmailConfigured()) {

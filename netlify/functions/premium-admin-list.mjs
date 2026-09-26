@@ -2,12 +2,14 @@
 // Admin-only. Returns every registered user merged with their manual-premium
 // grant, so the Premium Management page can show plan / status / source for
 // all accounts and search across them. Read-only; never mutates anything.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { listRegisteredUsers, countRegisteredUsers, jsonResponse } from './_authStore.mjs';
 import { readGrants, isGrantActive, effectivePlan } from './_premiumStore.mjs';
 import { readEntitlements, countActivePaidPremium } from './_entitlementsStore.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
   if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });
 

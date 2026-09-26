@@ -4,10 +4,12 @@
 // (?wallet=...) and an admin-granted account (Authorization: Bearer <jwt>).
 // Public read: a caller with no Premium history just gets empty arrays back;
 // data is only ever written when entitled, so nothing sensitive is exposed.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { resolveVerifiedPremiumAccess } from './_premiumAccess.mjs';
 import { getUserData, jsonResponse } from './_userDataStore.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'GET') {
     return jsonResponse(405, { message: 'Method not allowed' });
   }

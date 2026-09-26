@@ -1,5 +1,6 @@
 // POST /.netlify/functions/support-submit - creates a new support ticket.
 // Public endpoint (no auth) - validates, sanitizes, rate-limits, and stores.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { readTickets, writeTickets, checkAndRecordRateLimit, jsonResponse } from './_supportStore.mjs';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -79,6 +80,7 @@ function generateTicketId() {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

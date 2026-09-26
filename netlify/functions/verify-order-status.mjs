@@ -11,12 +11,14 @@
 // endpoint keyed by a guessable-ish id would leak all three to anyone willing
 // to enumerate. The caller must present the same proven identity the order was
 // created under: their account JWT, or the wallet session that owns it.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { provenWallet } from './_walletSession.mjs';
 import { accountSubject } from './_entitlementsStore.mjs';
 import { getOrder, jsonResponse } from './_verificationOrders.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

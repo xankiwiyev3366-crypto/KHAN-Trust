@@ -5,6 +5,7 @@
 // body), so a user can only ever read/mutate their OWN referral record. A code
 // is created on first read, so every registered user has an invite link the
 // moment they open this page.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { getPromoterView, regenerateCode, buildReferralLink, jsonResponse } from './_referralStore.mjs';
 
@@ -23,6 +24,7 @@ function originFrom(event) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   const auth = verifyJwt(bearerToken(event));
   if (!auth?.sub) return jsonResponse(401, { message: 'Unauthorized' });
   const userId = auth.sub;

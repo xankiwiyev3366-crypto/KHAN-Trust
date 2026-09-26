@@ -2,10 +2,12 @@
 // early-stage submissions (every status, including hidden/archived), with
 // search + status filter. Reuses the same shared admin passcode/token as the
 // verification / support / report admin dashboards.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readEarlyStageProjects, jsonResponse } from './_earlyStageStore.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

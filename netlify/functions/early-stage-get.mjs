@@ -2,6 +2,7 @@
 // project profile. Returns the full public profile (overview, roadmap, team,
 // timeline, milestones, risk notes, why-early-stage) but never the admin-only
 // contact fields. Only returns projects that are approved + visible.
+import { connectBlobs } from './_blobsConnect.mjs';
 import {
   readEarlyStageProjects,
   isPubliclyVisible,
@@ -56,6 +57,7 @@ function toPublicProfile(project) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

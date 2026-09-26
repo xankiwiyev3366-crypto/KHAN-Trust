@@ -14,6 +14,7 @@
 // end state is to rename them to the un-prefixed server names below so the
 // VITE_ copies can be deleted and never risk being re-bundled by a future
 // client reference.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { jsonResponse } from './_blobsClient.mjs';
 
 const CHAINS = {
@@ -67,6 +68,7 @@ async function lookupFlags(base, apiKey, address) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     const params = event.queryStringParameters || {};
     const chain = String(params.chain || '').toLowerCase();

@@ -26,6 +26,7 @@
 // address and a chain name. There is no `status`, `verified` or `score`
 // parameter, and adding one would end the product: a badge whose host page can
 // influence what it says is a badge that says whatever that page wants.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { readStatuses } from './_verificationStore.mjs';
 import {
   BADGE_STATES,
@@ -94,6 +95,7 @@ export function renderBadgeSvg(state) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return { statusCode: 405, headers: { 'Content-Type': 'text/plain' }, body: 'Method not allowed' };

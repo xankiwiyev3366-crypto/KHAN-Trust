@@ -1,6 +1,7 @@
 // POST /.netlify/functions/report-admin-action - every admin mutation on a
 // report (status change, internal notes, delete) goes through this one
 // endpoint with an `action` field, mirroring support-admin-action.mjs.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readReports, writeReports, jsonResponse } from './_reportStore.mjs';
 
@@ -14,6 +15,7 @@ function sanitizeText(value, maxLength) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

@@ -1,10 +1,12 @@
 // GET /.netlify/functions/report-admin-detail?id=RPT-... - admin-only single
 // report detail, including full attachment data (the list endpoint strips
 // attachment payloads to keep the inbox response small).
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readReports, jsonResponse } from './_reportStore.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

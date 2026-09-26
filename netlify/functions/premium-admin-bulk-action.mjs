@@ -9,6 +9,7 @@
 //    atomically from the client's point of view (one persisted write).
 //  - Every bulk run appends one immutable audit entry with success/failed
 //    counts; nothing is ever deleted.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { listRegisteredUsers, jsonResponse } from './_authStore.mjs';
 import {
@@ -26,6 +27,7 @@ function sanitize(value, maxLength) {
 const BULK_DURATIONS = new Set(['30d', '60d', '90d', '180d', '365d']);
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
     if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });

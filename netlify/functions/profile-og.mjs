@@ -34,6 +34,7 @@
 //
 // Nothing here can produce a non-image response. That is the contract: a share
 // card that fails must fail into a KHAN Trust card, not into nothing.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { buildProfileView } from './_profileData.mjs';
 import { siteOrigin } from './_badgeState.mjs';
 import {
@@ -204,6 +205,7 @@ export function resolveTarget(event) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET' && event.httpMethod !== 'HEAD') {
       return { statusCode: 405, headers: { 'Content-Type': 'text/plain' }, body: 'Method not allowed' };

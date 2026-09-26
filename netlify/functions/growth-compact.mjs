@@ -4,10 +4,12 @@
 // Kept separate from the cron for the reason in _growthRunAnalysis.mjs: a
 // function that declares a schedule is not routable over HTTP, so one handler
 // cannot be both.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { listRawDays, compactDay, jsonResponse } from './_growthEvents.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
   if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });
 

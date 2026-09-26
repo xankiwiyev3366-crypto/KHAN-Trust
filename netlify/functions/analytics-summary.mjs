@@ -21,6 +21,7 @@
 // The DEFAULT response is unchanged: with no `section` the endpoint still
 // returns the complete, identically-shaped payload it always did, so every
 // existing consumer (and the CSV/JSON export) keeps working untouched.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { readEvents, jsonResponse } from './_analyticsStore.mjs';
 import { readStatuses, readRequests } from './_verificationStore.mjs';
@@ -526,6 +527,7 @@ function mergeSlices(names, parts) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

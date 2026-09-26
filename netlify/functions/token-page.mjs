@@ -12,6 +12,7 @@
 // routes under "/#/..."). Humans who land here get the verdict plus a CTA
 // that opens the live interactive report in the SPA (/?scan=<contract>, wired
 // additively in src/main.jsx); crawlers get fully-rendered HTML.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { getCorpusToken, jsonResponse } from './_tokenCorpusStore.mjs';
 import { profileUrlFor } from '../../src/lib/publicProfile.js';
 
@@ -197,6 +198,7 @@ export async function resolveChainForContract(contract) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET' && event.httpMethod !== 'HEAD') {
       return jsonResponse(405, { message: 'Method not allowed' });

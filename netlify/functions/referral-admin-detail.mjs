@@ -2,11 +2,13 @@
 // Admin-only. One promoter's full referral history: every referred account with
 // its funnel milestones, joined with the referred account's name/email. Read-
 // only. Powers the "View detailed referral history" drill-down.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { getUserById, jsonResponse } from './_authStore.mjs';
 import { getOwnerRecord, listReferralsForPromoter, foldEdges, conversionRate } from './_referralStore.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
   if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });
 

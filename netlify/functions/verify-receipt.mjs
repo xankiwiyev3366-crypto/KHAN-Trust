@@ -10,6 +10,7 @@
 // SELF-SERVICE RECOVERY. When the receipt job has not completed yet this
 // answers 202 with `pending: true` rather than 404, so the client can poll
 // instead of showing a buyer who has just paid $149 a "not found" screen.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { provenWallet } from './_walletSession.mjs';
 import { verifyToken } from './_adminAuth.mjs';
@@ -20,6 +21,7 @@ import { siteOrigin } from './_badgeState.mjs';
 import { ORDER_STATUS } from './_verificationOrders.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
 

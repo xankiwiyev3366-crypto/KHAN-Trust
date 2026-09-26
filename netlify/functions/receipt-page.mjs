@@ -30,6 +30,7 @@
 // arrives as a query parameter and the page is `no-store`, noindex, and
 // referrer-stripped. That is a real trade and it is made consciously: the
 // alternative is an unauthenticated receipt.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, getUserById } from './_authStore.mjs';
 import { provenWallet } from './_walletSession.mjs';
 import { verifyToken } from './_adminAuth.mjs';
@@ -177,6 +178,7 @@ Verification confirms project ownership. It is not an endorsement, a security au
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   const origin = siteOrigin();
   try {
     if (event.httpMethod !== 'GET' && event.httpMethod !== 'HEAD') {

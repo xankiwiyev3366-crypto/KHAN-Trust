@@ -1,7 +1,9 @@
+import { connectBlobs } from './_blobsConnect.mjs';
 import { consumeResetToken, getUserByEmail, updateUser, hashPassword, jsonResponse } from './_authStore.mjs';
 import { enforce, getClientIp } from './_rateLimit.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
 
   // Slow brute-forcing of the (already high-entropy) reset token.

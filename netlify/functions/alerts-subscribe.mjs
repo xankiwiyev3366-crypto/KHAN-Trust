@@ -4,6 +4,7 @@
 // verified JWT (never the request body), so a caller can never subscribe a
 // different person or redirect alerts elsewhere. Auth-gated; additive - no
 // existing endpoint or behavior changes.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, getUserById, bearerToken } from './_authStore.mjs';
 import { toggleToken, jsonResponse } from './_alertsStore.mjs';
 import { resolveUserTier, MAX_WATCHED_TOKENS } from './_watchTiers.mjs';
@@ -18,6 +19,7 @@ function cleanStr(value, max = 120) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
 

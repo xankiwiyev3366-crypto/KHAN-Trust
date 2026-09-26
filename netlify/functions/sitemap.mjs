@@ -24,6 +24,7 @@
 // while the sitemap begs Google to index it is the single most common
 // self-inflicted SEO fault there is, and it cannot happen if both read one
 // function.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { getCorpusListingIndex } from './_tokenCorpusStore.mjs';
 import { profileUrlFor, isProfileIndexable } from '../../src/lib/publicProfile.js';
 import { isSupportedChain, parseBadgeTarget } from './_badgeState.mjs';
@@ -89,6 +90,7 @@ ${urls.join('\n')}
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET' && event.httpMethod !== 'HEAD') {
       return { statusCode: 405, headers: { 'Content-Type': 'text/plain' }, body: 'Method not allowed' };

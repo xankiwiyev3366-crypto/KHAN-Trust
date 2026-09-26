@@ -29,6 +29,7 @@
 // into an empty report: two reads a minute apart would leave the second one with
 // a 60-second period in which, correctly, nothing happened. Inside that window
 // the STORED report is returned unchanged.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { getSubscription } from './_alertsStore.mjs';
 import { getWatchSnapshots } from './_watchSnapshotStore.mjs';
@@ -86,6 +87,7 @@ const MIN_PERIOD_SECONDS = 15 * 60;
 const FIRST_PERIOD_DAYS = 7;
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') return jsonResponse(405, { message: 'Method not allowed' });
 

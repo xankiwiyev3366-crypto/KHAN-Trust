@@ -9,6 +9,7 @@
 // src/scoreHistory.js); the server-side upsert-by-date in
 // appendSnapshot() means even a bypassed client still can't create more than
 // one entry per key per day.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { appendSnapshot, jsonResponse } from './_scoreHistoryStore.mjs';
 
 const MAX_KEY_LENGTH = 150;
@@ -26,6 +27,7 @@ function clampScoreOrNull(value) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

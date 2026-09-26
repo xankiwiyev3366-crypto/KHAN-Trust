@@ -17,11 +17,13 @@
 // deadline is the difference between working and not. The :10 keeps it off the
 // hour, away from growth-compact (03:15) and the queue worker's five-minute
 // grid.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { issueToken } from './_adminAuth.mjs';
 
 export const config = { schedule: '10 7 * * *' };
 
-export async function handler() {
+export async function handler(event) {
+  connectBlobs(event);
   const siteUrl = process.env.URL || process.env.DEPLOY_PRIME_URL;
   if (!siteUrl) {
     console.error('[verify-lifecycle-cron] no site URL in env; cannot reach the background function.');

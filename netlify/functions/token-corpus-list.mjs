@@ -4,12 +4,14 @@
 // shared "Explore from the corpus" view, trending/leaderboard, and SEO
 // sitemap will read from - the first thing that turns accumulated scans into
 // cross-user discovery instead of per-browser silos.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { getCorpusListingIndex, jsonResponse } from './_tokenCorpusStore.mjs';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'GET') {
       return jsonResponse(405, { message: 'Method not allowed' });

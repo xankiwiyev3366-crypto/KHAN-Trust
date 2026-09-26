@@ -8,10 +8,12 @@
 // CLIENT_EVENT_TYPES). Registrations, logins and completed checkouts are
 // recorded server-side by the functions that actually perform them, so no
 // caller can inflate the numbers the Growth OS reasons about.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { putEvent, jsonResponse } from './_growthEvents.mjs';
 import { buildEvent, CLIENT_EVENT_TYPES } from './_growthSchema.mjs';
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') {
       return jsonResponse(405, { message: 'Method not allowed' });

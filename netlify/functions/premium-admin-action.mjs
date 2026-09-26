@@ -7,6 +7,7 @@
 //  - Only writes the manual-premium store (_premiumStore.mjs). It never reads
 //    or writes the paid-entitlements store, Stripe, or payment records.
 //  - Every action appends an immutable audit entry; nothing is ever deleted.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyToken, bearerToken } from './_adminAuth.mjs';
 import { getUserById, jsonResponse } from './_authStore.mjs';
 import {
@@ -20,6 +21,7 @@ function sanitize(value, maxLength) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   try {
     if (event.httpMethod !== 'POST') return jsonResponse(405, { message: 'Method not allowed' });
     if (!verifyToken(bearerToken(event))) return jsonResponse(401, { message: 'Unauthorized' });

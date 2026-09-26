@@ -17,6 +17,7 @@
 //
 // Both paths return only the non-sensitive fields the UI consumes — never
 // payment identifiers.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { verifyJwt, bearerToken } from './_authStore.mjs';
 import { getEntitlement, getAccountEntitlement, isPremiumPlan, jsonResponse } from './_entitlementsStore.mjs';
 
@@ -39,6 +40,7 @@ function toPublicEntitlement(entitlement) {
 }
 
 export async function handler(event) {
+  connectBlobs(event);
   if (event.httpMethod !== 'GET') {
     return jsonResponse(405, { message: 'Method not allowed' });
   }

@@ -5,6 +5,7 @@
 // Safety property: only ever touches days strictly BEFORE today (UTC), so it
 // can never race a live write. Compaction is idempotent — a retry after a
 // partial failure merges by event id rather than duplicating.
+import { connectBlobs } from './_blobsConnect.mjs';
 import { listRawDays, compactDay, jsonResponse } from './_growthEvents.mjs';
 
 // A scheduled function is killed at 30 seconds, and compacting one day costs a
@@ -19,7 +20,8 @@ import { listRawDays, compactDay, jsonResponse } from './_growthEvents.mjs';
 // picks up the days still listed as raw.
 const MAX_DAYS_PER_RUN = 5;
 
-export async function handler() {
+export async function handler(event) {
+  connectBlobs(event);
   try {
     const today = new Date().toISOString().slice(0, 10);
     // listRawDays returns sorted ascending, so slicing takes the OLDEST days —
